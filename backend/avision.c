@@ -549,6 +549,13 @@ static Avision_HWEntry Avision_Device_List [] =
     /* comment="1 pass, 1200 dpi, A3 - duplex! - zero edge!" */
     /* status="complete" */
 
+    { "AVISION", "FB6280E",
+      0x0638, 0x2a1e,
+      "Avision", "FB6280E",
+      AV_NON_INTERLACED_DUPLEX_300, AV_USE_GRAY_FILTER},
+    /* comment="1 pass, 1200 dpi, A3 - duplex! - zero edge!" */
+    /* status="complete" */
+
     { NULL, NULL,
       0x0638, 0x0a84,
       "Avision", "FB2080E",
@@ -2540,9 +2547,9 @@ compute_parameters (Avision_Scanner* s)
     / MM_PER_INCH;
   s->avdimen.tly = s->avdimen.hw_yres * SANE_UNFIX (s->val[OPT_TL_Y].w)
     / MM_PER_INCH;
-  s->avdimen.brx = s->avdimen.hw_xres * SANE_UNFIX (s->val[OPT_BR_X].w)
+  s->avdimen.brx = s->avdimen.hw_xres * SANE_UNFIX (s->val[OPT_BR_X].w+1)
     / MM_PER_INCH;
-  s->avdimen.bry = s->avdimen.hw_yres * SANE_UNFIX (s->val[OPT_BR_Y].w)
+  s->avdimen.bry = s->avdimen.hw_yres * SANE_UNFIX (s->val[OPT_BR_Y].w+1)
     / MM_PER_INCH;
 
   /* line difference */
@@ -3031,6 +3038,55 @@ get_and_parse_nvram (Avision_Scanner* s, char* str, int n)
     }
 
   return status;
+}
+
+static SANE_Status
+get_edge_adj (Avision_Scanner* s,
+              SANE_Word *side, SANE_Word *top)
+{
+  SANE_Status status;
+  nvram_data nvram;
+
+  DBG (3, "get_edge_adj\n");
+
+  if (!s->hw->inquiry_nvram_read)
+    return SANE_STATUS_INVAL;
+
+  status = get_nvram_data (s, &nvram);
+
+  if (status != SANE_STATUS_GOOD) {
+    DBG (1, "get_edge_adj: read nvram failed (%s)\n", sane_strstatus (status));
+    return status;
+  }
+
+  if(s->source_mode == AV_FLATBED){
+
+    /* flatbed adjustment; relevant at least on bookedge scanners */
+
+    *top = (int16_t)get_double(nvram.flatbed_leading_edge);
+    *side = (int16_t)get_double(nvram.flatbed_side_edge);
+
+  }else if(s->source_mode == AV_ADF ||
+           s->source_mode == AV_ADF_DUPLEX){
+
+    /* ADF adjustment
+       XXX: Seperate offsets for ADF and ADF rear... what to do with
+       duplex?  Assuming ADF for now. --Monty */
+
+    *top = (int16_t)get_double(nvram.adf_leading_edge);
+    *side = (int16_t)get_double(nvram.adf_side_edge);
+
+  }else if (s->source_mode == AV_ADF_REAR){
+
+    /* rear */
+
+    *top = (int16_t)get_double(nvram.adf_rear_leading_edge);
+    *side = (int16_t)get_double(nvram.adf_rear_side_edge);
+
+  }else
+    return SANE_STATUS_INVAL;
+
+  return SANE_STATUS_GOOD;
 }
 
 static SANE_Status
@@ -5162,6 +5218,9 @@ send_gamma (Avision_Scanner* s)
       gamma_table_raw_size = 256;
       gamma_table_size = 256;
       break;
+    case AV_ASIC_C8:
+      gamma_table_raw_size = 512;
+      gamma_table_size = 512;
       break;
     case AV_ASIC_OA980:
       gamma_table_raw_size = 4096;
@@ -5558,6 +5617,9 @@ set_window (Avision_Scanner* s)
   int bytes_per_line;
   int line_count;
 
+  SANE_Word xadj=0;
+  SANE_Word yadj=0;
+
   struct {
     struct command_set_window cmd;
     struct command_set_window_window window;
@@ -5617,16 +5679,21 @@ set_window (Avision_Scanner* s)
   set_double (cmd.window.descriptor.xres, s->avdimen.hw_xres);
   set_double (cmd.window.descriptor.yres, s->avdimen.hw_yres);
 
+  /* get window offset adjustments from nvram. (eg, the FB6280E book
+     edge scanner uses the fields to fine-tune center alignment, else
+     several mm of the 'top'/'right' edges are cut off.) */
+  get_edge_adj (s, &xadj, &yadj);
+
   /* upper left corner x/y as well as width/length in inch * base_dpi
      - avdimen are world pixels */
-  set_quad (cmd.window.descriptor.ulx, s->avdimen.tlx * base_dpi_abs / s->avdimen.hw_xres);
-  set_quad (cmd.window.descriptor.uly, s->avdimen.tly * base_dpi_abs / s->avdimen.hw_yres);
+  set_quad (cmd.window.descriptor.ulx, s->avdimen.tlx * base_dpi_abs / s->avdimen.hw_xres - xadj);
+  set_quad (cmd.window.descriptor.uly, s->avdimen.tly * base_dpi_abs / s->avdimen.hw_yres - yadj);
 
   set_quad (cmd.window.descriptor.width,
-	    s->avdimen.hw_pixels_per_line * base_dpi_rel / s->avdimen.hw_xres + 1);
+	    s->avdimen.hw_pixels_per_line * base_dpi_rel / s->avdimen.hw_xres);
   line_count = s->avdimen.hw_lines + 2 * s->avdimen.line_difference + s->avdimen.rear_offset;
   set_quad (cmd.window.descriptor.length,
-	    line_count * base_dpi_rel / s->avdimen.hw_yres + 1);
+	    line_count * base_dpi_rel / s->avdimen.hw_yres);
 
   /* interlaced duplex scans are twice as long */
   if (s->avdimen.interlaced_duplex && dev->scanner_type != AV_FILM) {
