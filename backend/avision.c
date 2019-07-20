@@ -552,7 +552,7 @@ static Avision_HWEntry Avision_Device_List [] =
     { "AVISION", "FB6280E",
       0x0638, 0x2a1e,
       "Avision", "FB6280E",
-      AV_NON_INTERLACED_DUPLEX_300, AV_USE_GRAY_FILTER},
+      AV_NON_INTERLACED_DUPLEX_300 | AV_USE_GRAY_FILTER},
     /* comment="1 pass, 1200 dpi, A3 - duplex! - zero edge!" */
     /* status="complete" */
 
