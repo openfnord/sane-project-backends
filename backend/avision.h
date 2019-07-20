@@ -217,7 +217,6 @@ typedef enum {
   AV_ASIC_C5 = 5,
   AV_ASIC_C6 = 6,
   AV_ASIC_C7 = 7,
-  AV_ASIC_C8 = 8,
   AV_ASIC_OA980 = 128,
   AV_ASIC_OA982 = 129
 } asic_type;

@@ -5218,10 +5218,6 @@ send_gamma (Avision_Scanner* s)
       gamma_table_raw_size = 256;
       gamma_table_size = 256;
       break;
-    case AV_ASIC_C8:
-      gamma_table_raw_size = 512;
-      gamma_table_size = 512;
-      break;
     case AV_ASIC_OA980:
       gamma_table_raw_size = 4096;
       gamma_table_size = 4096;
