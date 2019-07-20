@@ -3059,7 +3059,7 @@ get_edge_adj (Avision_Scanner* s,
     return status;
   }
 
-  if(s->source_mode == AV_FLATBED){
+  if(s->source_mode == AV_NORMAL){
 
     /* flatbed adjustment; relevant at least on bookedge scanners */
 
