@@ -753,6 +753,9 @@ query_status_3 (pixma_t * s)
   data = pixma_newcmd (&mp->cb, cmd_status_3, 0, status_len);
   RET_IF_ERR (pixma_exec (s, &mp->cb));
   memcpy (mp->current_status, data, status_len);
+
+  PDBG (pixma_dbg (3, "Current status: paper=%u cal=%u lamp=%u busy=%u\n",
+                       data[1], data[8], data[7], data[0]));
   return error;
 }
 
@@ -954,6 +957,7 @@ wait_until_ready (pixma_t * s)
                                     : query_status (s));
   while (!is_calibrated (s))
     {
+      PDBG (pixma_dbg (4, "%s: %d\n", __func__, tmo));
       WAIT_INTERRUPT (1000);
       if (mp->generation >= 3)
         RET_IF_ERR (query_status_3 (s));
