@@ -620,6 +620,8 @@ iclass_check_param (pixma_t * s, pixma_scan_param_t * sp)
   if ((s->cfg->cap & PIXMA_CAP_ADF) && sp->source == PIXMA_SOURCE_FLATBED)
     sp->h = MIN (sp->h, 877 * sp->xdpi / 75);
 
+  sp->mode_jpeg = (s->cfg->cap & PIXMA_CAP_JPEG);
+
   /* PDBG (pixma_dbg (4, "*iclass_check_param***** Finally: channels=%u, depth=%u, x=%u, y=%u, w=%u, line_size=%" PRIu64 " , h=%u*****\n",
                    sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->line_size, sp->h)); */
 
@@ -973,7 +975,7 @@ const pixma_config_t pixma_iclass_devices[] = {
   DEV ("Canon imageCLASS MF634C", "MF632C/634C", MF634_PID, 600, 0, 637, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon imageCLASS MF733C", "MF731C/733C", MF731_PID, 600, 0, 637, 1050, PIXMA_CAP_ADFDUP),            /* however, we need this for ethernet/wifi */
   DEV ("Canon imageCLASS D570", "D570", D570_PID, 600, 0, 640, 877, 0),
-  DEV ("Canon i-SENSYS MF110 Series", "MF110", MF110_PID, 600, 0, 640, 1050, 0),
+  DEV ("Canon i-SENSYS MF110 Series", "MF110", MF110_PID, 600, 0, 640, 1050, PIXMA_CAP_JPEG),
   DEV ("Canon i-SENSYS MF520 Series", "MF520", MF520_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF420 Series", "MF420", MF420_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF260 Series", "MF260", MF260_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
