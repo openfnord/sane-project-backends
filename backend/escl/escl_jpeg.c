@@ -235,6 +235,12 @@ get_JPEG_data(capabilities_t *scanner, int *width, int *height, int *bps)
     *width = w;
     *height = h;
     *bps = cinfo.output_components;
+    // If the image is not completely read!
+    if (scanner->height < cinfo.output_height)
+       jpeg_abort_decompress(&cinfo);
+    else
+       jpeg_finish_decompress(&cinfo);
+
     jpeg_destroy_decompress(&cinfo);
     fclose(scanner->tmp);
     scanner->tmp = NULL;
