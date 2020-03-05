@@ -241,7 +241,7 @@ get_JPEG_data(capabilities_t *scanner, int *width, int *height, int *bps)
     scanner->img_data = surface;
     DBG( 1, "Escl jpeg : affect data\n");
     scanner->img_size = lineSize * h;
-    DBG( 1, "Escl jpeg : Image size (%d)\n", scanner->img_size);
+    DBG( 1, "Escl jpeg : Image size (%ld)\n", scanner->img_size);
     scanner->img_read = 0;
     *width = w;
     *height = h;
