@@ -176,11 +176,12 @@ get_JPEG_data(capabilities_t *scanner, int *width, int *height, int *bps)
     jerr.errmgr.error_exit = my_error_exit;
     jerr.errmgr.output_message = output_no_message;
     if (setjmp(jerr.escape)) {
+        DBG( 1, "Escl Jpeg : -- Error setjmp -- \n");
         jpeg_destroy_decompress(&cinfo);
         if (surface != NULL)
             free(surface);
 	fseek(scanner->tmp, start, SEEK_SET);
-        DBG( 1, "Escl Jpeg : Error reading jpeg\n");
+        DBG( 1, "Escl Jpeg : -- Error reading jpeg -- \n");
         if (scanner->tmp) {
            fclose(scanner->tmp);
            scanner->tmp = NULL;
@@ -218,30 +219,43 @@ get_JPEG_data(capabilities_t *scanner, int *width, int *height, int *bps)
         return (SANE_STATUS_NO_MEM);
     }
     jpeg_start_decompress(&cinfo);
-    if (x_off > 0 || w < cinfo.output_width)
+    DBG( 1, "Escl Jpeg : jpeg_start_decompress\n");
+    if (x_off > 0 || w < cinfo.output_width) {
        jpeg_crop_scanline(&cinfo, &x_off, &w);
+       DBG( 1, "Escl Jpeg : jpeg_jpeg_crop_scanline(&cinfo, %d, %d)\n", x_off, w);
+    }
     lineSize = w * cinfo.output_components;
-    if (y_off > 0)
+    DBG( 1, "Escl jpeg : LINESIZE %d\n", lineSize);
+    if (y_off > 0) {
         jpeg_skip_scanlines(&cinfo, y_off);
+        DBG( 1, "Escl jpeg : jpeg_skip_scanlines(&cinfo, %d)\n", y_off);
+    }
     pos = 0;
+    DBG( 1, "Escl jpeg : Start read data\n");
     while (cinfo.output_scanline < (unsigned int)scanner->height) {
         rowptr[0] = (JSAMPROW)surface + (lineSize * pos); // ..cinfo.output_scanline);
         jpeg_read_scanlines(&cinfo, rowptr, (JDIMENSION) 1);
        pos++;
      }
+    DBG( 1, "Escl jpeg : Finish read data\n");
     scanner->img_data = surface;
+    DBG( 1, "Escl jpeg : affect data\n");
     scanner->img_size = lineSize * h;
+    DBG( 1, "Escl jpeg : Image size (%d)\n", scanner->img_size);
     scanner->img_read = 0;
     *width = w;
     *height = h;
     *bps = cinfo.output_components;
+    DBG( 1, "Escl jpeg : Image size (%dx%dx%d)\n", w, h, *bps);
     // If the image is not completely read!
-    if (cinfo.output_height > (unsigned int)scanner->height)
+    /*if (cinfo.output_height > (unsigned int)scanner->height)
        jpeg_abort_decompress(&cinfo);
     else
        jpeg_finish_decompress(&cinfo);
-
+    */
+    DBG( 1, "Escl jpeg : Destroy compress jpeg\n");
     jpeg_destroy_decompress(&cinfo);
+    DBG( 1, "Escl jpeg : Close file\n");
     fclose(scanner->tmp);
     scanner->tmp = NULL;
     return (SANE_STATUS_GOOD);
