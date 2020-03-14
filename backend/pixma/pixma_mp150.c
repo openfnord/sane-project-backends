@@ -1,6 +1,6 @@
 /* SANE - Scanner Access Now Easy.
 
-   Copyright (C) 2011-2019 Rolf Bensch <rolf at bensch hyphen online dot de>
+   Copyright (C) 2011-2020 Rolf Bensch <rolf at bensch hyphen online dot de>
    Copyright (C) 2007-2009 Nicolas Martin, <nicols-guest at alioth dot debian dot org>
    Copyright (C) 2006-2007 Wittawat Yamwong <wittawat@web.de>
 
@@ -282,8 +282,10 @@
 #define TS8230_PID 0x185b
 #define TS9580_PID 0x185d
 #define TR9530_PID 0x185e
+#define G7000_PID 0x1863
 #define G6000_PID 0x1865
 #define G6080_PID 0x1866
+#define GM4000_PID 0x1869
 #define XK80_PID 0x1873
 #define TS5300_PID 0x188b
 #define TS5380_PID 0x188c
@@ -1765,7 +1767,7 @@ const pixma_config_t pixma_mp150_devices[] = {
 
   /* Latest devices (2018) Generation 5 CIS */
   DEVICE ("Canon MAXIFY MB5400 Series", "MB5400", MB5400_PID, 0, 1200, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADFDUP | PIXMA_CAP_ADF_JPEG),
-  DEVICE ("Canon MAXIFY MB5100 Series", "MB5100", MB5100_PID, 0, 1200, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADFDUP),
+  DEVICE ("Canon MAXIFY MB5100 Series", "MB5100", MB5100_PID, 0, 1200, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADFDUP | PIXMA_CAP_ADF_JPEG),
   DEVICE ("Canon PIXMA TS9100 Series", "TS9100", TS9100_PID, 0, 2400, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA TR8500 Series", "TR8500", TR8500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
   DEVICE ("Canon PIXMA TR7500 Series", "TR7500", TR7500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
@@ -1798,8 +1800,10 @@ const pixma_config_t pixma_mp150_devices[] = {
   DEVICE ("Canon PIXMA TS8230 Series", "TS8230", TS8230_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA TS9580 Series", "TS9580", TS9580_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
   DEVICE ("Canon PIXMA TR9530 Series", "TR9530", TR9530_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
+  DEVICE ("Canon PIXMA G7000 Series", "G7000", G7000_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),      /* ToDo: ADF has legal paper length */
   DEVICE ("Canon PIXMA G6000 Series", "G6000", G6000_PID, 0, 600, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA G6080 Series", "G6080", G6080_PID, 0, 600, 0, 0, 638, 877, PIXMA_CAP_CIS),
+  DEVICE ("Canon PIXMA GM4000 Series", "GM4000", GM4000_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),   /* ToDo: ADF has legal paper length */
   DEVICE ("Canon PIXUS XK80 Series", "XK80", XK80_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA TS5300 Series", "TS5300", TS5300_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA TS5380 Series", "TS5380", TS5380_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),

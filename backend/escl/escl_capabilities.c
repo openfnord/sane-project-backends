@@ -21,6 +21,8 @@
 
    This file implements a SANE backend for eSCL scanners.  */
 
+#define DEBUG_DECLARE_ONLY
+#include "../include/sane/config.h"
 
 #include "escl.h"
 
@@ -43,7 +45,7 @@ struct cap
  * \fn static SANE_String_Const convert_elements(SANE_String_Const str)
  * \brief Function that converts the 'color modes' of the scanner (color/gray) to be understood by SANE.
  *
- * \return SANE_VALUE_SCAN_MODE_GRAY / SANE_VALUE_SCAN_MODE_COLOR ; NULL otherwise
+ * \return SANE_VALUE_SCAN_MODE_GRAY / SANE_VALUE_SCAN_MODE_COLOR / SANE_VALUE_SCAN_MODE_LINEART; NULL otherwise
  */
 static SANE_String_Const
 convert_elements(SANE_String_Const str)
@@ -52,6 +54,10 @@ convert_elements(SANE_String_Const str)
         return (SANE_VALUE_SCAN_MODE_GRAY);
     else if (strcmp(str, "RGB24") == 0)
         return (SANE_VALUE_SCAN_MODE_COLOR);
+#if(defined HAVE_POPPLER_GLIB)
+    else if (strcmp(str, "BlackAndWhite1") == 0)
+        return (SANE_VALUE_SCAN_MODE_LINEART);
+#endif
     return (NULL);
 }
 
@@ -206,6 +212,14 @@ find_valor_of_array_variables(xmlNode *node, capabilities_t *scanner)
                scanner->default_format = strdup("image/tiff");
             }
 #endif
+#if(defined HAVE_POPPLER_GLIB)
+            else if(!strcmp(scanner->DocumentFormats[i], "application/pdf"))
+            {
+               if (scanner->default_format)
+                  free(scanner->default_format);
+               scanner->default_format = strdup("application/pdf");
+            }
+#endif
          }
          fprintf(stderr, "Capability : [%s]\n", scanner->default_format);
      }
@@ -343,19 +357,20 @@ escl_capabilities(SANE_String_Const name, SANE_Status *status)
         *status = SANE_STATUS_NO_MEM;
     var->memory = malloc(1);
     var->size = 0;
-    curl_global_init(CURL_GLOBAL_ALL);
     curl_handle = curl_easy_init();
     strcpy(tmp, name);
     strcat(tmp, scanner_capabilities);
+    DBG( 1, "Get Capabilities : %s\n", tmp);
     curl_easy_setopt(curl_handle, CURLOPT_URL, tmp);
     if (strncmp(name, "https", 5) == 0) {
+        DBG( 1, "Ignoring safety certificates, use https\n");
         curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl_handle, CURLOPT_SSL_VERIFYHOST, 0L);
     }
     curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, memory_callback_c);
     curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)var);
     if (curl_easy_perform(curl_handle) != CURLE_OK) {
-        fprintf(stderr, "THERE IS NO SCANNER\n");
+        DBG( 1, "The scanner didn't respond.\n");
         *status = SANE_STATUS_INVAL;
     }
     data = xmlReadMemory(var->memory, var->size, "file.xml", NULL, 0);
@@ -370,6 +385,5 @@ escl_capabilities(SANE_String_Const name, SANE_Status *status)
     xmlMemoryDump();
     curl_easy_cleanup(curl_handle);
     free(var->memory);
-    curl_global_cleanup();
     return (scanner);
 }

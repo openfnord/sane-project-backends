@@ -454,6 +454,28 @@ AS_IF([test xno != "x$with_libcurl"],
 AM_CONDITIONAL([have_libcurl], [test x != "x$libcurl_LIBS"])
 
 dnl ******************************************************************
+dnl Check for poppler-glib availability
+dnl ******************************************************************
+AC_ARG_WITH(poppler-glib,
+  AS_HELP_STRING([--with-poppler-glib],
+    [enable functionality that needs poppler-glib @<:@default=check@:>@]),
+  [],
+  [with_poppler_glib=check])
+AC_DEFINE(HAVE_POPPLER_GLIB,
+  [0], [Define to 1 if libpoppler-glib is available])
+AS_IF([test xno != "x$with_poppler_glib"],
+  [PKG_CHECK_MODULES(POPPLER_GLIB, [poppler-glib],
+     [AC_DEFINE([HAVE_POPPLER_GLIB], [1])
+      with_poppler_glib=yes
+     ],
+     [AS_IF([test xcheck != "x$with_poppler_glib"],
+        [AC_MSG_ERROR([poppler-glib requested but not found])])
+      with_poppler_glib=no
+     ])
+  ])
+AM_CONDITIONAL([have_poppler_glib], [test x != "x$POPPLER_GLIB_LIBS"])
+
+dnl ******************************************************************
 dnl Check for USB record/replay support
 dnl ******************************************************************
 AC_ARG_WITH(usb_record_replay,
@@ -769,54 +791,6 @@ AC_ARG_ENABLE(parport-directio,
     fi
   ])
 
-dnl ******************************************************************
-dnl  SANE API specification format conversion support
-dnl ******************************************************************
-AC_ARG_WITH(api-spec,
-  AS_HELP_STRING([--with-api-spec],
-    [convert API spec to supported output formats @<:@default=check@:>@]),
-    [],
-    [with_api_spec=check])
-dnl  Test for all tools that may be involved.  These tests are fast and
-dnl  running them allows for the Makefile targets to be formulated such
-dnl  that any non-requested formats can be made using a one-off without
-dnl  the need to reconfigure.
-AC_PATH_PROG(MAKEINDEX, makeindex, no)
-AC_PATH_PROG(DVIPS, dvips, no)
-AC_PATH_PROG(LATEX, latex, no)
-AC_PATH_PROG(PDFLATEX, pdflatex, no)
-AC_PATH_PROG(FIG2DEV, fig2dev, no)
-AC_PATH_PROG(GS, gs, no)
-AC_PATH_PROG(DLH, dlh, no)
-AC_PATH_PROG(PPMTOGIF, ppmtogif, no)
-AS_IF([test xno != "x$with_api_spec"],
-  [dnl  Flag formats for which all required tools have been found
-   AS_IF([   test xno != "x$MAKEINDEX" \
-          && test xno != "x$DVIPS" \
-          && test xno != "x$FIG2DEV" \
-          && test xno != "x$LATEX"],       [with_api_ps=yes])
-   AS_IF([   test xno != "x$MAKEINDEX" \
-          && test xno != "x$PDFLATEX" \
-          && test xno != "x$FIG2DEV" \
-          && test xno != "x$GS"],          [with_api_pdf=yes])
-   AS_IF([   test xno != "x$MAKEINDEX" \
-          && test xno != "x$DVIPS" \
-          && test xno != "x$FIG2DEV" \
-          && test xno != "x$DLH" \
-          && test xno != "x$GS" \
-          && test xno != "x$PPMTOFIG" ],   [with_api_html=yes])
-
-   AS_IF([test xyes = "x$with_api_spec" \
-          && test xyes != "x$with_api_ps" \
-          && test xyes != "x$with_api_pdf" \
-          && test xyes != "x$with_api_html"],
-     [AC_MSG_ERROR([tools to convert the API spec are missing])
-     ])
-  ])
-AM_CONDITIONAL(WITH_API_PS, [test x$with_api_ps = xyes])
-AM_CONDITIONAL(WITH_API_PDF, [test x$with_api_pdf = xyes])
-AM_CONDITIONAL(WITH_API_HTML, [test x$with_api_html = xyes])
-
 dnl ***********************************************************************
 dnl Write output files
 dnl ***********************************************************************
@@ -867,6 +841,7 @@ fi
 echo "IPv6 support:  `eval eval echo ${ipv6}`"
 echo "Avahi support: `eval eval echo ${enable_avahi}`"
 echo "cURL support:  `eval eval echo ${with_libcurl}`"
+echo "POPPLER_GLIB support:  `eval eval echo ${with_poppler_glib}`"
 echo "SNMP support:  `eval eval echo ${with_snmp}`"
 echo "-> The following backends will be built:"
 for backend in ${BACKENDS} ; do
