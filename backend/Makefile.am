@@ -906,6 +906,9 @@ libsane_pint_la_LIBADD = $(COMMON_LIBS) libpint.la ../sanei/sanei_init_debug.lo 
 
 libpixma_la_SOURCES = pixma/pixma.c \
 	pixma/pixma.h \
+	pixma/pixma_axis.c \
+	pixma/pixma_axis.h \
+	pixma/pixma_axis_private.h \
 	pixma/pixma_io_sanei.c \
 	pixma/pixma_io.h \
 	pixma/pixma_common.c \

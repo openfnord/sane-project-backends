@@ -53,6 +53,7 @@
 #include "pixma_common.h"
 #include "pixma_io.h"
 #include "pixma_bjnp.h"
+#include "pixma_axis.h"
 
 #include "../include/sane/sanei_usb.h"
 #include "../include/sane/sane.h"
@@ -91,6 +92,7 @@ typedef struct scanner_info_t
 
 #define INT_USB 0
 #define INT_BJNP 1
+#define INT_AXIS 2
 
 static scanner_info_t *first_scanner = NULL;
 static pixma_io_t *first_io = NULL;
@@ -127,9 +129,9 @@ attach (SANE_String_Const devname)
 
 
 static SANE_Status
-attach_bjnp (SANE_String_Const devname,
+attach_net (SANE_String_Const devname,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg)
+             const struct pixma_config_t *cfg, int interface)
 {
   scanner_info_t *si;
 
@@ -142,11 +144,27 @@ attach_bjnp (SANE_String_Const devname,
 
   si->cfg = cfg;
   sprintf(si->serial, "%s_%s", cfg->model, serial);
-  si -> interface = INT_BJNP;
+  si -> interface = interface;
   si->next = first_scanner;
   first_scanner = si;
   nscanners++;
   return SANE_STATUS_GOOD;
+}
+
+static SANE_Status
+attach_bjnp (SANE_String_Const devname,
+             SANE_String_Const serial,
+             const struct pixma_config_t *cfg)
+{
+  return attach_net(devname, serial, cfg, INT_BJNP);
+}
+
+static SANE_Status
+attach_axis (SANE_String_Const devname,
+             SANE_String_Const serial,
+             const struct pixma_config_t *cfg)
+{
+  return attach_net(devname, serial, cfg, INT_AXIS);
 }
 
 static void
@@ -296,6 +314,7 @@ pixma_io_init (void)
 {
   sanei_usb_init ();
   sanei_bjnp_init();
+  sanei_axis_init();
   nscanners = 0;
   return 0;
 }
@@ -347,6 +366,16 @@ pixma_collect_devices (const char **conf_devices,
       j++;
 
     }
+  sanei_axis_find_devices(conf_devices, attach_axis, pixma_devices);
+  si = first_scanner;
+  while (j < nscanners)
+    {
+      PDBG (pixma_dbg (3, "pixma_collect_devices() found %s at %s\n",
+               si->cfg->name, si->devname));
+      si = si->next;
+      j++;
+
+    }
   return nscanners;
 }
 
@@ -378,6 +407,8 @@ pixma_connect (unsigned devnr, pixma_io_t ** handle)
     return PIXMA_EINVAL;
   if (si-> interface == INT_BJNP)
     error = map_error (sanei_bjnp_open (si->devname, &dev));
+  else if (si-> interface == INT_AXIS)
+    error = map_error (sanei_axis_open (si->devname, &dev));
   else
     error = map_error (sanei_usb_open (si->devname, &dev));
 
@@ -388,6 +419,8 @@ pixma_connect (unsigned devnr, pixma_io_t ** handle)
     {
       if (si -> interface == INT_BJNP)
         sanei_bjnp_close (dev);
+      else if (si -> interface == INT_AXIS)
+        sanei_axis_close (dev);
       else
         sanei_usb_close (dev);
       return PIXMA_ENOMEM;
@@ -416,6 +449,8 @@ pixma_disconnect (pixma_io_t * io)
     return;
   if (io-> interface == INT_BJNP)
     sanei_bjnp_close (io->dev);
+  else if (io-> interface == INT_AXIS)
+    sanei_axis_close (io->dev);
   else
     sanei_usb_close (io->dev);
   *p = io->next;
@@ -467,6 +502,11 @@ pixma_write (pixma_io_t * io, const void *cmd, unsigned len)
     sanei_bjnp_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
     error = map_error (sanei_bjnp_write_bulk (io->dev, cmd, &count));
     }
+  else if (io->interface == INT_AXIS)
+    {
+    sanei_axis_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
+    error = map_error (sanei_axis_write_bulk (io->dev, cmd, &count));
+    }
   else
     {
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
@@ -498,6 +538,11 @@ pixma_read (pixma_io_t * io, void *buf, unsigned size)
     {
     sanei_bjnp_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
     error = map_error (sanei_bjnp_read_bulk (io->dev, buf, &count));
+    }
+  else if (io-> interface == INT_AXIS)
+    {
+    sanei_axis_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
+    error = map_error (sanei_axis_read_bulk (io->dev, buf, &count));
     }
   else
     {
@@ -531,6 +576,11 @@ pixma_wait_interrupt (pixma_io_t * io, void *buf, unsigned size, int timeout)
       sanei_bjnp_set_timeout (io->dev, timeout);
       error = map_error (sanei_bjnp_read_int (io->dev, buf, &count));
     }
+  else if (io-> interface == INT_AXIS)
+    {
+      sanei_axis_set_timeout (io->dev, timeout);
+      error = map_error (sanei_axis_read_int (io->dev, buf, &count));
+    }
   else
     {
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
@@ -539,7 +589,8 @@ pixma_wait_interrupt (pixma_io_t * io, void *buf, unsigned size, int timeout)
       error = map_error (sanei_usb_read_int (io->dev, buf, &count));
     }
   if (error == PIXMA_EIO ||
-      (io->interface == INT_BJNP && error == PIXMA_EOF))     /* EOF is a bjnp timeout error! */
+      (io->interface == INT_BJNP && error == PIXMA_EOF) ||  /* EOF is a bjnp timeout error! */
+      (io->interface == INT_AXIS && error == PIXMA_EOF))    /* EOF is a bjnp timeout error! */
     error = PIXMA_ETIMEDOUT;	/* FIXME: SANE doesn't have ETIMEDOUT!! */
   if (error == 0)
     error = count;
