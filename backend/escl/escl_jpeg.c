@@ -203,9 +203,14 @@ get_JPEG_data(capabilities_t *scanner, int *width, int *height, int *bps)
     if (scanner->pos_y < 0)
           scanner->pos_y = 0;
 
+#ifdef MODERN_JPEG
     x_off = scanner->pos_x;
-    w = scanner->width - x_off;
     y_off = scanner->pos_y;
+#else
+    x_off = 0;
+    y_off = 0;
+#endif
+    w = scanner->width - x_off;
     h = scanner->height - y_off;
     surface = malloc(w * h * cinfo.output_components);
     if (surface == NULL) {
@@ -218,11 +223,15 @@ get_JPEG_data(capabilities_t *scanner, int *width, int *height, int *bps)
         return (SANE_STATUS_NO_MEM);
     }
     jpeg_start_decompress(&cinfo);
+#ifdef MODERN_JPEG
     if (x_off > 0 || w < cinfo.output_width)
        jpeg_crop_scanline(&cinfo, &x_off, &w);
+#endif
     lineSize = w * cinfo.output_components;
+#ifdef OLD_JPEG
     if (y_off > 0)
         jpeg_skip_scanlines(&cinfo, y_off);
+#endif
     pos = 0;
     while (cinfo.output_scanline < (unsigned int)scanner->height) {
         rowptr[0] = (JSAMPROW)surface + (lineSize * pos); // ..cinfo.output_scanline);
