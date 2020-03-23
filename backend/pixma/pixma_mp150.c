@@ -735,7 +735,14 @@ send_scan_param (pixma_t * s)
 	  data[0x29] = 0x35;
 	  break;
 
-	default:
+        case MX490_PID:      /* also for this scanner. */
+          data[0x26] = 0x32; /* using example values from a real scan here */
+          data[0x27] = 0x32;
+          data[0x28] = 0x33;
+          data[0x29] = 0x35;
+          break;
+
+        default:
 	  break;
 	}
 
@@ -1741,7 +1748,7 @@ const pixma_config_t pixma_mp150_devices[] = {
   DEVICE ("Canon PIXMA E460 Series",  "E460",  E460_PID, 0,  600, 0, 0, 638, 877, PIXMA_CAP_CIS),
 
   /* Latest devices (2015) Generation 5 CIS */
-  DEVICE ("Canon PIXMA MX490 Series", "MX490", MX490_PID, 0, 600, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
+  DEVICE ("Canon PIXMA MX490 Series", "MX490", MX490_PID, 0, 600, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADF | PIXMA_CAP_ADF_JPEG),
   DEVICE ("Canon PIXMA E480 Series",  "E480",  E480_PID, 0, 600, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
   DEVICE ("Canon PIXMA MG3600 Series", "MG3600", MG3600_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA MG7700 Series", "MG7700", MG7700_PID, 0, 2400, 0, 0, 638, 877, PIXMA_CAP_CIS),
