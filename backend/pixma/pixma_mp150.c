@@ -611,16 +611,23 @@ send_gamma_table (pixma_t * s)
 }
 
 static unsigned
-calc_raw_width (const mp150_t * mp, const pixma_scan_param_t * param)
+calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param)
 {
+  mp150_t *mp = (mp150_t *) s->subdriver;
   unsigned raw_width;
   /* NOTE: Actually, we can send arbitary width to MP150. Lines returned
      are always padded to multiple of 4 or 12 pixels. Is this valid for
      other models, too? */
   if (mp->generation >= 2)
     {
+#if 1
       raw_width = ALIGN_SUP ((param->w * mp->scale) + param->xs, 32);
-      /* PDBG (pixma_dbg (4, "*calc_raw_width***** width %i extended by %i and rounded to %i *****\n", param->w, param->xs, raw_width)); */
+#else
+      raw_width = MIN(ALIGN_SUP ((param->w * mp->scale) + param->xs, 32),
+                      s->cfg->width * param->xdpi / 75 * mp->scale);
+#endif
+      PDBG (pixma_dbg (0, "*calc_raw_width***** width %i extended by %i and rounded to %i *****\n", param->w, param->xs, raw_width));
+      PDBG (pixma_dbg (0, "*calc_raw_width***** width @ 75dpi: %i; selected dpi: %i; scale = %i *****\n", s->cfg->width, param->xdpi, mp->scale));
     }
   else if (param->channels == 1)
     {
@@ -655,7 +662,7 @@ send_scan_param (pixma_t * s)
   unsigned x = s->param->x * mp->scale;
   unsigned xs = s->param->xs;
   unsigned y = s->param->y * mp->scale;
-  unsigned wx = calc_raw_width (mp, s->param);
+  unsigned wx = calc_raw_width (s, s->param);
   unsigned h = MIN (s->param->h, s->cfg->height * s->param->ydpi / 75) * mp->scale;
 
   if (mp->generation <= 2)
@@ -1269,7 +1276,7 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
   else
       sp->xs = 0;
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** Selected origin, origin shift: %i, %i *****\n", sp->x, sp->xs));*/
-  sp->wx = calc_raw_width (mp, sp);
+  sp->wx = calc_raw_width (s, sp);
   sp->line_size = sp->w * sp->channels * (((sp->software_lineart) ? 8 : sp->depth) / 8);              /* bytes per line per color after cropping */
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** Final scan width and line-size: %i, %li *****\n", sp->wx, sp->line_size));*/
 
