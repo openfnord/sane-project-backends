@@ -1074,6 +1074,7 @@ post_process_image_data (pixma_t * s, pixma_imagebuf_t * ib)
   if (s->param->mode_jpeg)
     {
       /* No post-processing, send raw JPEG data to main */
+      PDBG (pixma_dbg (4, "*post_process_image_data***** Exit: JPEG scanning ***** \n"));
       ib->rptr = mp->imgbuf;
       ib->rend = mp->data_left_ofs;
       return 0;    /* # of non processed bytes */
@@ -1509,7 +1510,7 @@ mp150_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
         }
 
       bytes_received = error;
-      /*PDBG (pixma_dbg (4, "*mp150_fill_buffer***** %u bytes received by read_image_block *****\n", bytes_received));*/
+      PDBG (pixma_dbg (4, "*mp150_fill_buffer***** %u bytes received by read_image_block *****\n", bytes_received));
       block_size = pixma_get_be32 (header + 12);
       mp->last_block = header[8] & 0x38;
       if ((header[8] & ~0x38) != 0)
