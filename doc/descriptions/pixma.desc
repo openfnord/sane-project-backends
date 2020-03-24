@@ -14,6 +14,7 @@
 :version "0.27.4"                 ; version of backend (or "unmaintained")
 :manpage "sane-pixma"             ; name of manpage (if it exists)
 ;:comment "Devices marked as experimantal are disabled by default. See the manual page for how to enable them."
+:comment "Canon provides some scanner families with different names for marketing issues. These scanners have a 'x' in their name which stands for any number (1-9)."
 
 :devicetype :scanner              ; start of a list of devices....
                                   ; other types:  :stillcam, :vidcam,
@@ -1434,6 +1435,18 @@
 :comment "Flatbed scan. All resolutions supported (up to 600DPI). ADF buggy."
 
 :model "i-SENSYS MF4700 Series"
+:interface "USB Ethernet"
+:usbid "0x04a9" "0x2774"
+:status :good
+:comment "Flatbed scan. All resolutions supported (up to 600DPI). ADF buggy."
+
+:model "i-SENSYS MF47x0n"
+:interface "USB Ethernet"
+:usbid "0x04a9" "0x2774"
+:status :good
+:comment "Flatbed scan. All resolutions supported (up to 600DPI). ADF buggy."
+
+:model "imageCLASS MF47x0n"
 :interface "USB Ethernet"
 :usbid "0x04a9" "0x2774"
 :status :good
