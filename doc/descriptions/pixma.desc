@@ -864,7 +864,7 @@
 :comment "Flatbed and ADF scan. All resolutions supported (up to 4800DPI)"
 
 :model "PIXMA TR4500 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1854"
 :status :untested
 :comment "Testers needed!"
@@ -906,22 +906,22 @@
 :comment "Testers needed!"
 
 :model "PIXMA TS3100 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1827"
-:status :good
-:comment "All resolutions supported (up to 600DPI). WiFi not working."
+:status :complete
+:comment "All resolutions supported (up to 600DPI)."
 
 :model "PIXMA TS3300 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x18a2"
 :status :untested
 :comment "Testers needed!"
 
 :model "PIXMA TS5000 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1802"
-:status :good
-:comment "All resolutions supported (up to 1200DPI). WiFi not working."
+:status :complete
+:comment "All resolutions supported (up to 1200DPI)."
 
 :model "PIXMA TS5100 Series"
 :interface "USB WiFi"
@@ -948,10 +948,10 @@
 :comment "Testers needed!"
 
 :model "PIXMA TS6100 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1822"
-:status :good
-:comment "All resolutions supported (up to 2400DPI). WiFi not working."
+:status :complete
+:comment "All resolutions supported (up to 2400DPI)."
 
 :model "PIXMA TS6130 Series"
 :interface "USB WiFi"
@@ -966,10 +966,10 @@
 :comment "Testers needed!"
 
 :model "PIXMA TS6200 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1856"
-:status :good
-:comment "All resolutions supported (up to 1200DPI). WiFi not working."
+:status :complete
+:comment "All resolutions supported (up to 1200DPI)."
 
 :model "PIXMA TS6230 Series"
 :interface "USB WiFi"
@@ -984,9 +984,9 @@
 :comment "Testers needed!"
 
 :model "PIXMA TS6300 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x188b"
-:status :good
+:status :untested
 :comment "Testers needed!"
 
 :model "PIXMA TS6330 Series"
@@ -1008,10 +1008,10 @@
 :comment "Testers needed!"
 
 :model "PIXMA TS8000 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1800"
-:status :good
-:comment "All resolutions supported (up to 2400DPI). WiFi not working."
+:status :complete
+:comment "All resolutions supported (up to 2400DPI)."
 
 :model "PIXMA TS8100 Series"
 :interface "USB WiFi"
@@ -1032,10 +1032,10 @@
 :comment "Testers needed!"
 
 :model "PIXMA TS8200 Series"
-:interface "USB WiFi"
+:interface "USB"
 :usbid "0x04a9" "0x1859"
-:status :good
-:comment "All resolutions supported (up to 1200DPI). WiFi not working."
+:status :complete
+:comment "All resolutions supported (up to 1200DPI)."
 
 :model "PIXMA TS8230 Series"
 :interface "USB WiFi"

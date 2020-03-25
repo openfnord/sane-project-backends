@@ -4,3 +4,52 @@
 :comment "The eSCL backend for sane supports AirScan/eSCL devices that announce themselves on mDNS as _uscan._utcp or _uscans._utcp"
 
 :devicetype :scanner
+
+:mfg "Canon"                   ; name a manufacturer
+:url "http://www.canon.com/"
+
+:model "PIXMA TR4500 Series"
+:interface "WiFi"
+:status :complete
+
+:model "PIXMA TS3100 Series"
+:interface "WiFi"
+:status :complete
+
+:model "PIXMA TS3300 Series"
+:interface "WiFi"
+:status :complete
+
+:model "PIXMA TS5000 Series"
+:interface "WiFi"
+:status :complete
+
+:model "PIXMA TS6100 Series"
+:interface "WiFi"
+:status :complete
+
+:model "PIXMA TS6200 Series"
+:interface "WiFi"
+:status :complete
+
+:model "PIXMA TS8000 Series"
+:interface "WiFi"
+:status :untested
+:comment "Testers needed!"
+
+:model "PIXMA TS8200 Series"
+:interface "WiFi"
+:status :untested
+:comment "Testers needed!"
+
+:model "MAXIFY MB5400 Series"
+:interface "WiFi"
+:status :complete
+
+:model "imageCLASS D570"
+:interface "WiFi"
+:status :complete
+
+:model "i-SENSYS MF740 Series"
+:interface "WiFi"
+:status :complete
