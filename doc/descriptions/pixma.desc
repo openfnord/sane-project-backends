@@ -915,8 +915,8 @@
 :model "PIXMA TS3300 Series"
 :interface "USB"
 :usbid "0x04a9" "0x18a2"
-:status :untested
-:comment "Testers needed!"
+:status :complete
+:comment "All resolutions supported (up to 1200DPI)."
 
 :model "PIXMA TS5000 Series"
 :interface "USB"
