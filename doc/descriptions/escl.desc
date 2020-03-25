@@ -9,6 +9,11 @@
 :mfg "Canon"                   ; name a manufacturer
 :url "http://www.canon.com/"
 
+:model "PIXMA MG3000 Series"
+:interface "WiFi"
+:status :untested
+:comment "Testers needed!"
+
 :model "PIXMA TR4500 Series"
 :interface "WiFi"
 :status :complete
