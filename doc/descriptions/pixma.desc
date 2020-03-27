@@ -913,7 +913,7 @@
 :comment "All resolutions supported (up to 600DPI). WiFi not working."
 
 :model "PIXMA TS3100 Series<br><br>PIXMA TS3150<br>PIXMA TS3151<br>PIXMA TS3153"
-:interface "USB WiFi"
+:interface "USB<br>WiFi"
 :usbid "0x04a9" "0x1827"
 :status :good
 :comment "All resolutions supported (up to 600DPI). WiFi not working."
@@ -1459,7 +1459,7 @@
 :comment "Flatbed scan. All resolutions supported (up to 600DPI). ADF buggy."
 
 :model "i-SENSYS MF4700 Series<br><br>imageCLASS MF4720w<br>i-SENSYS MF4730<br>i-SENSYS MF4750<br>imageCLASS MF4770n<br>i-SENSYS MF4780w"
-:interface "USB Ethernet WiFi"
+:interface "USB<br>Ethernet<br>WiFi"
 :usbid "0x04a9" "0x2774"
 :status :complete
 :comment "Flatbed and ADF scan. All resolutions supported (up to 600DPI).<br>Suffix: none=USB only, n=USB & Ethernet, w=all interfaces"
