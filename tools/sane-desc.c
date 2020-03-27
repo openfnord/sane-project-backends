@@ -2599,14 +2599,14 @@ html_backends_split_table (device_type dev_type)
 
 			  if (model->url && model->url->name)
 			    printf
-			      ("<td align=center><a href=\"%s\">%s</a></td>\n",
+			      ("<td align=center style='white-space: nowrap'><a href=\"%s\">%s</a></td>\n",
 			       model->url->name, model->name);
 			  else
-			    printf ("<td align=center>%s</td>\n",
+			    printf ("<td align=center style='white-space: nowrap'>%s</td>\n",
 				    model->name);
 
 			  if (model->interface)
-			    printf ("<td align=center>%s</td>\n",
+			    printf ("<td align=center style='white-space: nowrap'>%s</td>\n",
 				    model->interface);
 			  else
 			    printf ("<td align=center>?</td>\n");
@@ -2710,14 +2710,16 @@ html_mfgs_table (device_type dev_type)
 	  enum status_entry status = model_record->status;
 
 	  if (model_record->url && model_record->url->name)
-	    printf ("<tr><td align=center><a "
+	    printf ("<tr><td align=center style='white-space: nowrap'><a "
 		    "href=\"%s\">%s</a></td>\n",
 		    model_record->url->name, model_record->name);
 	  else
-	    printf ("<tr><td align=center>%s</td>\n", model_record->name);
+	    printf ("<tr><td align=center style='white-space: nowrap'>%s</td>\n",
+	            model_record->name);
 
 	  if (model_record->interface)
-	    printf ("<td align=center>%s</td>\n", model_record->interface);
+	    printf ("<td align=center style='white-space: nowrap'>%s</td>\n",
+	            model_record->interface);
 	  else
 	    printf ("<td align=center>?</td>\n");
 
