@@ -89,10 +89,8 @@ nobase_dist_doc_DATA = $(BEDOCS)
 EXTRA_DIST += descriptions.txt releases.md sane-logo2.jpg sane-logo.png \
   sane.png
 
-MAN2HTML = nroff -c -man |\
-	  man2html -compress -topm 6 -botm 6 -nodepage -title $${page} \
-          -cgiurl '$$title.$$section.html'|\
-	  sed 's,<BODY>,<BODY BGCOLOR=\#FFFFFF TEXT=\#000000><H1 ALIGN=CENTER><IMG SRC="/images/sane.png" HEIGHT=117 WIDTH=346></H1>,'
+MAN2HTML = mandoc -T utf8 -T html \
+	    | sed 's|<b>\([^<]*\)</b>(\([0-9]\))|<a href="\1.\2.\html"><b>\1</b>(\2)</a>|g'
 
 %.1 %.5 %.7 %.8: %.man
 	@echo "Generating manpage $@...";
