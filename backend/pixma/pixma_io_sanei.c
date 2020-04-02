@@ -109,6 +109,40 @@ get_scanner_info (unsigned devnr)
   return si;
 }
 
+static const struct pixma_config_t *lookup_scanner(const char *makemodel,
+                                                   const struct pixma_config_t *const pixma_devices[])
+{
+  int i;
+  const struct pixma_config_t *cfg;
+  char *match;
+
+  for (i = 0; pixma_devices[i]; i++)
+    {
+      /* loop through the device classes (mp150, mp730 etc) */
+      for (cfg = pixma_devices[i]; cfg->name; cfg++)
+        {
+          /* loop through devices in class */
+          pixma_dbg( 5, "lookup_scanner: Checking for %s in %s\n", makemodel, cfg->model);
+          if ((match = strcasestr (makemodel, cfg->model)) != NULL)
+            {
+              /* possible match found, make sure it is not a partial match */
+              /* MP600 and MP600R are different models! */
+              /* some models contain ranges, so check for a '-' too */
+
+              if ((match[strlen(cfg->model)] == ' ') ||
+                  (match[strlen(cfg->model)] == '\0') ||
+                  (match[strlen(cfg->model)] == '-'))
+                {
+                  pixma_dbg (3, "lookup_scanner: Scanner model found: Name %s(%s) matches %s\n", cfg->model, cfg->name, makemodel);
+                  return cfg;
+                }
+            }
+       }
+    }
+  pixma_dbg (3, "lookup_scanner: Scanner model %s not found, giving up!\n", makemodel);
+  return NULL;
+}
+
 static SANE_Status
 attach (SANE_String_Const devname)
 {
@@ -129,11 +163,13 @@ attach (SANE_String_Const devname)
 
 
 static SANE_Status
-attach_net (SANE_String_Const devname,
+attach_net (SANE_String_Const devname,  SANE_String_Const makemodel,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg, int interface)
+             const struct pixma_config_t *const pixma_devices[],int interface)
 {
   scanner_info_t *si;
+  const pixma_config_t *cfg;
+  SANE_Status error;
 
   si = (scanner_info_t *) calloc (1, sizeof (*si));
   if (!si)
@@ -141,30 +177,38 @@ attach_net (SANE_String_Const devname,
   si->devname = strdup (devname);
   if (!si->devname)
     return SANE_STATUS_NO_MEM;
-
-  si->cfg = cfg;
-  sprintf(si->serial, "%s_%s", cfg->model, serial);
-  si -> interface = interface;
-  si->next = first_scanner;
-  first_scanner = si;
-  nscanners++;
-  return SANE_STATUS_GOOD;
+  if ((cfg = lookup_scanner(makemodel, pixma_devices)) == (struct pixma_config_t *)NULL)
+    {
+      pixma_dbg (0, "attach_net: Scanner %s is not supported, model is unknown! Please report upstream\n", makemodel);
+      error = SANE_STATUS_INVAL;
+    }
+  else
+    {
+      si->cfg = cfg;
+      sprintf(si->serial, "%s_%s", cfg->model, serial);
+      si -> interface = interface;
+      si->next = first_scanner;
+      first_scanner = si;
+      nscanners++;
+      error = SANE_STATUS_GOOD;
+    }
+  return error;
 }
 
 static SANE_Status
-attach_bjnp (SANE_String_Const devname,
+attach_bjnp (SANE_String_Const devname, SANE_String_Const makemodel,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg)
+             const struct pixma_config_t *const pixma_devices[])
 {
-  return attach_net(devname, serial, cfg, INT_BJNP);
+  return attach_net(devname, makemodel, serial, pixma_devices, INT_BJNP);
 }
 
 static SANE_Status
-attach_axis (SANE_String_Const devname,
+attach_axis (SANE_String_Const devname, SANE_String_Const makemodel,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg)
+             const struct pixma_config_t *const pixma_devices[])
 {
-  return attach_net(devname, serial, cfg, INT_AXIS);
+  return attach_net(devname, makemodel, serial, pixma_devices, INT_AXIS);
 }
 
 static void
