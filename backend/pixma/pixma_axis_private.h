@@ -83,7 +83,6 @@ typedef struct device_s
   int tcp_socket;		/* open tcp socket for communcation to scannner */
   /* device information */
   struct in_addr addr;		/* IP address of the scanner */
-  int axis_timeout;             /* timeout (msec) for next poll command */
   int int_size;			/* size of interrupt data */
   uint8_t int_data[16];		/* interrupt data */
 } axis_device_t;
