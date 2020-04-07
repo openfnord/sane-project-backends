@@ -410,7 +410,8 @@ pixma_collect_devices (const char **conf_devices,
       j++;
 
     }
-  sanei_axis_find_devices(conf_devices, attach_axis, pixma_devices);
+  if (! local_only)
+    sanei_axis_find_devices(conf_devices, attach_axis, pixma_devices);
   si = first_scanner;
   while (j < nscanners)
     {
@@ -634,7 +635,7 @@ pixma_wait_interrupt (pixma_io_t * io, void *buf, unsigned size, int timeout)
     }
   if (error == PIXMA_EIO ||
       (io->interface == INT_BJNP && error == PIXMA_EOF) ||  /* EOF is a bjnp timeout error! */
-      (io->interface == INT_AXIS && error == PIXMA_EOF))    /* EOF is a bjnp timeout error! */
+      (io->interface == INT_AXIS && error == PIXMA_EOF))    /* EOF is an axis timeout error! */
     error = PIXMA_ETIMEDOUT;	/* FIXME: SANE doesn't have ETIMEDOUT!! */
   if (error == 0)
     error = count;
