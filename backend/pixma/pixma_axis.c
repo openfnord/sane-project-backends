@@ -98,13 +98,13 @@ static ssize_t receive_packet(int socket, void *packet, size_t len, struct socka
   case 0:
     return 0;
   case -1:
-    DBG(LOG_CRIT, "select() failed");
+    DBG(LOG_CRIT, "select() failed\n");
     return 0;
   default:
     received = recvfrom(socket, packet, len, 0, (struct sockaddr *)from, &from_len);
     if (received < 0) {
-      DBG(LOG_CRIT, "Error receiving packet");
-      exit(2);
+      DBG(LOG_CRIT, "Error receiving packet\n");
+      return 0;
     }
 /*#ifdef DEBUG
     int i;
@@ -127,7 +127,7 @@ static ssize_t axis_send_wimp(int udp_socket, uint8_t cmd, void *data, uint16_t 
   memcpy(packet + sizeof(struct axis_wimp_header), data, len);
   ret = sendto(udp_socket, packet, sizeof(struct axis_wimp_header) + len, 0, addr, addrlen);
   if (ret != (int)sizeof(struct axis_wimp_header) + len) {
-    DBG(LOG_CRIT, "Unable to send UDP packet");
+    DBG(LOG_CRIT, "Unable to send UDP packet\n");
     return ret;
   }
 
@@ -174,12 +174,12 @@ static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
 
   udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
   if (udp_socket < 0) {
-    DBG(LOG_CRIT, "Unable to create UDP socket");
+    DBG(LOG_CRIT, "Unable to create UDP socket\n");
     return -1;
   }
 
   if (setsockopt(udp_socket, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable))) {
-    DBG(LOG_CRIT, "Unable to enable broadcast");
+    DBG(LOG_CRIT, "Unable to enable broadcast\n");
     return -1;
   }
 
@@ -187,7 +187,7 @@ static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
   address.sin_port = 0; /* random */
   address.sin_addr.s_addr = addr;
   if (bind(udp_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    DBG(LOG_CRIT, "Unable to bind UDP socket");
+    DBG(LOG_CRIT, "Unable to bind UDP socket\n");
     return -1;
   }
 
@@ -210,7 +210,7 @@ static int get_server_status(int udp_socket, uint32_t addr, uint16_t remote_port
   /* connect the socket to this print server only */
 
   if (connect(udp_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    DBG(LOG_CRIT, "Unable to connect UDP socket");
+    DBG(LOG_CRIT, "Unable to connect UDP socket\n");
     return -1;
   }
 
@@ -241,13 +241,17 @@ static int get_device_name(int udp_socket, uint32_t addr, uint16_t remote_port, 
   /* connect the socket to this print server only */
 
   if (connect(udp_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    DBG(LOG_CRIT, "Unable to connect UDP socket");
+    DBG(LOG_CRIT, "Unable to connect UDP socket\n");
     return -1;
   }
 
+  buf[0] = '\0';
   /* get device name */
   if (axis_wimp_get(udp_socket, remote_port, WIMP_GET_NAME, 1, buf, sizeof(buf)))
-    DBG(LOG_NOTICE, "Error getting device name\n");
+    {
+      DBG(LOG_NOTICE, "Error getting device name\n");
+      return -1;
+    }
   DBG(LOG_INFO, "name=%s\n", buf);
 
   strncpy(devname, buf, devname_len);
@@ -270,7 +274,7 @@ static int send_discover(int udp_socket, uint32_t addr, uint16_t source_port) {
 
   ret = axis_send_wimp(udp_socket, WIMP_SERVER_INFO, get_info, sizeof(get_info), (struct sockaddr *)&address, sizeof(address));
   if (ret)
-    DBG(LOG_CRIT, "Unable to send discover packet");
+    DBG(LOG_CRIT, "Unable to send discover packet\n");
 
   return ret;
 }
@@ -280,7 +284,7 @@ static int send_broadcasts(int udp_socket, uint16_t source_port) {
   int num_sent = 0;
 
   if (getifaddrs(&ifaddr) == -1) {
-    DBG(LOG_CRIT, "Unable to obtain network interface list");
+    DBG(LOG_CRIT, "Unable to obtain network interface list\n");
     return -1;
   }
 
@@ -313,7 +317,7 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
     fprintf(stderr, "%02x ", packet[i]);
   fprintf(stderr, "\n");
   if (ret < 0) {
-    perror("Error sending packet");
+    DBG(LOG_NOTICE, "Error sending packet\n");
     return ret;
   }
 
@@ -326,7 +330,7 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
     fprintf(stderr, "%02x ", packet[i]);
   fprintf(stderr, "\n");
   if (ret < 0) {
-    perror("Error sending packet");
+    DBG(LOG_NOTICE, "Error sending packet\n");
     return ret;
   }
 
@@ -408,6 +412,55 @@ retry:
   return 0;
 }
 
+static int
+parse_uri(const char *uri, struct sockaddr_in *address)
+{
+  const char *uri_host, *uri_port;
+  char host[256];
+  size_t host_len;
+  int port;
+
+  if (strncmp(uri, "axis://", 7))
+    {
+      DBG(LOG_INFO, "Invalid protocol in uri\n");
+      return -1;
+    }
+  uri_host = uri + 7;
+
+  port = AXIS_SCAN_PORT;
+  uri_port = strchr(uri_host, ':');
+  if (uri_port)
+    {
+      sscanf(uri_port, ":%d", &port);
+      host_len = uri_port - uri_host;
+    }
+  else
+    host_len = strlen(uri_host);
+  if (host_len > 255)
+    host_len = 255;
+  strncpy(host, uri_host, host_len);
+  host[host_len] = '\0';
+
+  /* resolve host */
+  struct addrinfo *result;
+  struct addrinfo hints = { .ai_family = AF_INET, .ai_socktype = SOCK_STREAM, .ai_protocol = IPPROTO_TCP };
+  int err = getaddrinfo(host, NULL, &hints, &result);
+  if (err)
+    {
+      DBG(LOG_INFO, "getaddrinfo failed: %s\n", gai_strerror(err));
+      return -1;
+    }
+  struct sockaddr_in *addr = (struct sockaddr_in *) result->ai_addr;
+  DBG(LOG_DEBUG, "host=%s, ip=%s, port=%d\n", host, inet_ntoa(addr->sin_addr), port);
+  address->sin_family = AF_INET;
+  address->sin_port = htons(port);
+  address->sin_addr = addr->sin_addr;
+
+  freeaddrinfo(result);
+
+  return 0;
+}
+
 
 /**
  * Find AXIS printservers with Canon support
@@ -432,13 +485,61 @@ sanei_axis_find_devices (const char **conf_devices,
   char uri[256];
   uint8_t packet[MAX_PACKET_DATA_SIZE];
   struct sockaddr_in from;
-  uint16_t source_port, remote_port;
+  uint16_t source_port;
   int udp_socket, num_ifaces;
+  int auto_detect = 1, i;
+
+  /* parse config file */
+  if (conf_devices[0] != NULL)
+    {
+      if (strcmp(conf_devices[0], "networking=no") == 0)
+        {
+          /* networking=no may only occur on the first non-commented line */
+          DBG(LOG_DEBUG, "sanei_axis_find_devices: networking disabled in configuration file\n");
+          return SANE_STATUS_GOOD;
+        }
+      for (i = 0; conf_devices[i] != NULL; i++)
+        {
+	  if (!strcmp(conf_devices[i], "auto_detection=no"))
+            {
+              auto_detect = 0;
+	      DBG(LOG_DEBUG, "sanei_axis_find_devices: auto detection of network scanners disabled in configuration file\n");
+	      continue;
+	    }
+	  else
+            {
+              DBG(LOG_DEBUG, "sanei_axis_find_devices: Adding scanner from pixma.conf: %s\n", conf_devices[i]);
+              strncpy(uri, conf_devices[i], sizeof(uri) - 1);
+              uri[sizeof(uri) - 1] = '\0';
+              if (axis_no_devices >= AXIS_NO_DEVICES)
+                {
+                  DBG(LOG_INFO, "sanei_axis_find_devices: device limit %d reached\n", AXIS_NO_DEVICES);
+                  return SANE_STATUS_NO_MEM;
+                }
+
+              struct sockaddr_in addr;
+              if (parse_uri(uri, &addr))
+                continue;
+              udp_socket = create_udp_socket(htonl(INADDR_ANY), &source_port);
+              if (udp_socket < 0)
+                return SANE_STATUS_IO_ERROR;
+              if (get_device_name(udp_socket, addr.sin_addr.s_addr, AXIS_WIMP_PORT, devname, sizeof(devname)) == 0)
+                {
+                  device[axis_no_devices++].addr = addr.sin_addr;
+                  attach_axis(uri, devname, inet_ntoa(addr.sin_addr), pixma_devices);
+                }
+              close(udp_socket);
+	    }
+        }
+    }
+
+  if (!auto_detect)
+    return SANE_STATUS_GOOD;
 
   udp_socket = create_udp_socket(htonl(INADDR_ANY), &source_port);
   if (udp_socket < 0)
     return SANE_STATUS_IO_ERROR;
-  DBG(LOG_INFO, "source port=%d\n", source_port);
+  DBG(LOG_DEBUG, "source port=%d\n", source_port);
 
   /* send broadcast discover packets to all interfaces */
   num_ifaces = send_broadcasts(udp_socket, source_port);
@@ -450,21 +551,18 @@ sanei_axis_find_devices (const char **conf_devices,
 //    struct axis_wimp_server_info *s_info = (void *)(packet + sizeof(struct axis_wimp_header));
 
     DBG(LOG_INFO, "got reply from %s\n", inet_ntoa(from.sin_addr));
-    /* get remote port */
-    remote_port = ntohs(from.sin_port);
-    DBG(LOG_INFO, "remote port=%d\n", remote_port);
     if (header->type != (WIMP_SERVER_INFO | WIMP_REPLY)) {
       DBG(LOG_NOTICE, "Received invalid reply\n");
       continue;
     }
 
-    get_device_name(udp_socket, from.sin_addr.s_addr, remote_port, devname, sizeof(devname));
-    /* construct URI */
-    sprintf (uri, "%s://%s:%d", "axis", inet_ntoa(from.sin_addr), AXIS_SCAN_PORT);
+    get_device_name(udp_socket, from.sin_addr.s_addr, ntohs(from.sin_port), devname, sizeof(devname));
+    sprintf(uri, "axis://%s", inet_ntoa(from.sin_addr));
 
     device[axis_no_devices++].addr = from.sin_addr;
     attach_axis(uri, devname, inet_ntoa(from.sin_addr), pixma_devices);
   }
+  close(udp_socket);
 
   return SANE_STATUS_GOOD;
 }
@@ -472,41 +570,16 @@ sanei_axis_find_devices (const char **conf_devices,
 extern SANE_Status
 sanei_axis_open (SANE_String_Const devname, SANE_Int * dn)
 {
-  const char *uri_ip, *uri_port;
-  char ip[16];
-  size_t ip_len;
-  int port = AXIS_SCAN_PORT;
-  struct in_addr addr;
   int i;
   char *username;
   struct sockaddr_in address;
 
   DBG(LOG_INFO, "%s(%s, %d)\n", __func__, devname, *dn);
-  if (strncmp(devname, "axis://", 7)) {
-    DBG(LOG_CRIT, "Invalid protocol in devname");
+  if (parse_uri(devname, &address))
     return SANE_STATUS_INVAL;
-  }
-  uri_ip = devname + 7;
-
-  uri_port = strchr(uri_ip, ':');
-  if (uri_port) {
-    sscanf(uri_port, ":%d", &port);
-    ip_len = uri_port - uri_ip;
-  } else
-    ip_len = strlen(uri_ip);
-  if (ip_len > sizeof(ip))
-    ip_len = sizeof(ip);
-  strncpy(ip, uri_ip, ip_len);
-  ip[ip_len] = '\0';
-
-  if (inet_aton(ip, &addr) == 0) {
-    DBG(LOG_CRIT, "Invalid IP address in devname");
-    return SANE_STATUS_INVAL;
-  }
-  DBG(LOG_INFO, "ip=%s, port=%d\n", inet_ntoa(addr), port);
 
   for (i = 0; i < axis_no_devices; i++)
-    if (device[i].addr.s_addr == addr.s_addr) {
+    if (device[i].addr.s_addr == address.sin_addr.s_addr) {
       DBG(LOG_INFO, "found device at position %d\n", i);
       *dn = i;
       /* connect */
@@ -515,10 +588,6 @@ sanei_axis_open (SANE_String_Const devname, SANE_Int * dn)
         perror("Unable to create TCP socket");
         return SANE_STATUS_IO_ERROR;
       }
-      address.sin_family = AF_INET;
-      /* set TCP destination port and address */
-      address.sin_port = htons(AXIS_SCAN_PORT);
-      address.sin_addr.s_addr = addr.s_addr;
       if (connect(tcp_socket, (struct sockaddr *) &address, sizeof(address)) < 0) {
         perror("Unable to connect");
         return SANE_STATUS_IO_ERROR;
@@ -542,7 +611,7 @@ sanei_axis_open (SANE_String_Const devname, SANE_Int * dn)
 
       return SANE_STATUS_GOOD;
     }
-/*FIXME: add to table */
+
   return SANE_STATUS_INVAL;
 }
 
