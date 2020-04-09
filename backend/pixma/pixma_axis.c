@@ -346,7 +346,7 @@ retry:
   }
 
   ret = recv(device[dn].tcp_socket, packet, sizeof(struct axis_header), 0);
-  if (ret < sizeof(struct axis_header)) {
+  if (ret < (ssize_t) sizeof(struct axis_header)) {
     DBG(LOG_NOTICE, "recv error\n");
     return -1;
   }
