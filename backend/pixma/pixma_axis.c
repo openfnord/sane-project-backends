@@ -64,6 +64,25 @@
 static axis_device_t device[AXIS_NO_DEVICES];
 static int axis_no_devices = 0;
 
+static void
+dbg_hexdump(int level, const SANE_Byte *data, size_t len)
+{
+#define HEXDUMP_LINE 16
+  char line[HEXDUMP_LINE * 3 + 1], *lp = line;
+
+  if (level > DBG_LEVEL)
+    return;
+
+  for (size_t i = 0; i < len; i++)
+    {
+      lp += sprintf(lp, "%02hhx ", data[i]);
+      if (i > 0 && i % (HEXDUMP_LINE - 1) == 0)
+          DBG(level, "%s\n", lp = line);
+    }
+  if (lp > line)
+    DBG(level, "%s\n", line);
+}
+
 extern void
 sanei_axis_init (void)
 {
@@ -103,15 +122,9 @@ static ssize_t receive_packet(int socket, void *packet, size_t len, struct socka
   default:
     received = recvfrom(socket, packet, len, 0, (struct sockaddr *)from, &from_len);
     if (received < 0) {
-      DBG(LOG_CRIT, "Error receiving packet\n");
+      DBG(LOG_NOTICE, "Error receiving packet\n");
       return 0;
     }
-/*#ifdef DEBUG
-    int i;
-    for (i = 0; i < received; i++)
-      fprintf(stderr, "%.2hhX ",((char *)packet)[i]);
-    fprintf(stderr, "\n");
-#endif*/
     return received;
   }
 }
@@ -127,7 +140,7 @@ static ssize_t axis_send_wimp(int udp_socket, struct sockaddr_in *addr, uint8_t 
   memcpy(packet + sizeof(struct axis_wimp_header), data, len);
   ret = sendto(udp_socket, packet, sizeof(struct axis_wimp_header) + len, 0, addr, sizeof(struct sockaddr_in));
   if (ret != (int)sizeof(struct axis_wimp_header) + len) {
-    DBG(LOG_CRIT, "Unable to send UDP packet\n");
+    DBG(LOG_NOTICE, "Unable to send UDP packet\n");
     return ret;
   }
 
@@ -174,12 +187,12 @@ static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
 
   udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
   if (udp_socket < 0) {
-    DBG(LOG_CRIT, "Unable to create UDP socket\n");
+    DBG(LOG_NOTICE, "Unable to create UDP socket\n");
     return -1;
   }
 
   if (setsockopt(udp_socket, SOL_SOCKET, SO_BROADCAST, &enable, sizeof(enable))) {
-    DBG(LOG_CRIT, "Unable to enable broadcast\n");
+    DBG(LOG_NOTICE, "Unable to enable broadcast\n");
     return -1;
   }
 
@@ -187,7 +200,7 @@ static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
   address.sin_port = 0; /* random */
   address.sin_addr.s_addr = addr;
   if (bind(udp_socket, (struct sockaddr *)&address, sizeof(address)) < 0) {
-    DBG(LOG_CRIT, "Unable to bind UDP socket\n");
+    DBG(LOG_NOTICE, "Unable to bind UDP socket\n");
     return -1;
   }
 
@@ -250,7 +263,7 @@ static int send_discover(int udp_socket, uint32_t addr, uint16_t source_port) {
 
   ret = axis_send_wimp(udp_socket, &address, WIMP_SERVER_INFO, get_info, sizeof(get_info));
   if (ret)
-    DBG(LOG_CRIT, "Unable to send discover packet\n");
+    DBG(LOG_NOTICE, "Unable to send discover packet\n");
 
   return ret;
 }
@@ -260,7 +273,7 @@ static int send_broadcasts(int udp_socket, uint16_t source_port) {
   int num_sent = 0;
 
   if (getifaddrs(&ifaddr) == -1) {
-    DBG(LOG_CRIT, "Unable to obtain network interface list\n");
+    DBG(LOG_NOTICE, "Unable to obtain network interface list\n");
     return -1;
   }
 
@@ -289,9 +302,7 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
   header->type = AXIS_HDR_REQUEST;
   header->len = cpu_to_le16(len + sizeof(struct axis_cmd));
   ret = send(tcp_socket, packet, sizeof(struct axis_header), 0);
-  for (int i = 0; i < ret; i++)
-    fprintf(stderr, "%02x ", packet[i]);
-  fprintf(stderr, "\n");
+  dbg_hexdump(LOG_DEBUG2, packet, ret);
   if (ret < 0) {
     DBG(LOG_NOTICE, "Error sending packet\n");
     return ret;
@@ -302,9 +313,7 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
   command->len = cpu_to_le16(len);
   memcpy(packet + sizeof(struct axis_cmd), data, len);
   ret = send(tcp_socket, packet, sizeof(struct axis_cmd) + len, 0);
-  for (int i = 0; i < ret; i++)
-    fprintf(stderr, "%02x ", packet[i]);
-  fprintf(stderr, "\n");
+  dbg_hexdump(LOG_DEBUG2, packet, ret);
   if (ret < 0) {
     DBG(LOG_NOTICE, "Error sending packet\n");
     return ret;
@@ -319,7 +328,6 @@ int axis_recv(SANE_Int dn, SANE_Byte *data, size_t *len) {
   struct axis_header *header = (void *)packet;
   struct axis_reply *reply = (void *)packet;
   ssize_t ret, remaining;
-  int i;
 
 retry:
   /* AXIS sends 0x24 byte 15 seconds after end of scan, then repeats 3 more times each 5 seconds - the purpose is unknown, get rid of that */
@@ -333,53 +341,48 @@ retry:
     else
       break;
   if (count) {
-    fprintf(stderr, "discarded %d 0x24 bytes\n", count);
+    DBG(LOG_DEBUG, "discarded %d 0x24 bytes\n", count);
     recv(device[dn].tcp_socket, packet, count, 0);
   }
 
   ret = recv(device[dn].tcp_socket, packet, sizeof(struct axis_header), 0);
   if (ret < sizeof(struct axis_header)) {
-    perror("recv error!!!");
+    DBG(LOG_NOTICE, "recv error\n");
     return -1;
   }
-  fprintf(stderr, "got1: ");
-  for (unsigned int i = 0; i < sizeof(struct axis_header); i++)
-    fprintf(stderr, "%02x ", packet[i]);
-  fprintf(stderr, "\n");
+
+  DBG(LOG_DEBUG2, "got1:\n");
+  dbg_hexdump(LOG_DEBUG2, packet, sizeof(struct axis_header));
 
   if (header->type != AXIS_HDR_REPLY) {
-    fprintf(stderr, "not a reply!:");
-    for (i = 0; i < ret; i++)
-      fprintf(stderr, "%02x ", packet[i]);
-    fprintf(stderr, "\n");
+    DBG(LOG_CRIT, "not a reply!:");
+    dbg_hexdump(LOG_CRIT, packet, ret);
     return -1;
   }
   *len = le16_to_cpu(header->len);
-  fprintf(stderr, "len=0x%lx\n", *len);
+  DBG(LOG_DEBUG, "len=0x%lx\n", *len);
   ret = recv(device[dn].tcp_socket, packet, *len, 0);
   if (ret < 512) {
-    fprintf(stderr, "got2: ");
-    for (i = 0; i < ret; i++)
-      fprintf(stderr, "%02x ", packet[i]);
+    DBG(LOG_DEBUG2, "got2:\n");
+    dbg_hexdump(LOG_DEBUG2, packet, ret);
   }
-  fprintf(stderr, "\n");
   *len = le16_to_cpu(reply->len);
-  if (reply->cmd == AXIS_CMD_UNKNOWN2) { /// interrupt???
-    fprintf(stderr, "interrupt?????\n");
+  if (reply->cmd == AXIS_CMD_UNKNOWN2) {
+    DBG(LOG_DEBUG, "interrupt\n");
     memcpy(device[dn].int_data, packet + sizeof(struct axis_reply), *len);
     device[dn].int_size = *len;
     goto retry;
   }
   memcpy(data, packet + sizeof(struct axis_reply), ret - sizeof(struct axis_reply));
   if (reply->status != 0) {
-    fprintf(stderr, "status=0x%x\n", le16_to_cpu(reply->status));
+    DBG(LOG_CRIT, "status=0x%x\n", le16_to_cpu(reply->status));
     return SANE_STATUS_IO_ERROR;
   }
 
   remaining = *len - (ret - sizeof(struct axis_reply));
   data_pos = data + ret - sizeof(struct axis_reply);
   while (remaining > 0) {
-    fprintf(stderr, "remaining bytes: %ld\n", remaining);
+    DBG(LOG_DEBUG, "remaining bytes: %ld\n", remaining);
     ret = recv(device[dn].tcp_socket, data_pos, remaining, 0);
     remaining -= ret;
     data_pos += ret;
@@ -423,7 +426,7 @@ parse_uri(const char *uri, struct sockaddr_in *address)
   int err = getaddrinfo(host, NULL, &hints, &result);
   if (err)
     {
-      DBG(LOG_INFO, "getaddrinfo failed: %s\n", gai_strerror(err));
+      DBG(LOG_CRIT, "cannot resolve %s: %s\n", host, gai_strerror(err));
       return -1;
     }
   struct sockaddr_in *addr = (struct sockaddr_in *) result->ai_addr;
@@ -476,7 +479,7 @@ sanei_axis_find_devices (const char **conf_devices,
       if (strcmp(conf_devices[0], "networking=no") == 0)
         {
           /* networking=no may only occur on the first non-commented line */
-          DBG(LOG_DEBUG, "sanei_axis_find_devices: networking disabled in configuration file\n");
+          DBG(LOG_DEBUG, "%s: networking disabled in configuration file\n", __func__);
           close(udp_socket);
           return SANE_STATUS_GOOD;
         }
@@ -485,17 +488,17 @@ sanei_axis_find_devices (const char **conf_devices,
 	  if (!strcmp(conf_devices[i], "auto_detection=no"))
             {
               auto_detect = 0;
-	      DBG(LOG_DEBUG, "sanei_axis_find_devices: auto detection of network scanners disabled in configuration file\n");
+	      DBG(LOG_DEBUG, "%s: auto detection of network scanners disabled in configuration file\n", __func__);
 	      continue;
 	    }
 	  else
             {
-              DBG(LOG_DEBUG, "sanei_axis_find_devices: Adding scanner from pixma.conf: %s\n", conf_devices[i]);
+              DBG(LOG_DEBUG, "%s: Adding scanner from pixma.conf: %s\n", __func__, conf_devices[i]);
               strncpy(uri, conf_devices[i], sizeof(uri) - 1);
               uri[sizeof(uri) - 1] = '\0';
               if (axis_no_devices >= AXIS_NO_DEVICES)
                 {
-                  DBG(LOG_INFO, "sanei_axis_find_devices: device limit %d reached\n", AXIS_NO_DEVICES);
+                  DBG(LOG_INFO, "%s: device limit %d reached\n", __func__, AXIS_NO_DEVICES);
                   close(udp_socket);
                   return SANE_STATUS_NO_MEM;
                 }
@@ -563,11 +566,11 @@ sanei_axis_open (SANE_String_Const devname, SANE_Int * dn)
       /* connect */
       int tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
       if (tcp_socket < 0) {
-        perror("Unable to create TCP socket");
+        DBG(LOG_NOTICE, "Unable to create TCP socket: %s\n", strerror(errno));
         return SANE_STATUS_IO_ERROR;
       }
       if (connect(tcp_socket, (struct sockaddr *) &address, sizeof(address)) < 0) {
-        perror("Unable to connect");
+        DBG(LOG_NOTICE, "Unable to connect: %s\n", strerror(errno));
         return SANE_STATUS_IO_ERROR;
       }
       DBG(LOG_INFO, "connected\n");
@@ -613,16 +616,12 @@ extern SANE_Status
 sanei_axis_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
 {
   DBG(LOG_INFO, "%s(%d, %p, %ld)\n", __func__, dn, buffer, *size);
-//  uint8_t buf_read[] = { 0x40, 0x00 };
   uint16_t read_size = cpu_to_le16(*size);
-//  axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_READ, buf_read, sizeof(buf_read));
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_READ, &read_size, sizeof(read_size));
   axis_recv(dn, buffer, size);  ////FIXME
-  fprintf(stderr, "sanei_axis_read_bulk: ");
+  DBG(LOG_DEBUG2, "sanei_axis_read_bulk:\n");
   if (*size < 512)
-    for (unsigned int i = 0; i < *size; i++)
-      fprintf(stderr, "%02x ", buffer[i]);
-  fprintf(stderr, "\n");
+    dbg_hexdump(LOG_DEBUG2, buffer, *size);
   return SANE_STATUS_GOOD;
 }
 
@@ -632,8 +631,6 @@ sanei_axis_write_bulk (SANE_Int dn, const SANE_Byte * buffer, size_t * size)
   SANE_Byte dummy_buf[MAX_PACKET_DATA_SIZE];
   size_t dummy_len;
   DBG(LOG_INFO, "%s(%d, %p, %ld)\n", __func__, dn, buffer, *size);
-  fprintf(stderr, "sanei_axis_write_bulk: ");
-  fprintf(stderr, "\n");
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_WRITE, (void *) buffer, *size);
   axis_recv(dn, dummy_buf, &dummy_len);	////FIXME
   return SANE_STATUS_GOOD;
@@ -649,5 +646,4 @@ sanei_axis_read_int (SANE_Int dn, SANE_Byte * buffer, size_t * size)
   *size = device[dn].int_size;
   device[dn].int_size = 0;
   return SANE_STATUS_GOOD;
-//  return SANE_STATUS_EOF;
 }
