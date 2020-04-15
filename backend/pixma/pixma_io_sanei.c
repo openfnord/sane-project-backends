@@ -185,7 +185,7 @@ attach_net (SANE_String_Const devname,  SANE_String_Const makemodel,
   else
     {
       si->cfg = cfg;
-      sprintf(si->serial, "%s_%s", cfg->model, serial);
+      snprintf(si->serial, sizeof(si->serial), "%s_%s", cfg->model, serial);
       si -> interface = interface;
       si->next = first_scanner;
       first_scanner = si;
