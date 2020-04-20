@@ -207,7 +207,8 @@ static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
   /* get assigned source port */
   sock_len = sizeof(address);
   getsockname(udp_socket, (struct sockaddr *)&address, &sock_len);
-  *source_port = ntohs(address.sin_port);
+  if (source_port)
+    *source_port = ntohs(address.sin_port);
 
   return udp_socket;
 }
@@ -464,8 +465,8 @@ add_scanner(int udp_socket, const char *uri,
             const struct pixma_config_t *const pixma_devices[])
 {
   char devname[256];
-  char serial[AXIS_SERIAL_LEN];
-  char user[AXIS_USERNAME_LEN];
+  char serial[AXIS_SERIAL_LEN + 1];
+  char user[AXIS_USERNAME_LEN + 1];
 
   if (axis_no_devices >= AXIS_NO_DEVICES)
     {
@@ -595,6 +596,22 @@ sanei_axis_open (SANE_String_Const devname, SANE_Int * dn)
     if (device[i].addr.s_addr == address.sin_addr.s_addr) {
       DBG(LOG_INFO, "found device at position %d\n", i);
       *dn = i;
+      /* check status first to make sure the device is not BUSY */
+      int udp_socket = create_udp_socket(htonl(INADDR_ANY), NULL);
+      if (udp_socket < 0)
+        return SANE_STATUS_IO_ERROR;
+      struct sockaddr_in addr = address;
+      addr.sin_port = htons(AXIS_WIMP_PORT);
+      char user[AXIS_USERNAME_LEN + 1];
+      int status = get_server_status(udp_socket, &addr, user);
+      close(udp_socket);
+      if (status < 0)
+        return SANE_STATUS_IO_ERROR;
+      if (status == 1)
+        {
+          DBG(LOG_CRIT, "Device is BUSY, user %s\n", user);
+          return SANE_STATUS_IO_ERROR;
+        }
       /* connect */
       int tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
       if (tcp_socket < 0) {
