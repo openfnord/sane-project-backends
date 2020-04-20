@@ -66,6 +66,379 @@ constexpr unsigned CALIBRATION_LINES = 10;
 static void gl646_send_slope_table(Genesys_Device* dev, int table_nr,
                                    const std::vector<uint16_t>& slope_table,
                                    int steps);
+static void write_control(Genesys_Device* dev, const Genesys_Sensor& sensor, int resolution);
+
+
+static void gl646_set_fe(Genesys_Device* dev, const Genesys_Sensor& sensor, uint8_t set, int dpi);
+
+/**
+ * sets up the scanner for a scan, registers, gamma tables, shading tables
+ * and slope tables, based on the parameter struct.
+ * @param dev         device to set up
+ * @param regs        registers to set up
+ * @param settings    settings of the scan
+ * @param split       true if move before scan has to be done
+ * @param xcorrection true if scanner's X geometry must be taken into account to
+ * 		     compute X, ie add left margins
+ * @param ycorrection true if scanner's Y geometry must be taken into account to
+ * 		     compute Y, ie add top margins
+ */
+static ScanSession setup_for_scan(Genesys_Device* device,
+                                  const Genesys_Sensor& sensor,
+                                  Genesys_Register_Set*regs,
+                                  Genesys_Settings settings,
+                                  bool split,
+                                  bool xcorrection,
+                                  bool ycorrection,
+                                  bool reverse);
+
+/**
+ * Does a simple move of the given distance by doing a scan at lowest resolution
+ * shading correction. Memory for data is allocated in this function
+ * and must be freed by caller.
+ * @param dev device of the scanner
+ * @param distance distance to move in MM
+ */
+static void simple_move(Genesys_Device* dev, SANE_Int distance);
+
+/**
+ * Does a simple scan of the area given by the settings. Scanned data
+ * it put in an allocated area which must be freed by the caller.
+ * and slope tables, based on the parameter struct. There is no shading
+ * correction while gamma correction is active.
+ * @param dev      device to set up
+ * @param settings settings of the scan
+ * @param move     flag to enable scanhead to move
+ * @param forward  flag to tell movement direction
+ * @param shading  flag to tell if shading correction should be done
+ * @param data     pointer that will point to the scanned data
+ */
+static void simple_scan(Genesys_Device* dev, const Genesys_Sensor& sensor,
+                        Genesys_Settings settings, bool move, bool forward,
+                        bool shading, std::vector<uint8_t>& data, const char* test_identifier);
+
+/**
+ * Send the stop scan command
+ * */
+static void end_scan_impl(Genesys_Device* dev, Genesys_Register_Set* reg, bool check_stop,
+                          bool eject);
+
+/**
+ * master motor settings table entry
+ */
+struct Motor_Master
+{
+    MotorId motor_id;
+    unsigned dpi;
+    unsigned channels;
+
+    // settings
+    StepType steptype;
+    bool fastmod; // fast scanning
+    bool fastfed; // fast fed slope tables
+    SANE_Int mtrpwm;
+    MotorSlope slope1;
+    MotorSlope slope2;
+    SANE_Int fwdbwd; // forward/backward steps
+};
+
+/**
+ * master motor settings, for a given motor and dpi,
+ * it gives steps and speed informations
+ */
+static Motor_Master motor_master[] = {
+    /* HP3670 motor settings */
+    {MotorId::HP3670, 50, 3, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(2329, 120, 229),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 75, 3, StepType::FULL, false, true, 1,
+     MotorSlope::create_from_steps(3429, 305, 200),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 100, 3, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(2905, 187, 143),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 150, 3, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(3429, 305, 73),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 300, 3, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(1055, 563, 11),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 600, 3, StepType::FULL, false, true, 0,
+     MotorSlope::create_from_steps(10687, 5126, 3),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670,1200, 3, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(15937, 6375, 3),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 50, 1, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(2329, 120, 229),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 75, 1, StepType::FULL, false, true, 1,
+     MotorSlope::create_from_steps(3429, 305, 200),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 100, 1, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(2905, 187, 143),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 150, 1, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(3429, 305, 73),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 300, 1, StepType::HALF, false, true, 1,
+     MotorSlope::create_from_steps(1055, 563, 11),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670, 600, 1, StepType::FULL, false, true, 0,
+     MotorSlope::create_from_steps(10687, 5126, 3),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    {MotorId::HP3670,1200, 1, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(15937, 6375, 3),
+     MotorSlope::create_from_steps(3399, 337, 192), 192},
+
+    /* HP2400/G2410 motor settings base motor dpi = 600 */
+    {MotorId::HP2400, 50, 3, StepType::FULL, false, true, 63,
+     MotorSlope::create_from_steps(8736, 601, 120),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 100, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(8736, 601, 120),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 150, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(15902, 902, 67),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 300, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(16703, 2188, 32),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 600, 3, StepType::FULL, false, true, 63,
+     MotorSlope::create_from_steps(18761, 18761, 3),
+     MotorSlope::create_from_steps(4905, 627, 192), 192},
+
+    {MotorId::HP2400,1200, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(43501, 43501, 3),
+     MotorSlope::create_from_steps(4905, 627, 192), 192},
+
+    {MotorId::HP2400, 50, 1, StepType::FULL, false, true, 63,
+     MotorSlope::create_from_steps(8736, 601, 120),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 100, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(8736, 601, 120),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 150, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(15902, 902, 67),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 300, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(16703, 2188, 32),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400, 600, 1, StepType::FULL, false, true, 63,
+     MotorSlope::create_from_steps(18761, 18761, 3),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    {MotorId::HP2400,1200, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(43501, 43501, 3),
+     MotorSlope::create_from_steps(4905, 337, 192), 192},
+
+    /* XP 200 motor settings */
+    {MotorId::XP200, 75, 3, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6000, 2136, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 100, 3, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6000, 2850, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 200, 3, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6999, 5700, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 250, 3, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6999, 6999, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 300, 3, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(13500, 13500, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 600, 3, StepType::HALF, true, true, 0,
+     MotorSlope::create_from_steps(31998, 31998, 4),
+     MotorSlope::create_from_steps(12000, 1200, 2), 1},
+
+    {MotorId::XP200, 75, 1, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6000, 2000, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 100, 1, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6000, 1300, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 200, 1, StepType::HALF, true, true, 0,
+     MotorSlope::create_from_steps(6000, 3666, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 300, 1, StepType::HALF, true, false, 0,
+     MotorSlope::create_from_steps(6500, 6500, 4),
+     MotorSlope::create_from_steps(12000, 1200, 8), 1},
+
+    {MotorId::XP200, 600, 1, StepType::HALF, true, true, 0,
+     MotorSlope::create_from_steps(24000, 24000, 4),
+     MotorSlope::create_from_steps(12000, 1200, 2), 1},
+
+    /* HP scanjet 2300c */
+    {MotorId::HP2300, 75, 3, StepType::FULL, false, true, 63,
+     MotorSlope::create_from_steps(8139, 560, 120),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 150, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(7903, 543, 67),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 300, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(2175, 1087, 3),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 600, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(8700, 4350, 3),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300,1200, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(17400, 8700, 3),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 75, 1, StepType::FULL, false, true, 63,
+     MotorSlope::create_from_steps(8139, 560, 120),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 150, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(7903, 543, 67),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 300, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(2175, 1087, 3),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 600, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(8700, 4350, 3),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300,1200, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(17400, 8700, 3),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    /* non half ccd settings for 300 dpi
+    {MotorId::HP2300, 300, 3, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(5386, 2175, 44),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+
+    {MotorId::HP2300, 300, 1, StepType::HALF, false, true, 63,
+     MotorSlope::create_from_steps(5386, 2175, 44),
+     MotorSlope::create_from_steps(4905, 337, 120), 16},
+    */
+
+    /* MD5345/6471 motor settings */
+    /* vfinal=(exposure/(1200/dpi))/step_type */
+    {MotorId::MD_5345, 50, 3, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 250, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 75, 3, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 343, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 100, 3, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 458, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 150, 3, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 687, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 200, 3, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 916, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 300, 3, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 1375, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 400, 3, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(2000, 1833, 32),
+     MotorSlope::create_from_steps(2000, 300, 255), 32},
+
+    {MotorId::MD_5345, 500, 3, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(2291, 2291, 32),
+     MotorSlope::create_from_steps(2000, 300, 255), 32},
+
+    {MotorId::MD_5345, 600, 3, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(2750, 2750, 32),
+     MotorSlope::create_from_steps(2000, 300, 255), 32},
+
+    {MotorId::MD_5345, 1200, 3, StepType::QUARTER, false, true, 0,
+     MotorSlope::create_from_steps(2750, 2750, 16),
+     MotorSlope::create_from_steps(2000, 300, 255), 146},
+
+    {MotorId::MD_5345, 2400, 3, StepType::QUARTER, false, true, 0,
+     MotorSlope::create_from_steps(5500, 5500, 16),
+     MotorSlope::create_from_steps(2000, 300, 255), 146},
+
+    {MotorId::MD_5345, 50, 1, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 250, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 75, 1, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 343, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 100, 1, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 458, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 150, 1, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 687, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 200, 1, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 916, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 300, 1, StepType::HALF, false, true, 2,
+     MotorSlope::create_from_steps(2500, 1375, 255),
+     MotorSlope::create_from_steps(2000, 300, 255), 64},
+
+    {MotorId::MD_5345, 400, 1, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(2000, 1833, 32),
+     MotorSlope::create_from_steps(2000, 300, 255), 32},
+
+    {MotorId::MD_5345, 500, 1, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(2291, 2291, 32),
+     MotorSlope::create_from_steps(2000, 300, 255), 32},
+
+    {MotorId::MD_5345, 600, 1, StepType::HALF, false, true, 0,
+     MotorSlope::create_from_steps(2750, 2750, 32),
+     MotorSlope::create_from_steps(2000, 300, 255), 32},
+
+    {MotorId::MD_5345, 1200, 1, StepType::QUARTER, false, true, 0,
+     MotorSlope::create_from_steps(2750, 2750, 16),
+     MotorSlope::create_from_steps(2000, 300, 255), 146},
+
+    {MotorId::MD_5345, 2400, 1, StepType::QUARTER, false, true, 0,
+     MotorSlope::create_from_steps(5500, 5500, 16),
+     MotorSlope::create_from_steps(2000, 300, 255), 146}, /* 5500 guessed */
+};
 
 /**
  * reads value from gpio endpoint
@@ -105,44 +478,6 @@ static void gl646_stop_motor(Genesys_Device* dev)
 }
 
 /**
- * find the closest match in mode tables for the given resolution and scan mode.
- * @param sensor id of the sensor
- * @param required required resolution
- * @param color true is color mode
- * @return the closest resolution for the sensor and mode
- */
-static unsigned get_closest_resolution(SensorId sensor_id, int required, unsigned channels)
-{
-    unsigned best_res = 0;
-    unsigned best_diff = 9600;
-
-    for (const auto& sensor : *s_sensors) {
-        if (sensor_id != sensor.sensor_id)
-            continue;
-
-        // exit on perfect match
-        if (sensor.resolutions.matches(required) && sensor.matches_channel_count(channels)) {
-            DBG(DBG_info, "%s: match found for %d\n", __func__, required);
-            return required;
-        }
-
-        // computes distance and keep mode if it is closer than previous
-        if (sensor.matches_channel_count(channels)) {
-            for (auto res : sensor.resolutions.resolutions()) {
-                unsigned curr_diff = std::abs(static_cast<int>(res) - static_cast<int>(required));
-                if (curr_diff < best_diff) {
-                    best_res = res;
-                    best_diff = curr_diff;
-                }
-            }
-        }
-    }
-
-    DBG(DBG_info, "%s: closest match for %d is %d\n", __func__, required, best_res);
-    return best_res;
-}
-
-/**
  * Returns the cksel values used by the required scan mode.
  * @param sensor id of the sensor
  * @param required required resolution
@@ -177,7 +512,6 @@ void CommandSetGl646::init_regs_for_scan_session(Genesys_Device* dev, const Gene
 
     uint32_t move = session.params.starty;
 
-  int i, nb;
   Motor_Master *motor = nullptr;
   uint32_t z1, z2;
   int feedl;
@@ -185,36 +519,21 @@ void CommandSetGl646::init_regs_for_scan_session(Genesys_Device* dev, const Gene
 
   /* for the given resolution, search for master
    * motor mode setting */
-  i = 0;
-  nb = sizeof (motor_master) / sizeof (Motor_Master);
-  while (i < nb)
-    {
-      if (dev->model->motor_id == motor_master[i].motor_id
-          && motor_master[i].dpi == session.params.yres
-          && motor_master[i].channels == session.params.channels)
-	{
-	  motor = &motor_master[i];
-	}
-      i++;
+    for (unsigned i = 0; i < sizeof (motor_master) / sizeof (Motor_Master); ++i) {
+        if (dev->model->motor_id == motor_master[i].motor_id &&
+            motor_master[i].dpi == session.params.yres &&
+            motor_master[i].channels == session.params.channels)
+        {
+            motor = &motor_master[i];
+        }
     }
-  if (motor == nullptr)
-    {
+    if (motor == nullptr) {
         throw SaneException("unable to find settings for motor %d at %d dpi, color=%d",
                             static_cast<unsigned>(dev->model->motor_id),
                             session.params.yres, session.params.channels);
     }
 
-  /* now we can search for the specific sensor settings */
-  i = 0;
-
-    // now apply values from settings to registers
-    regs->set16(REG_EXPR, sensor.exposure.red);
-    regs->set16(REG_EXPG, sensor.exposure.green);
-    regs->set16(REG_EXPB, sensor.exposure.blue);
-
-    for (const auto& reg : sensor.custom_regs) {
-        regs->set8(reg.address, reg.value);
-    }
+    scanner_setup_sensor(*dev, sensor, *regs);
 
   /* now generate slope tables : we are not using generate_slope_table3 yet */
     auto slope_table1 = create_slope_table(motor->slope1, motor->slope1.max_speed_w, StepType::FULL,
@@ -313,7 +632,7 @@ void CommandSetGl646::init_regs_for_scan_session(Genesys_Device* dev, const Gene
             break;
     }
 
-    sanei_genesys_set_dpihw(*regs, sensor, sensor.optical_res);
+    sanei_genesys_set_dpihw(*regs, sensor.optical_res);
 
   /* gamma enable for scans */
     if (has_flag(dev->model->flags, ModelFlag::GAMMA_14BIT)) {
@@ -400,8 +719,11 @@ void CommandSetGl646::init_regs_for_scan_session(Genesys_Device* dev, const Gene
 
     regs->set24(REG_MAXWD, session.output_line_bytes);
 
-    regs->set16(REG_DPISET, session.output_resolution * session.ccd_size_divisor *
-                            sensor.ccd_pixels_per_system_pixel());
+    // FIXME: the incoming sensor is selected for incorrect resolution
+    const auto& dpiset_sensor = sanei_genesys_find_sensor(dev, session.params.xres,
+                                                          session.params.channels,
+                                                          session.params.scan_method);
+    regs->set16(REG_DPISET, dpiset_sensor.register_dpiset);
     regs->set16(REG_LPERIOD, sensor.exposure_lperiod);
 
   /* move distance must be adjusted to take into account the extra lines
@@ -550,7 +872,7 @@ void CommandSetGl646::init_regs_for_scan_session(Genesys_Device* dev, const Gene
     dev->read_buffer.clear();
     dev->read_buffer.alloc(session.buffer_size_read);
 
-    build_image_pipeline(dev, sensor, session);
+    build_image_pipeline(dev, session);
 
     dev->read_active = true;
 
@@ -581,30 +903,6 @@ void CommandSetGl646::init_regs_for_scan_session(Genesys_Device* dev, const Gene
     gl646_send_slope_table(dev, 1, slope_table2.table, regs->get8(0x6b));
 }
 
-
-/** copy sensor specific settings */
-/* *dev  : device infos
-   *regs : regiters to be set
-   extended : do extended set up
-   ccd_size_divisor: set up for half ccd resolution
-   all registers 08-0B, 10-1D, 52-5E are set up. They shouldn't
-   appear anywhere else but in register init
-*/
-static void
-gl646_setup_sensor (Genesys_Device * dev, const Genesys_Sensor& sensor, Genesys_Register_Set * regs)
-{
-    (void) dev;
-    DBG(DBG_proc, "%s: start\n", __func__);
-
-    for (const auto& reg_setting : sensor.custom_base_regs) {
-        regs->set8(reg_setting.address, reg_setting.value);
-    }
-    // FIXME: all other drivers don't set exposure here
-    regs_set_exposure(AsicType::GL646, *regs, sensor.exposure);
-
-    DBG(DBG_proc, "%s: end\n", __func__);
-}
-
 /**
  * Set all registers to default values after init
  * @param dev scannerr's device to set
@@ -631,8 +929,8 @@ gl646_init_regs (Genesys_Device * dev)
     for (addr = 0x60; addr <= 0x6d; addr++)
         dev->reg.init_reg(addr, 0);
 
-  dev->reg.find_reg(0x01).value = 0x20 /*0x22 */ ;	/* enable shading, CCD, color, 1M */
-  dev->reg.find_reg(0x02).value = 0x30 /*0x38 */ ;	/* auto home, one-table-move, full step */
+    dev->reg.find_reg(0x01).value = 0x20 /*0x22 */ ;	/* enable shading, CCD, color, 1M */
+    dev->reg.find_reg(0x02).value = 0x30 /*0x38 */ ;	/* auto home, one-table-move, full step */
     if (dev->model->motor_id == MotorId::MD_5345) {
         dev->reg.find_reg(0x02).value |= 0x01; // half-step
     }
@@ -647,8 +945,8 @@ gl646_init_regs (Genesys_Device * dev)
         default:
       break;
     }
-  dev->reg.find_reg(0x03).value = 0x1f /*0x17 */ ;	/* lamp on */
-  dev->reg.find_reg(0x04).value = 0x13 /*0x03 */ ;	/* 8 bits data, 16 bits A/D, color, Wolfson fe *//* todo: according to spec, 0x0 is reserved? */
+    dev->reg.find_reg(0x03).value = 0x1f /*0x17 */ ;	/* lamp on */
+    dev->reg.find_reg(0x04).value = 0x13 /*0x03 */ ;	/* 8 bits data, 16 bits A/D, color, Wolfson fe *//* todo: according to spec, 0x0 is reserved? */
   switch (dev->model->adc_id)
     {
     case AdcId::AD_XP200:
@@ -663,7 +961,7 @@ gl646_init_regs (Genesys_Device * dev)
   const auto& sensor = sanei_genesys_find_sensor_any(dev);
 
   dev->reg.find_reg(0x05).value = 0x00;	/* 12 bits gamma, disable gamma, 24 clocks/pixel */
-    sanei_genesys_set_dpihw(dev->reg, sensor, sensor.optical_res);
+    sanei_genesys_set_dpihw(dev->reg, sensor.optical_res);
 
     if (has_flag(dev->model->flags, ModelFlag::GAMMA_14BIT)) {
         dev->reg.find_reg(0x05).value |= REG_0x05_GMM14BIT;
@@ -678,8 +976,7 @@ gl646_init_regs (Genesys_Device * dev)
         dev->reg.find_reg(0x06).value = 0x18; // PWRBIT on, shading gain=8, normal AFE image capture
     }
 
-
-  gl646_setup_sensor(dev, sensor, &dev->reg);
+    scanner_setup_sensor(*dev, sensor, dev->reg);
 
   dev->reg.find_reg(0x1e).value = 0xf0;	/* watch-dog time */
 
@@ -1495,8 +1792,7 @@ void CommandSetGl646::move_back_home(Genesys_Device* dev, bool wait_until_home) 
     session.params.scan_method = dev->model->default_method;
     session.params.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
     session.params.color_filter = ColorFilter::RED;
-    session.params.flags = ScanFlag::USE_XCORRECTION |
-                            ScanFlag::REVERSE;
+    session.params.flags = ScanFlag::REVERSE;
     if (dev->model->default_method == ScanMethod::TRANSPARENCY) {
         session.params.flags |= ScanFlag::USE_XPA;
     }
@@ -1587,15 +1883,18 @@ void CommandSetGl646::init_regs_for_shading(Genesys_Device* dev, const Genesys_S
     DBG_HELPER(dbg);
     (void) regs;
   Genesys_Settings settings;
-  int cksel = 1;
 
   /* fill settings for scan : always a color scan */
   int channels = 3;
 
+    unsigned ccd_size_divisor = sensor.get_ccd_size_divisor_for_dpi(dev->settings.xres);
+    unsigned cksel = get_cksel(dev->model->sensor_id, dev->settings.xres, channels);
+
+    unsigned resolution = sensor.optical_res / ccd_size_divisor / cksel;
+    // FIXME: we select wrong calibration sensor
     const auto& calib_sensor = sanei_genesys_find_sensor(dev, dev->settings.xres, channels,
                                                          dev->settings.scan_method);
 
-    unsigned ccd_size_divisor = calib_sensor.get_ccd_size_divisor_for_dpi(dev->settings.xres);
 
   settings.scan_method = dev->settings.scan_method;
   settings.scan_mode = dev->settings.scan_mode;
@@ -1603,9 +1902,7 @@ void CommandSetGl646::init_regs_for_shading(Genesys_Device* dev, const Genesys_S
       // FIXME: always a color scan, but why don't we set scan_mode to COLOR_SINGLE_PASS always?
       settings.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
     }
-  settings.xres = sensor.optical_res / ccd_size_divisor;
-  cksel = get_cksel(dev->model->sensor_id, dev->settings.xres, channels);
-  settings.xres = settings.xres / cksel;
+    settings.xres = resolution;
   settings.yres = settings.xres;
   settings.tl_x = 0;
   settings.tl_y = 0;
@@ -1746,9 +2043,6 @@ static ScanSession setup_for_scan(Genesys_Device* dev,
     if (settings.scan_method == ScanMethod::TRANSPARENCY) {
         session.params.flags |= ScanFlag::USE_XPA;
     }
-    if (xcorrection) {
-        session.params.flags |= ScanFlag::USE_XCORRECTION;
-    }
     if (reverse) {
         session.params.flags |= ScanFlag::REVERSE;
     }
@@ -1820,7 +2114,6 @@ SensorExposure CommandSetGl646::led_calibration(Genesys_Device* dev, const Genes
   int turn;
   uint16_t expr, expg, expb;
   Genesys_Settings settings;
-  SANE_Int resolution;
 
     unsigned channels = dev->settings.get_channels();
 
@@ -1833,15 +2126,14 @@ SensorExposure CommandSetGl646::led_calibration(Genesys_Device* dev, const Genes
     {
       settings.scan_mode = ScanColorMode::GRAY;
     }
-  resolution = get_closest_resolution(dev->model->sensor_id, sensor.optical_res, channels);
 
-  /* offset calibration is always done in color mode */
+    // offset calibration is always done in color mode
     settings.scan_method = dev->model->default_method;
-  settings.xres = resolution;
-  settings.yres = resolution;
+    settings.xres = sensor.optical_res;
+    settings.yres = sensor.optical_res;
   settings.tl_x = 0;
   settings.tl_y = 0;
-    settings.pixels = dev->model->x_size_calib_mm * resolution / MM_PER_INCH;
+    settings.pixels = dev->model->x_size_calib_mm * sensor.optical_res / MM_PER_INCH;
     settings.requested_pixels = settings.pixels;
   settings.lines = 1;
   settings.depth = 16;
@@ -1998,24 +2290,25 @@ static void ad_fe_offset_calibration(Genesys_Device* dev, const Genesys_Sensor& 
 
   unsigned int channels;
   int pass = 0;
-  SANE_Int resolution;
   Genesys_Settings settings;
   unsigned int x, y, adr, min;
   unsigned int bottom, black_pixels;
 
   channels = 3;
-  resolution = get_closest_resolution(dev->model->sensor_id, sensor.optical_res, channels);
-    const auto& calib_sensor = sanei_genesys_find_sensor(dev, resolution, 3, ScanMethod::FLATBED);
-    black_pixels = (calib_sensor.black_pixels * resolution) / calib_sensor.optical_res;
+
+    // FIXME: maybe reuse `sensor`
+    const auto& calib_sensor = sanei_genesys_find_sensor(dev, sensor.optical_res, 3,
+                                                         ScanMethod::FLATBED);
+    black_pixels = (calib_sensor.black_pixels * sensor.optical_res) / calib_sensor.optical_res;
   DBG(DBG_io2, "%s: black_pixels=%d\n", __func__, black_pixels);
 
     settings.scan_method = dev->model->default_method;
   settings.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
-  settings.xres = resolution;
-  settings.yres = resolution;
+    settings.xres = sensor.optical_res;
+    settings.yres = sensor.optical_res;
   settings.tl_x = 0;
   settings.tl_y = 0;
-    settings.pixels = dev->model->x_size_calib_mm * resolution / MM_PER_INCH;
+    settings.pixels = dev->model->x_size_calib_mm * sensor.optical_res / MM_PER_INCH;
     settings.requested_pixels = settings.pixels;
   settings.lines = CALIBRATION_LINES;
   settings.depth = 8;
@@ -2097,7 +2390,6 @@ void CommandSetGl646::offset_calibration(Genesys_Device* dev, const Genesys_Sens
     DBG_HELPER(dbg);
     (void) regs;
 
-  unsigned int channels;
   int pass = 0, avg;
   Genesys_Settings settings;
   int topavg, bottomavg;
@@ -2112,10 +2404,11 @@ void CommandSetGl646::offset_calibration(Genesys_Device* dev, const Genesys_Sens
 
   /* setup for a RGB scan, one full sensor's width line */
   /* resolution is the one from the final scan          */
-    channels = 3;
-    int resolution = get_closest_resolution(dev->model->sensor_id, dev->settings.xres, channels);
+    unsigned resolution = dev->settings.xres;
+    unsigned channels = 3;
 
-    const auto& calib_sensor = sanei_genesys_find_sensor(dev, resolution, 3, ScanMethod::FLATBED);
+    const auto& calib_sensor = sanei_genesys_find_sensor(dev, resolution, channels,
+                                                         ScanMethod::FLATBED);
     black_pixels = (calib_sensor.black_pixels * resolution) / calib_sensor.optical_res;
 
   DBG(DBG_io2, "%s: black_pixels=%d\n", __func__, black_pixels);
@@ -2243,7 +2536,7 @@ static void ad_fe_coarse_gain_calibration(Genesys_Device* dev, const Genesys_Sen
     (void) regs;
 
   unsigned int i, channels, val;
-  unsigned int size, count, resolution, pass;
+  unsigned int size, count, pass;
   float average;
   Genesys_Settings settings;
   char title[32];
@@ -2251,18 +2544,16 @@ static void ad_fe_coarse_gain_calibration(Genesys_Device* dev, const Genesys_Sen
   /* setup for a RGB scan, one full sensor's width line */
   /* resolution is the one from the final scan          */
   channels = 3;
-  resolution = get_closest_resolution(dev->model->sensor_id, dpi, channels);
-
-    const auto& calib_sensor = sanei_genesys_find_sensor(dev, resolution, 3, ScanMethod::FLATBED);
+    const auto& calib_sensor = sanei_genesys_find_sensor(dev, dpi, 3, ScanMethod::FLATBED);
 
   settings.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
 
     settings.scan_method = dev->model->default_method;
-  settings.xres = resolution;
-  settings.yres = resolution;
+    settings.xres = dpi;
+    settings.yres = dpi;
   settings.tl_x = 0;
   settings.tl_y = 0;
-    settings.pixels = dev->model->x_size_calib_mm * resolution / MM_PER_INCH;
+    settings.pixels = dev->model->x_size_calib_mm * dpi / MM_PER_INCH;
     settings.requested_pixels = settings.pixels;
   settings.lines = CALIBRATION_LINES;
   settings.depth = 8;
@@ -2342,7 +2633,7 @@ void CommandSetGl646::coarse_gain_calibration(Genesys_Device* dev, const Genesys
     (void) dpi;
 
   unsigned int i, j, k, channels, val, maximum, idx;
-  unsigned int count, resolution, pass;
+  unsigned count, pass;
   float average[3];
   Genesys_Settings settings;
   char title[32];
@@ -2355,26 +2646,26 @@ void CommandSetGl646::coarse_gain_calibration(Genesys_Device* dev, const Genesys
   /* resolution is the one from the final scan          */
   channels = 3;
 
-  /* we are searching a sensor resolution */
-    resolution = get_closest_resolution(dev->model->sensor_id, dev->settings.xres, channels);
-
-    const auto& calib_sensor = sanei_genesys_find_sensor(dev, resolution, channels,
+    // BUG: the following comment is incorrect
+    // we are searching a sensor resolution */
+    const auto& calib_sensor = sanei_genesys_find_sensor(dev, dev->settings.xres, channels,
                                                          ScanMethod::FLATBED);
 
   settings.scan_method = dev->settings.scan_method;
   settings.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
-  settings.xres = resolution;
-  settings.yres = resolution;
+  settings.xres = dev->settings.xres;
+  settings.yres = dev->settings.xres;
   settings.tl_y = 0;
   if (settings.scan_method == ScanMethod::FLATBED)
     {
       settings.tl_x = 0;
-        settings.pixels = dev->model->x_size_calib_mm * resolution / MM_PER_INCH;
+        settings.pixels = dev->model->x_size_calib_mm * dev->settings.xres / MM_PER_INCH;
     }
   else
     {
         settings.tl_x = dev->model->x_offset_ta;
-        settings.pixels = static_cast<unsigned>((dev->model->x_size_ta * resolution) / MM_PER_INCH);
+        settings.pixels = static_cast<unsigned>(
+                              (dev->model->x_size_ta * dev->settings.xres) / MM_PER_INCH);
     }
     settings.requested_pixels = settings.pixels;
   settings.lines = CALIBRATION_LINES;
@@ -2495,19 +2786,16 @@ void CommandSetGl646::coarse_gain_calibration(Genesys_Device* dev, const Genesys
  *
  */
 void CommandSetGl646::init_regs_for_warmup(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                                           Genesys_Register_Set* local_reg, int* channels,
-                                           int* total_size) const
+                                           Genesys_Register_Set* local_reg) const
 {
     DBG_HELPER(dbg);
     (void) sensor;
 
   Genesys_Settings settings;
-  int resolution, lines;
 
   dev->frontend = dev->frontend_initial;
 
-  resolution = get_closest_resolution(dev->model->sensor_id, 300, 1);
-
+    unsigned resolution = 300;
     const auto& local_sensor = sanei_genesys_find_sensor(dev, resolution, 1,
                                                          dev->settings.scan_method);
 
@@ -2521,7 +2809,7 @@ void CommandSetGl646::init_regs_for_warmup(Genesys_Device* dev, const Genesys_Se
     settings.pixels = dev->model->x_size_calib_mm * resolution / MM_PER_INCH;
     settings.requested_pixels = settings.pixels;
   settings.lines = 2;
-  settings.depth = 8;
+    settings.depth = dev->model->bpp_gray_values.front();
   settings.color_filter = ColorFilter::RED;
 
   settings.disable_interpolation = 0;
@@ -2542,11 +2830,6 @@ void CommandSetGl646::init_regs_for_warmup(Genesys_Device* dev, const Genesys_Se
   /* turn off motor during this scan */
   sanei_genesys_set_motor_power(*local_reg, false);
 
-  /* returned value to higher level warmup function */
-  *channels = 1;
-    lines = local_reg->get24(REG_LINCNT) + 1;
-  *total_size = lines * settings.pixels;
-
     // now registers are ok, write them to scanner
     gl646_set_fe(dev, local_sensor, AFE_SET, settings.xres);
 }
@@ -2565,7 +2848,8 @@ static void gl646_repark_head(Genesys_Device* dev)
 
     settings.scan_method = dev->model->default_method;
   settings.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
-  settings.xres = get_closest_resolution(dev->model->sensor_id, 75, 1);
+    settings.xres = dev->model->get_resolution_settings(dev->model->default_method)
+                               .get_min_resolution_y();
   settings.yres = settings.xres;
   settings.tl_x = 0;
   settings.tl_y = 5;
@@ -3169,7 +3453,7 @@ ScanSession CommandSetGl646::calculate_scan_session(const Genesys_Device* dev,
     session.params.scan_method = dev->settings.scan_method;
     session.params.scan_mode = settings.scan_mode;
     session.params.color_filter = settings.color_filter;
-    session.params.flags = ScanFlag::USE_XCORRECTION;
+    session.params.flags = ScanFlag::NONE;
     if (settings.scan_method == ScanMethod::TRANSPARENCY) {
         session.params.flags |= ScanFlag::USE_XPA;
     }
@@ -3183,11 +3467,6 @@ void CommandSetGl646::asic_boot(Genesys_Device *dev, bool cold) const
     (void) dev;
     (void) cold;
     throw SaneException("not implemented");
-}
-
-std::unique_ptr<CommandSet> create_gl646_cmd_set()
-{
-    return std::unique_ptr<CommandSet>(new CommandSetGl646{});
 }
 
 } // namespace gl646

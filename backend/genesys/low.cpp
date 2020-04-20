@@ -56,6 +56,14 @@
 #include "gl847_registers.h"
 #include "gl646_registers.h"
 
+#include "gl124.h"
+#include "gl646.h"
+#include "gl841.h"
+#include "gl843.h"
+#include "gl846.h"
+#include "gl847.h"
+#include "gl646.h"
+
 #include <cstdio>
 #include <cmath>
 #include <vector>
@@ -66,29 +74,16 @@
 
 namespace genesys {
 
-/**
- * setup the hardware dependent functions
- */
-
-namespace gl124 { std::unique_ptr<CommandSet> create_gl124_cmd_set(); }
-namespace gl646 { std::unique_ptr<CommandSet> create_gl646_cmd_set(); }
-namespace gl841 { std::unique_ptr<CommandSet> create_gl841_cmd_set(); }
-namespace gl843 { std::unique_ptr<CommandSet> create_gl843_cmd_set(); }
-namespace gl846 { std::unique_ptr<CommandSet> create_gl846_cmd_set(); }
-namespace gl847 { std::unique_ptr<CommandSet> create_gl847_cmd_set(); }
-
-void sanei_genesys_init_cmd_set(Genesys_Device* dev)
+std::unique_ptr<CommandSet> create_cmd_set(AsicType asic_type)
 {
-  DBG_INIT ();
-    DBG_HELPER(dbg);
-    switch (dev->model->asic_type) {
-        case AsicType::GL646: dev->cmd_set = gl646::create_gl646_cmd_set(); break;
-        case AsicType::GL841: dev->cmd_set = gl841::create_gl841_cmd_set(); break;
-        case AsicType::GL843: dev->cmd_set = gl843::create_gl843_cmd_set(); break;
+    switch (asic_type) {
+        case AsicType::GL646: return std::unique_ptr<CommandSet>(new gl646::CommandSetGl646{});
+        case AsicType::GL841: return std::unique_ptr<CommandSet>(new gl841::CommandSetGl841{});
+        case AsicType::GL843: return std::unique_ptr<CommandSet>(new gl843::CommandSetGl843{});
         case AsicType::GL845: // since only a few reg bits differs we handle both together
-        case AsicType::GL846: dev->cmd_set = gl846::create_gl846_cmd_set(); break;
-        case AsicType::GL847: dev->cmd_set = gl847::create_gl847_cmd_set(); break;
-        case AsicType::GL124: dev->cmd_set = gl124::create_gl124_cmd_set(); break;
+        case AsicType::GL846: return std::unique_ptr<CommandSet>(new gl846::CommandSetGl846{});
+        case AsicType::GL847: return std::unique_ptr<CommandSet>(new gl847::CommandSetGl847{});
+        case AsicType::GL124: return std::unique_ptr<CommandSet>(new gl124::CommandSetGl124{});
         default: throw SaneException(SANE_STATUS_INVAL, "unknown ASIC type");
     }
 }
@@ -607,16 +602,17 @@ void sanei_genesys_set_lamp_power(Genesys_Device* dev, const Genesys_Sensor& sen
 
         if (dev->model->asic_type == AsicType::GL843) {
             regs_set_exposure(dev->model->asic_type, regs, sensor.exposure);
+        }
 
-            // we don't actually turn on lamp on infrared scan
-            if ((dev->model->model_id == ModelId::CANON_8400F ||
-                 dev->model->model_id == ModelId::CANON_8600F ||
-                 dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7200I ||
-                 dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7500I) &&
-                dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
-            {
-                regs.find_reg(0x03).value &= ~REG_0x03_LAMPPWR;
-            }
+        // we don't actually turn on lamp on infrared scan
+        if ((dev->model->model_id == ModelId::CANON_8400F ||
+             dev->model->model_id == ModelId::CANON_8600F ||
+             dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7200I ||
+             dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7500I ||
+             dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_8200I) &&
+            dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
+        {
+            regs.find_reg(0x03).value &= ~REG_0x03_LAMPPWR;
         }
     } else {
         regs.find_reg(0x03).value &= ~REG_0x03_LAMPPWR;
@@ -826,63 +822,50 @@ void compute_session_pipeline(const Genesys_Device* dev, ScanSession& s)
 void compute_session_pixel_offsets(const Genesys_Device* dev, ScanSession& s,
                                    const Genesys_Sensor& sensor)
 {
-    unsigned ccd_pixels_per_system_pixel = sensor.ccd_pixels_per_system_pixel();
+    if (dev->model->asic_type == AsicType::GL646) {
+        s.pixel_startx += s.output_startx * sensor.optical_res / s.params.xres;
+        s.pixel_endx = s.pixel_startx + s.optical_pixels * s.ccd_size_divisor;
+
+    } else if (dev->model->asic_type == AsicType::GL841 ||
+               dev->model->asic_type == AsicType::GL843) {
+        s.pixel_startx = (s.output_startx * s.optical_resolution) / s.params.xres;
+        s.pixel_endx = s.pixel_startx + s.optical_pixels;
+
+    } else if (dev->model->asic_type == AsicType::GL845 ||
+               dev->model->asic_type == AsicType::GL846 ||
+               dev->model->asic_type == AsicType::GL847 ||
+               dev->model->asic_type == AsicType::GL124)
+    {
+        s.pixel_startx = s.output_startx * sensor.optical_res / s.params.xres;
+        s.pixel_endx = s.pixel_startx + s.optical_pixels_raw;
+    }
+
+    s.pixel_startx = sensor.pixel_count_ratio.apply(s.pixel_startx);
+    s.pixel_endx = sensor.pixel_count_ratio.apply(s.pixel_endx);
+
+    if (dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7200I ||
+        dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7300 ||
+        dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7500I)
+    {
+        s.pixel_startx = align_multiple_floor(s.pixel_startx, sensor.pixel_count_ratio.divisor());
+        s.pixel_endx = align_multiple_floor(s.pixel_endx, sensor.pixel_count_ratio.divisor());
+    }
 
     if (dev->model->asic_type == AsicType::GL646) {
-
-        // startx cannot be below dummy pixel value
-        s.pixel_startx = sensor.dummy_pixel;
-        if (has_flag(s.params.flags, ScanFlag::USE_XCORRECTION) && sensor.ccd_start_xoffset > 0) {
-            s.pixel_startx = sensor.ccd_start_xoffset;
+        if (sensor.stagger_config.stagger_at_resolution(s.params.xres, s.params.yres) > 0 &&
+            (s.pixel_startx & 1) == 0)
+        {
+            s.pixel_startx++;
+            s.pixel_endx++;
         }
-        s.pixel_startx += s.params.startx * sensor.optical_res / s.params.xres;
-
-        if (sensor.stagger_config.stagger_at_resolution(s.params.xres, s.params.yres) > 0) {
-            s.pixel_startx |= 1;
-        }
-
-        s.pixel_endx = s.pixel_startx + s.optical_pixels;
-
-        s.pixel_startx /= sensor.ccd_pixels_per_system_pixel() * s.ccd_size_divisor;
-        s.pixel_endx /= sensor.ccd_pixels_per_system_pixel() * s.ccd_size_divisor;
-
     } else if (dev->model->asic_type == AsicType::GL841) {
-        unsigned startx = s.params.startx * sensor.optical_res / s.params.xres;
-
-        s.pixel_startx = ((sensor.ccd_start_xoffset + startx) * s.optical_resolution)
-                                / sensor.optical_res;
-
-        s.pixel_startx += sensor.dummy_pixel + 1;
-
         if (s.num_staggered_lines > 0 && (s.pixel_startx & 1) == 0) {
             s.pixel_startx++;
+            s.pixel_endx++;
         }
-
-        /*  In case of SHDAREA, we need to align start on pixel average factor, startx is
-            different than 0 only when calling for function to setup for scan, where shading data
-            needs to be align.
-
-            NOTE: we can check the value of the register here, because we don't set this bit
-            anywhere except in initialization.
-        */
-        const uint8_t REG_0x01_SHDAREA = 0x02;
-        if ((dev->reg.find_reg(0x01).value & REG_0x01_SHDAREA) != 0) {
-            unsigned average_factor = s.optical_resolution / s.params.xres;
-            s.pixel_startx = align_multiple_floor(s.pixel_startx, average_factor);
-        }
-
-        s.pixel_endx = s.pixel_startx + s.optical_pixels;
-
     } else if (dev->model->asic_type == AsicType::GL843) {
-        unsigned startx = s.params.startx * sensor.optical_res / s.params.xres;
-
-        s.pixel_startx = (startx + sensor.dummy_pixel) / ccd_pixels_per_system_pixel;
-        s.pixel_endx = s.pixel_startx + s.optical_pixels / ccd_pixels_per_system_pixel;
-
-        s.pixel_startx /= s.hwdpi_divisor;
-        s.pixel_endx /= s.hwdpi_divisor;
-
         // in case of stagger we have to start at an odd coordinate
+        // FIXME: we should probably just configure the image pipeline accordingly
         bool stagger_starts_even = false;
         if (dev->model->model_id == ModelId::CANON_4400F ||
             dev->model->model_id == ModelId::CANON_8400F)
@@ -899,53 +882,20 @@ void compute_session_pixel_offsets(const Genesys_Device* dev, ScanSession& s,
                 s.pixel_endx++;
             }
         }
-
     } else if (dev->model->asic_type == AsicType::GL845 ||
                dev->model->asic_type == AsicType::GL846 ||
                dev->model->asic_type == AsicType::GL847)
     {
-        unsigned startx = s.params.startx * sensor.optical_res / s.params.xres;
-
-        s.pixel_startx = startx;
-
-        if (s.num_staggered_lines > 0) {
-            s.pixel_startx |= 1;
+        if (s.num_staggered_lines > 0 && (s.pixel_startx & 1) == 0) {
+            s.pixel_startx++;
+            s.pixel_endx++;
         }
-
-        s.pixel_startx += sensor.ccd_start_xoffset * ccd_pixels_per_system_pixel;
-        s.pixel_endx = s.pixel_startx + s.optical_pixels_raw;
-
-        s.pixel_startx /= s.hwdpi_divisor * s.segment_count * ccd_pixels_per_system_pixel;
-        s.pixel_endx /= s.hwdpi_divisor * s.segment_count * ccd_pixels_per_system_pixel;
-
     } else if (dev->model->asic_type == AsicType::GL124) {
-        unsigned startx = s.params.startx * sensor.optical_res / s.params.xres;
-
-        s.pixel_startx = startx;
-
-        if (s.num_staggered_lines > 0) {
-            s.pixel_startx |= 1;
-        }
-
-        s.pixel_startx /= ccd_pixels_per_system_pixel;
-        // FIXME: should we add sensor.dummy_pxel to pixel_startx at this point?
-        s.pixel_endx = s.pixel_startx + s.optical_pixels / ccd_pixels_per_system_pixel;
-
-        s.pixel_startx /= s.hwdpi_divisor * s.segment_count;
-        s.pixel_endx /= s.hwdpi_divisor * s.segment_count;
-
-        std::uint32_t segcnt = (sensor.custom_regs.get_value(gl124::REG_SEGCNT) << 16) +
-                               (sensor.custom_regs.get_value(gl124::REG_SEGCNT + 1) << 8) +
-                                sensor.custom_regs.get_value(gl124::REG_SEGCNT + 2);
-        if (s.pixel_endx == segcnt) {
-            s.pixel_endx = 0;
+        if (s.num_staggered_lines > 0 && (s.pixel_startx & 1) == 0) {
+            s.pixel_startx++;
+            s.pixel_endx++;
         }
     }
-
-    s.pixel_count_multiplier = sensor.pixel_count_multiplier;
-
-    s.pixel_startx *= sensor.pixel_count_multiplier;
-    s.pixel_endx *= sensor.pixel_count_multiplier;
 }
 
 void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Sensor& sensor)
@@ -959,24 +909,12 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
         throw SaneException("Unsupported depth setting %d", s.params.depth);
     }
 
-    unsigned ccd_pixels_per_system_pixel = sensor.ccd_pixels_per_system_pixel();
-
     // compute optical and output resolutions
 
-    if (dev->model->asic_type == AsicType::GL843) {
-        // FIXME: this may be incorrect, but need more scanners to test
-        s.hwdpi_divisor = sensor.get_hwdpi_divisor_for_dpi(s.params.xres);
-    } else {
-        s.hwdpi_divisor = sensor.get_hwdpi_divisor_for_dpi(s.params.xres * ccd_pixels_per_system_pixel);
-    }
-
     s.ccd_size_divisor = sensor.get_ccd_size_divisor_for_dpi(s.params.xres);
+    s.pixel_count_ratio = sensor.pixel_count_ratio;
 
-    if (dev->model->asic_type == AsicType::GL646) {
-        s.optical_resolution = sensor.optical_res;
-    } else {
-        s.optical_resolution = sensor.optical_res / s.ccd_size_divisor;
-    }
+    s.optical_resolution = sensor.optical_res / s.ccd_size_divisor;
     s.output_resolution = s.params.xres;
 
     if (s.output_resolution > s.optical_resolution) {
@@ -985,17 +923,13 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
 
     // compute the number of optical pixels that will be acquired by the chip
     s.optical_pixels = (s.params.pixels * s.optical_resolution) / s.output_resolution;
-    if (s.optical_pixels * s.output_resolution < s.params.pixels * s.optical_resolution) {
-        s.optical_pixels++;
-    }
 
     if (dev->model->asic_type == AsicType::GL841) {
-        if (s.optical_pixels & 1)
-            s.optical_pixels++;
+        s.optical_pixels = align_int_up(s.optical_pixels, 2);
     }
 
     if (dev->model->asic_type == AsicType::GL646 && s.params.xres == 400) {
-        s.optical_pixels = (s.optical_pixels / 6) * 6;
+        s.optical_pixels = align_multiple_floor(s.optical_pixels, 6);
     }
 
     if (dev->model->asic_type == AsicType::GL843) {
@@ -1005,7 +939,9 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
 
         if (dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7200I ||
             dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7300 ||
-            dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7500I)
+            dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7400 ||
+            dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7500I ||
+            dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_8200I)
         {
             s.optical_pixels = align_int_up(s.optical_pixels, 16);
         }
@@ -1014,6 +950,11 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
     // after all adjustments on the optical pixels have been made, compute the number of pixels
     // to retrieve from the chip
     s.output_pixels = (s.optical_pixels * s.output_resolution) / s.optical_resolution;
+
+    if (static_cast<int>(s.params.startx) + sensor.output_pixel_offset < 0)
+        throw SaneException("Invalid sensor.output_pixel_offset");
+    s.output_startx = static_cast<unsigned>(
+                static_cast<int>(s.params.startx) + sensor.output_pixel_offset);
 
     s.num_staggered_lines = 0;
     if (!has_flag(s.params.flags, ScanFlag::IGNORE_STAGGER_OFFSET))
@@ -1056,9 +997,11 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
     s.output_line_bytes_raw = s.output_line_bytes;
     s.conseq_pixel_dist = 0;
 
-    if (dev->model->asic_type == AsicType::GL845 ||
-        dev->model->asic_type == AsicType::GL846 ||
-        dev->model->asic_type == AsicType::GL847)
+    if ((dev->model->asic_type == AsicType::GL845 ||
+         dev->model->asic_type == AsicType::GL846 ||
+         dev->model->asic_type == AsicType::GL847) &&
+        dev->model->model_id != ModelId::PLUSTEK_OPTICFILM_7400 &&
+        dev->model->model_id != ModelId::PLUSTEK_OPTICFILM_8200I)
     {
         if (s.segment_count > 1) {
             s.conseq_pixel_dist = sensor.segment_size;
@@ -1067,8 +1010,7 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
             // the scan area
             unsigned extra_segment_scan_area = align_multiple_ceil(s.conseq_pixel_dist, 2);
             extra_segment_scan_area *= s.segment_count - 1;
-            extra_segment_scan_area *= s.hwdpi_divisor * s.segment_count;
-            extra_segment_scan_area *= ccd_pixels_per_system_pixel;
+            extra_segment_scan_area = s.pixel_count_ratio.apply_inverse(extra_segment_scan_area);
 
             s.optical_pixels_raw += extra_segment_scan_area;
         }
@@ -1106,8 +1048,7 @@ void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Se
         dev->model->asic_type == AsicType::GL846 ||
         dev->model->asic_type == AsicType::GL847)
     {
-        s.output_segment_pixel_group_count = s.optical_pixels /
-                (s.hwdpi_divisor * s.segment_count * ccd_pixels_per_system_pixel);
+        s.output_segment_pixel_group_count = s.pixel_count_ratio.apply(s.optical_pixels);
     }
 
     s.output_line_bytes_requested = multiply_by_depth_ceil(
@@ -1169,8 +1110,7 @@ static std::size_t get_usb_buffer_read_size(AsicType asic, const ScanSession& se
     }
 }
 
-void build_image_pipeline(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                          const ScanSession& session)
+void build_image_pipeline(Genesys_Device* dev, const ScanSession& session)
 {
     static unsigned s_pipeline_index = 0;
 
@@ -1279,14 +1219,9 @@ void build_image_pipeline(Genesys_Device* dev, const Genesys_Sensor& sensor,
         !has_flag(dev->model->flags, ModelFlag::NO_CALIBRATION) &&
         !has_flag(session.params.flags, ScanFlag::DISABLE_SHADING))
     {
-        unsigned pixel_shift = session.params.startx;
-        if (dev->model->model_id == ModelId::CANON_4400F) {
-            pixel_shift =
-                    session.params.startx * sensor.optical_res / dev->calib_session.params.xres;
-        }
         dev->pipeline.push_node<ImagePipelineNodeCalibrate>(dev->dark_average_data,
                                                             dev->white_average_data,
-                                                            pixel_shift *
+                                                            session.params.startx *
                                                                 dev->calib_session.params.channels);
 
         if (DBG_LEVEL >= DBG_io2) {
@@ -1335,6 +1270,32 @@ std::uint8_t compute_frontend_gain_wolfson(float value, float target_value)
     return clamp(code, 0, 255);
 }
 
+std::uint8_t compute_frontend_gain_lide_80(float value, float target_value)
+{
+    int code = static_cast<int>((target_value / value) * 12);
+    return clamp(code, 0, 255);
+}
+
+std::uint8_t compute_frontend_gain_wolfson_gl841(float value, float target_value)
+{
+    // this code path is similar to what generic wolfson code path uses and uses similar constants,
+    // but is likely incorrect.
+    float inv_gain = target_value / value;
+    inv_gain *= 0.69f;
+    int code = static_cast<int>(283 - 208 / inv_gain);
+    return clamp(code, 0, 255);
+}
+
+std::uint8_t compute_frontend_gain_wolfson_gl846_gl847_gl124(float value, float target_value)
+{
+    // this code path is similar to what generic wolfson code path uses and uses similar constants,
+    // but is likely incorrect.
+    float inv_gain = target_value / value;
+    int code = static_cast<int>(283 - 208 / inv_gain);
+    return clamp(code, 0, 255);
+}
+
+
 std::uint8_t compute_frontend_gain_analog_devices(float value, float target_value)
 {
     /*  The flow of data through the frontend ADC is as follows (see e.g. AD9826 datasheet)
@@ -1359,13 +1320,22 @@ std::uint8_t compute_frontend_gain_analog_devices(float value, float target_valu
 std::uint8_t compute_frontend_gain(float value, float target_value,
                                    FrontendType frontend_type)
 {
-    if (frontend_type == FrontendType::WOLFSON) {
-        return compute_frontend_gain_wolfson(value, target_value);
+    switch (frontend_type) {
+        case FrontendType::WOLFSON:
+            return compute_frontend_gain_wolfson(value, target_value);
+        case FrontendType::ANALOG_DEVICES:
+            return compute_frontend_gain_analog_devices(value, target_value);
+        case FrontendType::CANON_LIDE_80:
+            return compute_frontend_gain_lide_80(value, target_value);
+        case FrontendType::WOLFSON_GL841:
+            return compute_frontend_gain_wolfson_gl841(value, target_value);
+        case FrontendType::WOLFSON_GL846:
+        case FrontendType::WOLFSON_GL847:
+        case FrontendType::WOLFSON_GL124:
+            return compute_frontend_gain_wolfson_gl846_gl847_gl124(value, target_value);
+        default:
+            throw SaneException("Unknown frontend to compute gain for");
     }
-    if (frontend_type == FrontendType::ANALOG_DEVICES) {
-        return compute_frontend_gain_analog_devices(value, target_value);
-    }
-    throw SaneException("Unknown frontend to compute gain for");
 }
 
 /** @brief initialize device
@@ -1377,7 +1347,7 @@ std::uint8_t compute_frontend_gain(float value, float target_value,
  * @param dev device to initialize
  * @param max_regs umber of maximum used registers
  */
-void sanei_genesys_asic_init(Genesys_Device* dev, bool /*max_regs*/)
+void sanei_genesys_asic_init(Genesys_Device* dev)
 {
     DBG_HELPER(dbg);
 
@@ -1474,8 +1444,7 @@ void scanner_start_action(Genesys_Device& dev, bool start_motor)
     }
 }
 
-void sanei_genesys_set_dpihw(Genesys_Register_Set& regs, const Genesys_Sensor& sensor,
-                             unsigned dpihw)
+void sanei_genesys_set_dpihw(Genesys_Register_Set& regs, unsigned dpihw)
 {
     // same across GL646, GL841, GL843, GL846, GL847, GL124
     const uint8_t REG_0x05_DPIHW_MASK = 0xc0;
@@ -1483,10 +1452,6 @@ void sanei_genesys_set_dpihw(Genesys_Register_Set& regs, const Genesys_Sensor& s
     const uint8_t REG_0x05_DPIHW_1200 = 0x40;
     const uint8_t REG_0x05_DPIHW_2400 = 0x80;
     const uint8_t REG_0x05_DPIHW_4800 = 0xc0;
-
-    if (sensor.register_dpihw_override != 0) {
-        dpihw = sensor.register_dpihw_override;
-    }
 
     uint8_t dpihw_setting;
     switch (dpihw) {

@@ -203,7 +203,9 @@ enum class ModelId : unsigned
     PLUSTEK_OPTICBOOK_3800,
     PLUSTEK_OPTICFILM_7200I,
     PLUSTEK_OPTICFILM_7300,
+    PLUSTEK_OPTICFILM_7400,
     PLUSTEK_OPTICFILM_7500I,
+    PLUSTEK_OPTICFILM_8200I,
     PLUSTEK_OPTICPRO_3600,
     PLUSTEK_OPTICPRO_ST12,
     PLUSTEK_OPTICPRO_ST24,
@@ -222,6 +224,21 @@ enum class ModelId : unsigned
     XEROX_TRAVELSCANNER_100,
 };
 
+inline void serialize(std::istream& str, ModelId& x)
+{
+    unsigned value;
+    serialize(str, value);
+    x = static_cast<ModelId>(value);
+}
+
+inline void serialize(std::ostream& str, ModelId& x)
+{
+    unsigned value = static_cast<unsigned>(x);
+    serialize(str, value);
+}
+
+std::ostream& operator<<(std::ostream& out, ModelId id);
+
 enum class SensorId : unsigned
 {
     UNKNOWN = 0,
@@ -232,6 +249,7 @@ enum class SensorId : unsigned
     CCD_DP665,
     CCD_DP685,
     CCD_DSMOBILE600,
+    CCD_DOCKETPORT_487,
     CCD_G4050,
     CCD_HP2300,
     CCD_HP2400,
@@ -243,7 +261,9 @@ enum class SensorId : unsigned
     CCD_PLUSTEK_OPTICBOOK_3800,
     CCD_PLUSTEK_OPTICFILM_7200I,
     CCD_PLUSTEK_OPTICFILM_7300,
+    CCD_PLUSTEK_OPTICFILM_7400,
     CCD_PLUSTEK_OPTICFILM_7500I,
+    CCD_PLUSTEK_OPTICFILM_8200I,
     CCD_PLUSTEK_OPTICPRO_3600,
     CCD_ROADWARRIOR,
     CCD_ST12,         // SONY ILX548: 5340 Pixel  ???
@@ -295,7 +315,9 @@ enum class AdcId : unsigned
     PLUSTEK_OPTICBOOK_3800,
     PLUSTEK_OPTICFILM_7200I,
     PLUSTEK_OPTICFILM_7300,
+    PLUSTEK_OPTICFILM_7400,
     PLUSTEK_OPTICFILM_7500I,
+    PLUSTEK_OPTICFILM_8200I,
     PLUSTEK_OPTICPRO_3600,
     WOLFSON_5345,
     WOLFSON_DSM600,
@@ -320,6 +342,8 @@ inline void serialize(std::ostream& str, AdcId& x)
     unsigned value = static_cast<unsigned>(x);
     serialize(str, value);
 }
+
+std::ostream& operator<<(std::ostream& out, AdcId id);
 
 enum class GpioId : unsigned
 {
@@ -347,7 +371,9 @@ enum class GpioId : unsigned
     PLUSTEK_OPTICBOOK_3800,
     PLUSTEK_OPTICFILM_7200I,
     PLUSTEK_OPTICFILM_7300,
+    PLUSTEK_OPTICFILM_7400,
     PLUSTEK_OPTICFILM_7500I,
+    PLUSTEK_OPTICFILM_8200I,
     PLUSTEK_OPTICPRO_3600,
     ST12,
     ST24,
@@ -355,6 +381,8 @@ enum class GpioId : unsigned
     XP200,
     XP300,
 };
+
+std::ostream& operator<<(std::ostream& out, GpioId id);
 
 enum class MotorId : unsigned
 {
@@ -382,7 +410,9 @@ enum class MotorId : unsigned
     PLUSTEK_OPTICBOOK_3800,
     PLUSTEK_OPTICFILM_7200I,
     PLUSTEK_OPTICFILM_7300,
+    PLUSTEK_OPTICFILM_7400,
     PLUSTEK_OPTICFILM_7500I,
+    PLUSTEK_OPTICFILM_8200I,
     PLUSTEK_OPTICPRO_3600,
     ROADWARRIOR,
     ST24,
@@ -390,6 +420,8 @@ enum class MotorId : unsigned
     XP200,
     XP300,
 };
+
+std::ostream& operator<<(std::ostream& out, MotorId id);
 
 enum class StepType : unsigned
 {
@@ -442,8 +474,8 @@ enum class ModelFlag : unsigned
     // use 14-bit gamma table instead of 12-bit
     GAMMA_14BIT = 1 << 1,
 
-    // skip lamp warmup (genesys_warmup())
-    SKIP_WARMUP = 1 << 4,
+    // perform lamp warmup
+    WARMUP = 1 << 4,
 
     // repark head and check for lock by moving without scanning
     REPARK = 1 << 7,
@@ -468,9 +500,6 @@ enum class ModelFlag : unsigned
 
     // the head must be reparked between shading scans
     SHADING_REPARK = 1 << 18,
-
-    // the scanner always uses maximum hwdpi to setup the sensor
-    FULL_HWDPI_MODE = 1 << 19,
 
     // the scanner outputs 16-bit data that is byte-inverted
     INVERTED_16BIT_DATA = 1 << 20,
@@ -522,8 +551,10 @@ enum class ScanFlag : unsigned
     FEEDING = 1 << 8,
     USE_XPA = 1 << 9,
     ENABLE_LEDADD = 1 << 10,
-    USE_XCORRECTION = 1 << 11,
     REVERSE = 1 << 12,
+
+    // (unused): the scanner should return head to home position automatically after scan.
+    AUTO_GO_HOME = 1 << 13,
 };
 
 inline ScanFlag operator|(ScanFlag left, ScanFlag right)
@@ -561,39 +592,6 @@ inline void serialize(std::ostream& str, ScanFlag& x)
 }
 
 std::ostream& operator<<(std::ostream& out, ScanFlag flags);
-
-
-
-enum class MotorFlag : unsigned
-{
-    NONE = 0,
-    AUTO_GO_HOME = 1 << 0,
-    DISABLE_BUFFER_FULL_MOVE = 1 << 2,
-    FEED = 1 << 3,
-    USE_XPA = 1 << 4,
-    REVERSE = 1 << 5,
-};
-
-inline MotorFlag operator|(MotorFlag left, MotorFlag right)
-{
-    return static_cast<MotorFlag>(static_cast<unsigned>(left) | static_cast<unsigned>(right));
-}
-
-inline MotorFlag& operator|=(MotorFlag& left, MotorFlag right)
-{
-    left = left | right;
-    return left;
-}
-
-inline MotorFlag operator&(MotorFlag left, MotorFlag right)
-{
-    return static_cast<MotorFlag>(static_cast<unsigned>(left) & static_cast<unsigned>(right));
-}
-
-inline bool has_flag(MotorFlag flags, MotorFlag which)
-{
-    return (flags & which) == which;
-}
 
 
 enum class Direction : unsigned

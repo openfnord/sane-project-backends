@@ -60,8 +60,7 @@ public:
     void init(Genesys_Device* dev) const override;
 
     void init_regs_for_warmup(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                              Genesys_Register_Set* regs, int* channels,
-                              int* total_size) const override;
+                              Genesys_Register_Set* regs) const override;
 
     void init_regs_for_shading(Genesys_Device* dev, const Genesys_Sensor& sensor,
                                Genesys_Register_Set& regs) const override;
@@ -98,6 +97,10 @@ public:
     void move_back_home(Genesys_Device* dev, bool wait_until_home) const override;
 
     void update_hardware_sensors(struct Genesys_Scanner* s) const override;
+
+    bool needs_update_home_sensor_gpio() const override { return true; }
+
+    void update_home_sensor_gpio(Genesys_Device& dev) const override;
 
     void load_document(Genesys_Device* dev) const override;
 

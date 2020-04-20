@@ -46,6 +46,7 @@
 
 #include "enums.h"
 #include "serialize.h"
+#include "utilities.h"
 
 namespace genesys {
 
@@ -120,8 +121,9 @@ struct SetupParams {
     unsigned startx = NOT_SET;
     // start pixel in Y direction, counted according to base_ydpi
     unsigned starty = NOT_SET;
-    // the number of pixels in X direction. Note that each logical pixel may correspond to more
-    // than one CCD pixel, see CKSEL and GenesysSensor::ccd_pixels_per_system_pixel()
+    // the number of pixels in X direction. Counted in terms of xres.
+    // Note that each logical pixel may correspond to more than one CCD pixel, see CKSEL and
+    // GenesysSensor::ccd_pixels_per_system_pixel()
     unsigned pixels = NOT_SET;
 
     // the number of pixels in the X direction as requested by the frontend. This will be different
@@ -210,10 +212,6 @@ struct ScanSession {
     // whether the session setup has been computed via compute_session()
     bool computed = false;
 
-    // specifies the reduction (if any) of hardware dpi on the Genesys chip side.
-    // except gl646
-    unsigned hwdpi_divisor = 1;
-
     // specifies the reduction (if any) of CCD effective dpi which is performed by latching the
     // data coming from CCD in such a way that 1/2 or 3/4 of pixel data is ignored.
     unsigned ccd_size_divisor = 1;
@@ -234,6 +232,9 @@ struct ScanSession {
     // the resolution of the output data.
     // gl843-only
     unsigned output_resolution = 0;
+
+    // the offset in pixels from the beginning of output data
+    unsigned output_startx = 0;
 
     // the number of pixels in output data (after desegmentation)
     unsigned output_pixels = 0;
@@ -283,8 +284,18 @@ struct ScanSession {
     unsigned pixel_startx = 0;
     unsigned pixel_endx = 0;
 
-    // certain scanners require the logical pixel count to be multiplied on certain resolutions
-    unsigned pixel_count_multiplier = 1;
+    /*  The following defines the ratio between logical pixel count and pixel count setting sent to
+        the scanner. The ratio is affected by the following:
+
+        - Certain scanners just like to multiply the pixel number by a multiplier that depends on
+          the resolution.
+
+        - The sensor may be configured to output one value per multiple physical pixels
+
+        - The scanner will automatically average the pixels that come from the sensor using a
+          certain ratio.
+    */
+    Ratio pixel_count_ratio = Ratio{1, 1};
 
     // Distance in pixels between consecutive pixels, e.g. between odd and even pixels. Note that
     // the number of segments can be large.
@@ -332,13 +343,13 @@ void serialize(Stream& str, ScanSession& x)
     serialize(str, x.params);
     serialize_newline(str);
     serialize(str, x.computed);
-    serialize(str, x.hwdpi_divisor);
     serialize(str, x.ccd_size_divisor);
     serialize(str, x.optical_resolution);
     serialize(str, x.optical_pixels);
     serialize(str, x.optical_pixels_raw);
     serialize(str, x.optical_line_count);
     serialize(str, x.output_resolution);
+    serialize(str, x.output_startx);
     serialize(str, x.output_pixels);
     serialize(str, x.output_channel_bytes);
     serialize(str, x.output_line_bytes);
@@ -355,7 +366,7 @@ void serialize(Stream& str, ScanSession& x)
     serialize(str, x.segment_count);
     serialize(str, x.pixel_startx);
     serialize(str, x.pixel_endx);
-    serialize(str, x.pixel_count_multiplier);
+    serialize(str, x.pixel_count_ratio);
     serialize(str, x.conseq_pixel_dist);
     serialize(str, x.output_segment_pixel_group_count);
     serialize(str, x.output_segment_start_offset);

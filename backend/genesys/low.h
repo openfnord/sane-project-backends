@@ -153,50 +153,60 @@
 #define AFE_SET        2
 #define AFE_POWER_SAVE 4
 
-#define LOWORD(x)  ((uint16_t)((x) & 0xffff))
-#define HIWORD(x)  ((uint16_t)((x) >> 16))
-#define LOBYTE(x)  ((uint8_t)((x) & 0xFF))
-#define HIBYTE(x)  ((uint8_t)((x) >> 8))
-
-/* Global constants */
-/* TODO: emove this leftover of early backend days */
-#define MOTOR_SPEED_MAX		350
-#define DARK_VALUE		0
-
-#define MAX_RESOLUTIONS 13
-#define MAX_DPI 4
-
 namespace genesys {
 
-struct Genesys_USB_Device_Entry {
+class UsbDeviceEntry {
+public:
+    static constexpr std::uint16_t BCD_DEVICE_NOT_SET = 0xffff;
 
-    Genesys_USB_Device_Entry(unsigned v, unsigned p, const Genesys_Model& m) :
-        vendor(v), product(p), model(m)
+    UsbDeviceEntry(std::uint16_t vendor_id, std::uint16_t product_id,
+                   const Genesys_Model& model) :
+        vendor_{vendor_id}, product_{product_id},
+        bcd_device_{BCD_DEVICE_NOT_SET}, model_{model}
     {}
 
+    UsbDeviceEntry(std::uint16_t vendor_id, std::uint16_t product_id, std::uint16_t bcd_device,
+                   const Genesys_Model& model) :
+        vendor_{vendor_id}, product_{product_id},
+        bcd_device_{bcd_device}, model_{model}
+    {}
+
+    std::uint16_t vendor_id() const { return vendor_; }
+    std::uint16_t product_id() const { return product_; }
+    std::uint16_t bcd_device() const { return bcd_device_; }
+
+    const Genesys_Model& model() const { return model_; }
+
+    bool matches(std::uint16_t vendor_id, std::uint16_t product_id, std::uint16_t bcd_device)
+    {
+        if (vendor_ != vendor_id)
+            return false;
+        if (product_ != product_id)
+            return false;
+        if (bcd_device_ != BCD_DEVICE_NOT_SET && bcd_device != BCD_DEVICE_NOT_SET &&
+            bcd_device_ != bcd_device)
+        {
+            return false;
+        }
+        return true;
+    }
+
+private:
     // USB vendor identifier
-    std::uint16_t vendor;
+    std::uint16_t vendor_;
     // USB product identifier
-    std::uint16_t product;
+    std::uint16_t product_;
+    // USB bcdProduct identifier
+    std::uint16_t bcd_device_;
     // Scanner model information
-    Genesys_Model model;
+    Genesys_Model model_;
 };
 
 /*--------------------------------------------------------------------------*/
 /*       common functions needed by low level specific functions            */
 /*--------------------------------------------------------------------------*/
 
-inline GenesysRegister* sanei_genesys_get_address(Genesys_Register_Set* regs, uint16_t addr)
-{
-    auto* ret = regs->find_reg_address(addr);
-    if (ret == nullptr) {
-        DBG(DBG_error, "%s: failed to find address for register 0x%02x, crash expected !\n",
-            __func__, addr);
-    }
-    return ret;
-}
-
-extern void sanei_genesys_init_cmd_set(Genesys_Device* dev);
+std::unique_ptr<CommandSet> create_cmd_set(AsicType asic_type);
 
 // reads the status of the scanner
 Status scanner_read_status(Genesys_Device& dev);
@@ -303,6 +313,18 @@ void scanner_move_back_home_ta(Genesys_Device& dev);
  */
 void scanner_search_strip(Genesys_Device& dev, bool forward, bool black);
 
+bool should_calibrate_only_active_area(const Genesys_Device& dev,
+                                       const Genesys_Settings& settings);
+
+void scanner_offset_calibration(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                Genesys_Register_Set& regs);
+
+void scanner_coarse_gain_calibration(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                     Genesys_Register_Set& regs, unsigned dpi);
+
+SensorExposure scanner_led_calibration(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                       Genesys_Register_Set& regs);
+
 void scanner_clear_scan_and_feed_counts(Genesys_Device& dev);
 
 extern void sanei_genesys_write_file(const char* filename, const std::uint8_t* data,
@@ -328,8 +350,7 @@ void regs_set_exposure(AsicType asic_type, Genesys_Register_Set& regs,
 
 void regs_set_optical_off(AsicType asic_type, Genesys_Register_Set& regs);
 
-void sanei_genesys_set_dpihw(Genesys_Register_Set& regs, const Genesys_Sensor& sensor,
-                             unsigned dpihw);
+void sanei_genesys_set_dpihw(Genesys_Register_Set& regs, unsigned dpihw);
 
 inline SensorExposure sanei_genesys_fixup_exposure(SensorExposure exposure)
 {
@@ -343,13 +364,16 @@ bool get_registers_gain4_bit(AsicType asic_type, const Genesys_Register_Set& reg
 
 extern void sanei_genesys_wait_for_home(Genesys_Device* dev);
 
-extern void sanei_genesys_asic_init(Genesys_Device* dev, bool cold);
+extern void sanei_genesys_asic_init(Genesys_Device* dev);
 
 void scanner_start_action(Genesys_Device& dev, bool start_motor);
 void scanner_stop_action(Genesys_Device& dev);
 void scanner_stop_action_no_move(Genesys_Device& dev, Genesys_Register_Set& regs);
 
 bool scanner_is_motor_stopped(Genesys_Device& dev);
+
+void scanner_setup_sensor(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                          Genesys_Register_Set& regs);
 
 const MotorProfile* get_motor_profile_ptr(const std::vector<MotorProfile>& profiles,
                                           unsigned exposure,
@@ -403,8 +427,7 @@ extern void sanei_genesys_generate_gamma_buffer(Genesys_Device* dev,
 
 void compute_session(const Genesys_Device* dev, ScanSession& s, const Genesys_Sensor& sensor);
 
-void build_image_pipeline(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                          const ScanSession& session);
+void build_image_pipeline(Genesys_Device* dev, const ScanSession& session);
 
 std::uint8_t compute_frontend_gain(float value, float target_value,
                                    FrontendType frontend_type);
@@ -455,14 +478,17 @@ inline T clamp(const T& value, const T& lo, const T& hi)
 extern StaticInit<std::vector<Genesys_Sensor>> s_sensors;
 extern StaticInit<std::vector<Genesys_Frontend>> s_frontends;
 extern StaticInit<std::vector<Genesys_Gpo>> s_gpo;
+extern StaticInit<std::vector<MemoryLayout>> s_memory_layout;
 extern StaticInit<std::vector<Genesys_Motor>> s_motors;
-extern StaticInit<std::vector<Genesys_USB_Device_Entry>> s_usb_devices;
+extern StaticInit<std::vector<UsbDeviceEntry>> s_usb_devices;
 
 void genesys_init_sensor_tables();
 void genesys_init_frontend_tables();
 void genesys_init_gpo_tables();
+void genesys_init_memory_layout_tables();
 void genesys_init_motor_tables();
 void genesys_init_usb_device_tables();
+void verify_sensor_tables();
 void verify_usb_device_tables();
 
 template<class T>
