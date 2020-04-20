@@ -176,7 +176,7 @@ static ssize_t axis_wimp_get(int udp_socket, struct sockaddr_in *addr, uint8_t c
   memmove(data_out, data_out + sizeof(struct axis_wimp_header) + sizeof(struct axis_wimp_get_reply), len);
   data_out[len] = '\0';
 
-  return 0;
+  return len;
 }
 
 static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
@@ -212,23 +212,36 @@ static int create_udp_socket(uint32_t addr, uint16_t *source_port) {
   return udp_socket;
 }
 
-static int get_server_status(int udp_socket, struct sockaddr_in *addr) {
+static int get_server_status(int udp_socket, struct sockaddr_in *addr, char *user) {
   char buf[MAX_PACKET_DATA_SIZE];
 
   /* get device status (IDLE/BUSY) */
-  if (axis_wimp_get(udp_socket, addr, WIMP_GET_STATUS, 1, buf, sizeof(buf)))
-    DBG(LOG_NOTICE, "Error getting device status\n");
+  if (axis_wimp_get(udp_socket, addr, WIMP_GET_STATUS, 1, buf, sizeof(buf)) < 0)
+    {
+      DBG(LOG_NOTICE, "Error getting device status\n");
+      return -1;
+    }
   DBG(LOG_INFO, "device status=%s\n", buf);
+  if (!strncmp(buf, "IDLE_TXT", 8))
+    return 0;
 
   /* get username if BUSY */
-  if (!strcmp((char *)buf, "BUSY_TXT")) {
-    if (axis_wimp_get(udp_socket, addr, WIMP_GET_STATUS, 2, buf, sizeof(buf)))
-      DBG(LOG_NOTICE, "Error getting user name\n");
-    DBG(LOG_INFO, "username=%s\n", buf);
-    return 1;
-  }
+  if (!strcmp(buf, "BUSY_TXT"))
+    {
+      if (axis_wimp_get(udp_socket, addr, WIMP_GET_STATUS, 2, buf, sizeof(buf)) < 0)
+        {
+          DBG(LOG_NOTICE, "Error getting user name\n");
+          return -1;
+        }
+      DBG(LOG_INFO, "username=%s\n", buf);
+      strncpy(user, buf, AXIS_USERNAME_LEN);
+      buf[AXIS_USERNAME_LEN - 1] = '\0';
+      return 1;
+    }
 
-  return 0;
+  DBG(LOG_CRIT, "Invalid server status: %s\n", buf);
+
+  return -1;
 }
 
 static int get_device_name(int udp_socket, struct sockaddr_in *addr, char *devname, int devname_len) {
@@ -236,7 +249,7 @@ static int get_device_name(int udp_socket, struct sockaddr_in *addr, char *devna
 
   buf[0] = '\0';
   /* get device name */
-  if (axis_wimp_get(udp_socket, addr, WIMP_GET_NAME, 1, buf, sizeof(buf)))
+  if (axis_wimp_get(udp_socket, addr, WIMP_GET_NAME, 1, buf, sizeof(buf)) < 0)
     {
       DBG(LOG_NOTICE, "Error getting device name\n");
       return -1;
@@ -440,6 +453,46 @@ parse_uri(const char *uri, struct sockaddr_in *address)
   return 0;
 }
 
+SANE_Status
+add_scanner(int udp_socket, const char *uri,
+            SANE_Status (*attach_axis)
+            (SANE_String_Const devname,
+             SANE_String_Const makemodel,
+             SANE_String_Const serial,
+             const struct pixma_config_t *
+             const pixma_devices[]),
+            const struct pixma_config_t *const pixma_devices[])
+{
+  char devname[256];
+  char serial[AXIS_SERIAL_LEN];
+  char user[AXIS_USERNAME_LEN];
+
+  if (axis_no_devices >= AXIS_NO_DEVICES)
+    {
+      DBG(LOG_INFO, "%s: device limit %d reached\n", __func__, AXIS_NO_DEVICES);
+      return SANE_STATUS_NO_MEM;
+    }
+
+  struct sockaddr_in addr;
+  if (parse_uri(uri, &addr))
+    return -1;
+
+  addr.sin_port = htons(AXIS_WIMP_PORT);
+  if (get_device_name(udp_socket, &addr, devname, sizeof(devname)) == 0)
+    {
+      strcpy(serial, inet_ntoa(addr.sin_addr));
+      int status = get_server_status(udp_socket, &addr, user);
+      if (status < 0)
+        return -1;
+      if (status == 1)
+        snprintf(serial, sizeof(serial), "%s BUSY %s", inet_ntoa(addr.sin_addr), user);
+      device[axis_no_devices++].addr = addr.sin_addr;
+      attach_axis(uri, devname, serial, pixma_devices);
+    }
+
+  return 0;
+}
+
 
 /**
  * Find AXIS printservers with Canon support
@@ -460,7 +513,6 @@ sanei_axis_find_devices (const char **conf_devices,
 			  const pixma_devices[]),
 			 const struct pixma_config_t *const pixma_devices[])
 {
-  char devname[256];
   char uri[256];
   uint8_t packet[MAX_PACKET_DATA_SIZE];
   struct sockaddr_in from;
@@ -494,24 +546,7 @@ sanei_axis_find_devices (const char **conf_devices,
 	  else
             {
               DBG(LOG_DEBUG, "%s: Adding scanner from pixma.conf: %s\n", __func__, conf_devices[i]);
-              strncpy(uri, conf_devices[i], sizeof(uri) - 1);
-              uri[sizeof(uri) - 1] = '\0';
-              if (axis_no_devices >= AXIS_NO_DEVICES)
-                {
-                  DBG(LOG_INFO, "%s: device limit %d reached\n", __func__, AXIS_NO_DEVICES);
-                  close(udp_socket);
-                  return SANE_STATUS_NO_MEM;
-                }
-
-              struct sockaddr_in addr;
-              if (parse_uri(uri, &addr))
-                continue;
-              addr.sin_port = htons(AXIS_WIMP_PORT);
-              if (get_device_name(udp_socket, &addr, devname, sizeof(devname)) == 0)
-                {
-                  device[axis_no_devices++].addr = addr.sin_addr;
-                  attach_axis(uri, devname, inet_ntoa(addr.sin_addr), pixma_devices);
-                }
+              add_scanner(udp_socket, conf_devices[i], attach_axis, pixma_devices);
 	    }
         }
     }
@@ -537,11 +572,8 @@ sanei_axis_find_devices (const char **conf_devices,
       continue;
     }
 
-    get_device_name(udp_socket, &from, devname, sizeof(devname));
     sprintf(uri, "axis://%s", inet_ntoa(from.sin_addr));
-
-    device[axis_no_devices++].addr = from.sin_addr;
-    attach_axis(uri, devname, inet_ntoa(from.sin_addr), pixma_devices);
+    add_scanner(udp_socket, uri, attach_axis, pixma_devices);
   }
   close(udp_socket);
 

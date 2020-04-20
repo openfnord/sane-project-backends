@@ -44,6 +44,9 @@ struct axis_wimp_get_reply {
 	uint16_t unknown;
 } __attribute__((__packed__));
 
+#define AXIS_SERIAL_LEN		32	/* arbitrary limit */
+#define AXIS_USERNAME_LEN	32	/* arbitrary limit */
+
 #define AXIS_SCAN_PORT		49152	/* TCP port for scan data */
 
 #define AXIS_HDR_REQUEST	0x27
