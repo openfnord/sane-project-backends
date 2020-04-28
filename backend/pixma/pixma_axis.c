@@ -154,7 +154,7 @@ static ssize_t axis_wimp_get(int udp_socket, struct sockaddr_in *addr, uint8_t c
   struct axis_wimp_header *reply = (void *)data_out;
   struct axis_wimp_get_reply *str = (void *)(data_out + sizeof(struct axis_wimp_header));
 
-  wimp_get.port = addr->sin_port,
+  wimp_get.port = htole16(ntohs(addr->sin_port)),	/* network order -> LE */
   wimp_get.magic = 0x02,
   wimp_get.zero = 0;
   wimp_get.cmd = cmd,
@@ -172,7 +172,7 @@ static ssize_t axis_wimp_get(int udp_socket, struct sockaddr_in *addr, uint8_t c
     DBG(LOG_NOTICE, "Received invalid reply\n");
     return -1;
   }
-  len = le16_to_cpu(str->len) - 2;
+  len = le16toh(str->len) - 2;
   memmove(data_out, data_out + sizeof(struct axis_wimp_header) + sizeof(struct axis_wimp_get_reply), len);
   data_out[len] = '\0';
 
@@ -266,16 +266,14 @@ static int get_device_name(int udp_socket, struct sockaddr_in *addr, char *devna
 static int send_discover(int udp_socket, uint32_t addr, uint16_t source_port) {
   int ret;
   struct sockaddr_in address;
-  uint8_t get_info[2];
 
   address.sin_family = AF_INET;
   address.sin_port = htons(AXIS_WIMP_PORT);
   address.sin_addr.s_addr = addr;
 
-  get_info[0] = source_port & 0xff;
-  get_info[1] = source_port >> 8;
+  source_port = htole16(source_port);
 
-  ret = axis_send_wimp(udp_socket, &address, WIMP_SERVER_INFO, get_info, sizeof(get_info));
+  ret = axis_send_wimp(udp_socket, &address, WIMP_SERVER_INFO, &source_port, sizeof(source_port));
   if (ret)
     DBG(LOG_NOTICE, "Unable to send discover packet\n");
 
@@ -314,7 +312,7 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
   DBG(LOG_INFO, "%s(0x%02x, %d)\n", __func__, cmd, len);
 
   header->type = AXIS_HDR_REQUEST;
-  header->len = cpu_to_le16(len + sizeof(struct axis_cmd));
+  header->len = htole32(len + sizeof(struct axis_cmd));
   ret = send(tcp_socket, packet, sizeof(struct axis_header), 0);
   dbg_hexdump(LOG_DEBUG2, packet, ret);
   if (ret < 0) {
@@ -324,7 +322,7 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
 
   struct axis_cmd *command = (void *)packet;
   command->cmd = cmd;
-  command->len = cpu_to_le16(len);
+  command->len = htole32(len);
   memcpy(packet + sizeof(struct axis_cmd), data, len);
   ret = send(tcp_socket, packet, sizeof(struct axis_cmd) + len, 0);
   dbg_hexdump(LOG_DEBUG2, packet, ret);
@@ -373,14 +371,14 @@ retry:
     dbg_hexdump(LOG_CRIT, packet, ret);
     return -1;
   }
-  *len = le16_to_cpu(header->len);
+  *len = le32toh(header->len);
   DBG(LOG_DEBUG, "len=0x%lx\n", *len);
   ret = recv(device[dn].tcp_socket, packet, *len, 0);
   if (ret < 512) {
     DBG(LOG_DEBUG2, "got2:\n");
     dbg_hexdump(LOG_DEBUG2, packet, ret);
   }
-  *len = le16_to_cpu(reply->len);
+  *len = le32toh(reply->len);
   if (reply->cmd == AXIS_CMD_UNKNOWN2) {
     DBG(LOG_DEBUG, "interrupt\n");
     memcpy(device[dn].int_data, packet + sizeof(struct axis_reply), *len);
@@ -389,7 +387,7 @@ retry:
   }
   memcpy(data, packet + sizeof(struct axis_reply), ret - sizeof(struct axis_reply));
   if (reply->status != 0) {
-    DBG(LOG_CRIT, "status=0x%x\n", le16_to_cpu(reply->status));
+    DBG(LOG_CRIT, "status=0x%x\n", le32toh(reply->status));
     return SANE_STATUS_IO_ERROR;
   }
 
@@ -665,7 +663,7 @@ extern SANE_Status
 sanei_axis_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
 {
   DBG(LOG_INFO, "%s(%d, %p, %ld)\n", __func__, dn, buffer, *size);
-  uint16_t read_size = cpu_to_le16(*size);
+  uint16_t read_size = htole16(*size);
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_READ, &read_size, sizeof(read_size));
   axis_recv(dn, buffer, size);  ////FIXME
   DBG(LOG_DEBUG2, "sanei_axis_read_bulk:\n");

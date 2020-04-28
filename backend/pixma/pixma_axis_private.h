@@ -10,9 +10,6 @@
 
 #define AXIS_WIMP_PORT 		10260	/* UDP port for discovery */
 
-#define cpu_to_le16(x)		(x)
-#define le16_to_cpu(x)		(x)
-
 #define WIMP_SERVER_INFO	0x24
 #define WIMP_SERVER_STATUS	0x30
 #define WIMP_REPLY		(1 << 0)
