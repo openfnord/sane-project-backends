@@ -1,5 +1,5 @@
 #undef BACKEND_NAME
-#define BACKEND_NAME axis
+#define BACKEND_NAME pixma_axis
 
 #include  "../../include/sane/config.h"
 #include  "../../include/sane/sane.h"
