@@ -372,7 +372,7 @@ retry:
     return -1;
   }
   *len = le32toh(header->len);
-  DBG(LOG_DEBUG, "len=0x%lx\n", *len);
+  DBG(LOG_DEBUG, "len=0x%zx\n", *len);
   ret = recv(device[dn].tcp_socket, packet, *len, 0);
   if (ret < 512) {
     DBG(LOG_DEBUG2, "got2:\n");
@@ -394,7 +394,7 @@ retry:
   remaining = *len - (ret - sizeof(struct axis_reply));
   data_pos = data + ret - sizeof(struct axis_reply);
   while (remaining > 0) {
-    DBG(LOG_DEBUG, "remaining bytes: %ld\n", remaining);
+    DBG(LOG_DEBUG, "remaining bytes: %zd\n", remaining);
     ret = recv(device[dn].tcp_socket, data_pos, remaining, 0);
     remaining -= ret;
     data_pos += ret;
@@ -662,7 +662,7 @@ sanei_axis_set_timeout (SANE_Int dn, SANE_Int timeout)
 extern SANE_Status
 sanei_axis_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
 {
-  DBG(LOG_INFO, "%s(%d, %p, %ld)\n", __func__, dn, buffer, *size);
+  DBG(LOG_INFO, "%s(%d, %p, %zd)\n", __func__, dn, buffer, *size);
   uint16_t read_size = htole16(*size);
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_READ, &read_size, sizeof(read_size));
   axis_recv(dn, buffer, size);  ////FIXME
@@ -677,7 +677,7 @@ sanei_axis_write_bulk (SANE_Int dn, const SANE_Byte * buffer, size_t * size)
 {
   SANE_Byte dummy_buf[MAX_PACKET_DATA_SIZE];
   size_t dummy_len;
-  DBG(LOG_INFO, "%s(%d, %p, %ld)\n", __func__, dn, buffer, *size);
+  DBG(LOG_INFO, "%s(%d, %p, %zd)\n", __func__, dn, buffer, *size);
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_WRITE, (void *) buffer, *size);
   axis_recv(dn, dummy_buf, &dummy_len);	////FIXME
   return SANE_STATUS_GOOD;
@@ -686,7 +686,7 @@ sanei_axis_write_bulk (SANE_Int dn, const SANE_Byte * buffer, size_t * size)
 extern SANE_Status
 sanei_axis_read_int (SANE_Int dn, SANE_Byte * buffer, size_t * size)
 {
-  DBG(LOG_INFO, "%s(%d, %p, %ld)\n", __func__, dn, buffer, *size);
+  DBG(LOG_INFO, "%s(%d, %p, %zd)\n", __func__, dn, buffer, *size);
   if (!device[dn].int_size)
     return SANE_STATUS_EOF;
   memcpy(buffer, device[dn].int_data, device[dn].int_size);
