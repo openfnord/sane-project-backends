@@ -517,7 +517,7 @@ sanei_axis_find_devices (const char **conf_devices,
   struct sockaddr_in from;
   uint16_t source_port;
   int udp_socket, num_ifaces;
-  int auto_detect = 1, i;
+  int auto_detect = 0, i;
 
   udp_socket = create_udp_socket(htonl(INADDR_ANY), &source_port);
   if (udp_socket < 0)
@@ -536,10 +536,9 @@ sanei_axis_find_devices (const char **conf_devices,
         }
       for (i = 0; conf_devices[i] != NULL; i++)
         {
-	  if (!strcmp(conf_devices[i], "auto_detection=no"))
+	  if (!strcmp(conf_devices[i], "axis_auto_detection=yes"))
             {
-              auto_detect = 0;
-	      DBG(LOG_DEBUG, "%s: auto detection of network scanners disabled in configuration file\n", __func__);
+              auto_detect = 1;
 	      continue;
 	    }
 	  else
@@ -552,6 +551,7 @@ sanei_axis_find_devices (const char **conf_devices,
 
   if (!auto_detect)
     {
+      DBG(LOG_DEBUG, "%s: auto detection of AXIS network scanners not enabled in configuration file\n", __func__);
       close(udp_socket);
       return SANE_STATUS_GOOD;
     }
