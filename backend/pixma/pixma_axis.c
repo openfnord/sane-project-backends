@@ -334,12 +334,12 @@ int axis_send_cmd(int tcp_socket, uint8_t cmd, void *data, uint16_t len) {
   return 0;
 }
 
-int axis_recv(SANE_Int dn, SANE_Byte *data, size_t *len) {
+int axis_recv(SANE_Int dn, SANE_Byte *data, size_t *data_len) {
   uint8_t packet[MAX_PACKET_DATA_SIZE];
   uint8_t *data_pos;
   struct axis_header *header = (void *)packet;
   struct axis_reply *reply = (void *)packet;
-  ssize_t ret, remaining;
+  ssize_t ret, len, remaining;
 
 retry:
   /* AXIS sends 0x24 byte 15 seconds after end of scan, then repeats 3 more times each 5 seconds - the purpose is unknown, get rid of that */
@@ -371,27 +371,32 @@ retry:
     dbg_hexdump(LOG_CRIT, packet, ret);
     return -1;
   }
-  *len = le32toh(header->len);
-  DBG(LOG_DEBUG, "len=0x%zx\n", *len);
-  ret = recv(device[dn].tcp_socket, packet, *len, 0);
+  len = le32toh(header->len);
+  DBG(LOG_DEBUG, "len=0x%zx\n", len);
+  ret = recv(device[dn].tcp_socket, packet, len, 0);
   if (ret < 512) {
     DBG(LOG_DEBUG2, "got2:\n");
     dbg_hexdump(LOG_DEBUG2, packet, ret);
   }
-  *len = le32toh(reply->len);
+  len = le32toh(reply->len);
   if (reply->cmd == AXIS_CMD_UNKNOWN2) {
     DBG(LOG_DEBUG, "interrupt\n");
-    memcpy(device[dn].int_data, packet + sizeof(struct axis_reply), *len);
-    device[dn].int_size = *len;
+    memcpy(device[dn].int_data, packet + sizeof(struct axis_reply), len);
+    device[dn].int_size = len;
     goto retry;
   }
-  memcpy(data, packet + sizeof(struct axis_reply), ret - sizeof(struct axis_reply));
+  if (data)
+    memcpy(data, packet + sizeof(struct axis_reply), ret - sizeof(struct axis_reply));
+  if (data_len)
+    *data_len = len;
   if (reply->status != 0) {
     DBG(LOG_CRIT, "status=0x%x\n", le32toh(reply->status));
     return SANE_STATUS_IO_ERROR;
   }
 
-  remaining = *len - (ret - sizeof(struct axis_reply));
+  if (!data)
+    return 0;
+  remaining = len - (ret - sizeof(struct axis_reply));
   data_pos = data + ret - sizeof(struct axis_reply);
   while (remaining > 0) {
     DBG(LOG_DEBUG, "remaining bytes: %zd\n", remaining);
@@ -626,16 +631,15 @@ sanei_axis_open (SANE_String_Const devname, SANE_Int * dn)
 
       username = getusername();
       axis_send_cmd(tcp_socket, AXIS_CMD_CONNECT, username, strlen(username) + 1);
-      SANE_Byte dummy_buf[MAX_PACKET_DATA_SIZE];
-      size_t dummy_len;
-      axis_recv(i, dummy_buf, &dummy_len);
+      /* server replies with USB descriptor but we ignore it */
+      axis_recv(i, NULL, NULL);
 
       uint8_t timeout[] = { 0x0e, 0x01, 0x00, 0x00 };
       axis_send_cmd(tcp_socket, AXIS_CMD_UNKNOWN3, timeout, sizeof(timeout));
-      axis_recv(i, dummy_buf, &dummy_len);
+      axis_recv(i, NULL, NULL);
 
       axis_send_cmd(tcp_socket, AXIS_CMD_UNKNOWN, NULL, 0);
-      axis_recv(i, dummy_buf, &dummy_len);
+      axis_recv(i, NULL, NULL);
 
       return SANE_STATUS_GOOD;
     }
@@ -665,7 +669,7 @@ sanei_axis_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
   DBG(LOG_INFO, "%s(%d, %p, %zd)\n", __func__, dn, buffer, *size);
   uint16_t read_size = htole16(*size);
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_READ, &read_size, sizeof(read_size));
-  axis_recv(dn, buffer, size);  ////FIXME
+  axis_recv(dn, buffer, size);
   DBG(LOG_DEBUG2, "sanei_axis_read_bulk:\n");
   if (*size < 512)
     dbg_hexdump(LOG_DEBUG2, buffer, *size);
@@ -675,11 +679,9 @@ sanei_axis_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
 extern SANE_Status
 sanei_axis_write_bulk (SANE_Int dn, const SANE_Byte * buffer, size_t * size)
 {
-  SANE_Byte dummy_buf[MAX_PACKET_DATA_SIZE];
-  size_t dummy_len;
   DBG(LOG_INFO, "%s(%d, %p, %zd)\n", __func__, dn, buffer, *size);
   axis_send_cmd(device[dn].tcp_socket, AXIS_CMD_WRITE, (void *) buffer, *size);
-  axis_recv(dn, dummy_buf, &dummy_len);	////FIXME
+  axis_recv(dn, NULL, NULL);
   return SANE_STATUS_GOOD;
 }
 
