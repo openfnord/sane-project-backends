@@ -542,22 +542,21 @@ pixma_write (pixma_io_t * io, const void *cmd, unsigned len)
   size_t count = len;
   int error;
 
-  if (io->interface == INT_BJNP)
+  switch (io->interface)
     {
-    sanei_bjnp_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
-    error = map_error (sanei_bjnp_write_bulk (io->dev, cmd, &count));
-    }
-  else if (io->interface == INT_AXIS)
-    {
-    sanei_axis_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
-    error = map_error (sanei_axis_write_bulk (io->dev, cmd, &count));
-    }
-  else
-    {
+    case INT_BJNP:
+      sanei_bjnp_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
+      error = map_error (sanei_bjnp_write_bulk (io->dev, cmd, &count));
+      break;
+    case INT_AXIS:
+      sanei_axis_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
+      error = map_error (sanei_axis_write_bulk (io->dev, cmd, &count));
+      break;
+    default:
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
-    sanei_usb_set_timeout (PIXMA_BULKOUT_TIMEOUT);
+      sanei_usb_set_timeout (PIXMA_BULKOUT_TIMEOUT);
 #endif
-    error = map_error (sanei_usb_write_bulk (io->dev, cmd, &count));
+      error = map_error (sanei_usb_write_bulk (io->dev, cmd, &count));
     }
   if (error == PIXMA_EIO)
     error = PIXMA_ETIMEDOUT;	/* FIXME: SANE doesn't have ETIMEDOUT!! */
@@ -579,18 +578,17 @@ pixma_read (pixma_io_t * io, void *buf, unsigned size)
   size_t count = size;
   int error;
 
-  if (io-> interface == INT_BJNP)
+  switch (io->interface)
     {
-    sanei_bjnp_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
-    error = map_error (sanei_bjnp_read_bulk (io->dev, buf, &count));
-    }
-  else if (io-> interface == INT_AXIS)
-    {
-    sanei_axis_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
-    error = map_error (sanei_axis_read_bulk (io->dev, buf, &count));
-    }
-  else
-    {
+    case INT_BJNP:
+      sanei_bjnp_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
+      error = map_error (sanei_bjnp_read_bulk (io->dev, buf, &count));
+      break;
+    case INT_AXIS:
+      sanei_axis_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
+      error = map_error (sanei_axis_read_bulk (io->dev, buf, &count));
+      break;
+    default:
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
       sanei_usb_set_timeout (PIXMA_BULKIN_TIMEOUT);
 #endif
@@ -616,18 +614,17 @@ pixma_wait_interrupt (pixma_io_t * io, void *buf, unsigned size, int timeout)
     timeout = INT_MAX;
   else if (timeout < 100)
     timeout = 100;
-  if (io-> interface == INT_BJNP)
+  switch (io->interface)
     {
+    case INT_BJNP:
       sanei_bjnp_set_timeout (io->dev, timeout);
       error = map_error (sanei_bjnp_read_int (io->dev, buf, &count));
-    }
-  else if (io-> interface == INT_AXIS)
-    {
+      break;
+    case INT_AXIS:
       sanei_axis_set_timeout (io->dev, timeout);
       error = map_error (sanei_axis_read_int (io->dev, buf, &count));
-    }
-  else
-    {
+      break;
+    default:
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
       sanei_usb_set_timeout (timeout);
 #endif
