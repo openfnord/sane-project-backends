@@ -568,13 +568,14 @@ sanei_axis_find_devices (const char **conf_devices,
   /* wait for response packets */
   while (receive_packet(udp_socket, packet, sizeof(packet), &from) != 0) {
     struct axis_wimp_header *header = (void *)packet;
-//    struct axis_wimp_server_info *s_info = (void *)(packet + sizeof(struct axis_wimp_header));
+    struct axis_wimp_server_info *s_info = (void *)(packet + sizeof(struct axis_wimp_header));
 
     DBG(LOG_INFO, "got reply from %s\n", inet_ntoa(from.sin_addr));
     if (header->type != (WIMP_SERVER_INFO | WIMP_REPLY)) {
       DBG(LOG_NOTICE, "Received invalid reply\n");
       continue;
     }
+    DBG(LOG_INFO, "server name=%s\n", s_info->name);
 
     sprintf(uri, "axis://%s", inet_ntoa(from.sin_addr));
     add_scanner(udp_socket, uri, attach_axis, pixma_devices);
