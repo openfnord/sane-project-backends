@@ -468,7 +468,7 @@ add_scanner(int udp_socket, const char *uri,
             const struct pixma_config_t *const pixma_devices[])
 {
   char devname[256];
-  char serial[AXIS_SERIAL_LEN + 1];
+  char serial[2 * AXIS_SERIAL_LEN]; /* 2* to silence gcc truncation warning */
   char user[AXIS_USERNAME_LEN + 1];
 
   if (axis_no_devices >= AXIS_NO_DEVICES)
