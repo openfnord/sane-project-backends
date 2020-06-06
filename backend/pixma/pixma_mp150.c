@@ -85,7 +85,6 @@
    4096 = size of gamma table. 24 = header + checksum */
 #define IMAGE_BLOCK_SIZE (512*1024)
 #define CMDBUF_SIZE (4096 + 24)
-#define DEFAULT_GAMMA 2.0	/***** Gamma different from 1.0 is potentially impacting color profile generation *****/
 #define UNKNOWN_PID 0xffff
 
 
@@ -323,8 +322,6 @@
 <ivec:param_set servicetype=\"scan\"><ivec:jobID>00000001</ivec:jobID>\
 </ivec:param_set></ivec:contents></cmd>"
 
-#define XML_OK   "<ivec:response>OK</ivec:response>"
-
 enum mp150_state_t
 {
   state_idle,
@@ -462,7 +459,7 @@ send_xml_dialog (pixma_t * s, const char * xml_message)
   PDBG (pixma_dbg (10, "XML message sent to scanner:\n%s\n", xml_message));
   PDBG (pixma_dbg (10, "XML response back from scanner:\n%s\n", mp->cb.buf));
 
-  return (strcasestr ((const char *) mp->cb.buf, XML_OK) != NULL);
+  return pixma_parse_xml_response((const char*)mp->cb.buf) == PIXMA_STATUS_OK;
 }
 
 static int
@@ -569,42 +566,45 @@ send_gamma_table (pixma_t * s)
   const uint8_t *lut = s->param->gamma_table;
   uint8_t *data;
 
-  if (mp->generation == 1)
+  if (s->cfg->cap & PIXMA_CAP_GT_4096)
     {
       data = pixma_newcmd (&mp->cb, cmd_gamma, 4096 + 8, 0);
       data[0] = (s->param->channels == 3) ? 0x10 : 0x01;
       pixma_set_be16 (0x1004, data + 2);
       if (lut)
-	      memcpy (data + 4, lut, 4096);
+        {
+          /* PDBG (pixma_dbg (4, "*send_gamma_table***** Use 4096 bytes from LUT ***** \n")); */
+          /* PDBG (pixma_hexdump (4, lut, 4096)); */
+          memcpy (data + 4, lut, 4096);
+        }
       else
-        pixma_fill_gamma_table (DEFAULT_GAMMA, data + 4, 4096);
+        {
+          /* fallback: we should never see this */
+          PDBG (pixma_dbg (4, "*send_gamma_table***** Generate 4096 bytes Table with %f ***** \n",
+                           s->param->gamma));
+          pixma_fill_gamma_table (s->param->gamma, data + 4, 4096);
+          /* PDBG (pixma_hexdump (4, data + 4, 4096)); */
+        }
     }
   else
     {
-      /* FIXME: Gamma table for 2nd generation: 1024 * uint16_le */
-      data = pixma_newcmd (&mp->cb, cmd_gamma, 2048 + 8, 0);
+      /* Gamma table for 2nd+ generation: 1024 * uint16_le */
+      data = pixma_newcmd (&mp->cb, cmd_gamma, 1024 * 2 + 8, 0);
       data[0] = 0x10;
       pixma_set_be16 (0x0804, data + 2);
       if (lut)
         {
-          int i;
-          for (i = 0; i < 1024; i++)
-            {
-              int j = (i << 2) + (i >> 8);
-              data[4 + 2 * i + 0] = lut[j];
-              data[4 + 2 * i + 1] = lut[j];
-            }
+          /* PDBG (pixma_dbg (4, "*send_gamma_table***** Use 1024 * 2 bytes from LUT ***** \n")); */
+          /* PDBG (pixma_hexdump (4, lut, 1024 * 2)); */
+          memcpy (data + 4, lut, 1024 * 2);
         }
       else
         {
-          int i;
-          pixma_fill_gamma_table (DEFAULT_GAMMA, data + 4, 2048);
-          for (i = 0; i < 1024; i++)
-            {
-              int j = (i << 1) + (i >> 9);
-              data[4 + 2 * i + 0] = data[4 + j];
-              data[4 + 2 * i + 1] = data[4 + j];
-            }
+          /* fallback: we should never see this */
+          PDBG (pixma_dbg (4, "*send_gamma_table***** Generate 1024 * 2 Table with %f ***** \n",
+                           s->param->gamma));
+          pixma_fill_gamma_table (s->param->gamma, data + 4, 1024);
+          /* PDBG (pixma_hexdump (4, data + 4, 1024 * 2)); */
         }
     }
   return pixma_exec (s, &mp->cb);
@@ -919,11 +919,13 @@ handle_interrupt (pixma_t * s, int timeout)
   else if (s->cfg->pid == LIDE300_PID
            || s->cfg->pid == LIDE400_PID)
   /* unknown value in buf[4]
-   * target in buf[0x13]
-   * always set button-1 */
+   * target in buf[0x13] 01=copy; 02=auto; 03=send; 05=start PDF; 06=finish PDF
+   * "Finish PDF" is Button-2, all others are Button-1 */
   {
-    if (buf[0x13])
-      s->events = PIXMA_EV_BUTTON1 | buf[0x13];
+      if (buf[0x13] == 0x06)
+        s->events = PIXMA_EV_BUTTON2 | buf[0x13];   /* button 2 = cancel / end scan */
+      else if (buf[0x13])
+        s->events = PIXMA_EV_BUTTON1 | buf[0x13];   /* button 1 = start scan */
   }
   else
   /* button no. in buf[0]
@@ -1220,8 +1222,8 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
 {
   mp150_t *mp = (mp150_t *) s->subdriver;
 
-  /* PDBG (pixma_dbg (4, "*mp150_check_param***** Initially: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
-                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx)); */
+  /* PDBG (pixma_dbg (4, "*mp150_check_param***** Initially: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u, gamma=%f *****\n",
+                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx, sp->gamma)); */
 
   /* MP150 only supports 8 bit per channel in color and grayscale mode */
   if (sp->depth != 1)
@@ -1612,11 +1614,11 @@ static const pixma_scan_ops_t pixma_mp150_ops = {
 
 const pixma_config_t pixma_mp150_devices[] = {
   /* Generation 1: CIS */
-  DEVICE ("Canon PIXMA MP150", "MP150", MP150_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
-  DEVICE ("Canon PIXMA MP170", "MP170", MP170_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
-  DEVICE ("Canon PIXMA MP450", "MP450", MP450_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
-  DEVICE ("Canon PIXMA MP500", "MP500", MP500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
-  DEVICE ("Canon PIXMA MP530", "MP530", MP530_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
+  DEVICE ("Canon PIXMA MP150", "MP150", MP150_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_GT_4096),
+  DEVICE ("Canon PIXMA MP170", "MP170", MP170_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_GT_4096),
+  DEVICE ("Canon PIXMA MP450", "MP450", MP450_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_GT_4096),
+  DEVICE ("Canon PIXMA MP500", "MP500", MP500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_GT_4096),
+  DEVICE ("Canon PIXMA MP530", "MP530", MP530_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_GT_4096 | PIXMA_CAP_ADF),
 
   /* Generation 2: CIS */
   DEVICE ("Canon PIXMA MP140", "MP140", MP140_PID, 0, 600, 0, 0, 638, 877, PIXMA_CAP_CIS),
@@ -1769,7 +1771,7 @@ const pixma_config_t pixma_mp150_devices[] = {
   DEVICE ("Canon MAXIFY MB5400 Series", "MB5400", MB5400_PID, 0, 1200, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADFDUP | PIXMA_CAP_ADF_JPEG),
   DEVICE ("Canon MAXIFY MB5100 Series", "MB5100", MB5100_PID, 0, 1200, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADFDUP | PIXMA_CAP_ADF_JPEG),
   DEVICE ("Canon PIXMA TS9100 Series", "TS9100", TS9100_PID, 0, 2400, 0, 0, 638, 877, PIXMA_CAP_CIS),
-  DEVICE ("Canon PIXMA TR8500 Series", "TR8500", TR8500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
+  DEVICE ("Canon PIXMA TR8500 Series", "TR8500", TR8500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF | PIXMA_CAP_ADF_JPEG),
   DEVICE ("Canon PIXMA TR7500 Series", "TR7500", TR7500_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
   DEVICE ("Canon PIXMA TS9500 Series", "TS9500", TS9500_PID, 0, 1200, 0, 600, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
   DEVICE ("CanoScan LiDE 400", "LIDE400", LIDE400_PID, 300, 4800, 0, 0, 638, 877, PIXMA_CAP_CIS),

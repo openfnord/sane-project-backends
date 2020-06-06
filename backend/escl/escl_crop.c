@@ -37,6 +37,7 @@ escl_crop_surface(capabilities_t *scanner,
 	       int *width,
 	       int *height)
 {
+    double ratio = 1.0;
     int x_off = 0, x = 0;
     int real_w = 0;
     int y_off = 0, y = 0;
@@ -44,24 +45,31 @@ escl_crop_surface(capabilities_t *scanner,
     unsigned char *surface_crop = NULL;
 
     DBG( 1, "Escl Image Crop\n");
-    if (w < (int)scanner->width)
-           scanner->width = w;
-    if (scanner->pos_x < 0)
-           scanner->pos_x = 0;
+    ratio = (double)w / (double)scanner->caps[scanner->source].width;
+    scanner->caps[scanner->source].width = w;
+    if (scanner->caps[scanner->source].pos_x < 0)
+       scanner->caps[scanner->source].pos_x = 0;
+    if (scanner->caps[scanner->source].pos_x &&
+        (scanner->caps[scanner->source].width >
+        scanner->caps[scanner->source].pos_x))
+       x_off = (int)((double)scanner->caps[scanner->source].pos_x * ratio);
+    real_w = scanner->caps[scanner->source].width - x_off;
 
-    if (h < (int)scanner->height)
-           scanner->height = h;
-    if (scanner->pos_x < 0)
-           scanner->pos_x = 0;
+    scanner->caps[scanner->source].height = h;
+    if (scanner->caps[scanner->source].pos_y &&
+        (scanner->caps[scanner->source].height >
+        scanner->caps[scanner->source].pos_y))
+       y_off = (int)((double)scanner->caps[scanner->source].pos_y * ratio);
+    real_h = scanner->caps[scanner->source].height - y_off;
 
-    x_off = scanner->pos_x;
-    real_w = scanner->width - x_off;
-    y_off = scanner->pos_y;
-    real_h = scanner->height - y_off;
+    DBG( 1, "Escl Image Crop [%dx%d|%dx%d]\n", scanner->caps[scanner->source].pos_x, scanner->caps[scanner->source].pos_y,
+		    scanner->caps[scanner->source].width, scanner->caps[scanner->source].height);
+
     *width = real_w;
     *height = real_h;
-    if (x_off > 0 || real_w < scanner->width ||
-        y_off > 0 || real_h < scanner->height) {
+    DBG( 1, "Escl Image Crop [%dx%d]\n", *width, *height);
+    if (x_off > 0 || real_w < scanner->caps[scanner->source].width ||
+        y_off > 0 || real_h < scanner->caps[scanner->source].height) {
           surface_crop = (unsigned char *)malloc (sizeof (unsigned char) * real_w
                      * real_h * bps);
 	  if(!surface_crop) {
@@ -74,7 +82,12 @@ escl_crop_surface(capabilities_t *scanner,
           {
              for (x = 0; x < real_w; x++)
              {
-                surface_crop[y * real_w + x] = surface[(y + y_off) * w + x + x_off];
+                surface_crop[(y * real_w * bps) + (x * bps)] =
+                   surface[((y + y_off) * w  * bps) + ((x + x_off) * bps)];
+                surface_crop[(y * real_w * bps) + (x * bps) + 1] =
+	           surface[((y + y_off) * w  * bps) + ((x + x_off) * bps) + 1];
+	        surface_crop[(y * real_w * bps) + (x * bps) + 2] =
+	           surface[((y + y_off) * w  * bps) + ((x + x_off) * bps) + 2];
              }
           }
           free(surface);

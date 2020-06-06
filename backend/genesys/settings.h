@@ -46,6 +46,8 @@
 
 #include "enums.h"
 #include "serialize.h"
+#include "utilities.h"
+#include "sensor.h"
 
 namespace genesys {
 
@@ -79,15 +81,6 @@ struct Genesys_Settings
     // true if scan is true gray, false if monochrome scan
     int true_gray = 0;
 
-    // lineart threshold
-    int threshold = 0;
-
-    // lineart threshold curve for dynamic rasterization
-    int threshold_curve = 0;
-
-    // Disable interpolation for xres<yres
-    int disable_interpolation = 0;
-
     // value for contrast enhancement in the [-100..100] range
     int contrast = 0;
 
@@ -120,8 +113,9 @@ struct SetupParams {
     unsigned startx = NOT_SET;
     // start pixel in Y direction, counted according to base_ydpi
     unsigned starty = NOT_SET;
-    // the number of pixels in X direction. Note that each logical pixel may correspond to more
-    // than one CCD pixel, see CKSEL and GenesysSensor::ccd_pixels_per_system_pixel()
+    // the number of pixels in X direction. Counted in terms of xres.
+    // Note that each logical pixel may correspond to more than one CCD pixel, see CKSEL and
+    // GenesysSensor::ccd_pixels_per_system_pixel()
     unsigned pixels = NOT_SET;
 
     // the number of pixels in the X direction as requested by the frontend. This will be different
@@ -144,7 +138,7 @@ struct SetupParams {
 
     ColorFilter color_filter = static_cast<ColorFilter>(NOT_SET);
 
-    ScanFlag flags;
+    ScanFlag flags = ScanFlag::NONE;
 
     unsigned get_requested_pixels() const
     {
@@ -210,15 +204,10 @@ struct ScanSession {
     // whether the session setup has been computed via compute_session()
     bool computed = false;
 
-    // specifies the reduction (if any) of hardware dpi on the Genesys chip side.
-    // except gl646
-    unsigned hwdpi_divisor = 1;
+    // specifies the full resolution of the sensor that is being used.
+    unsigned full_resolution = 0;
 
-    // specifies the reduction (if any) of CCD effective dpi which is performed by latching the
-    // data coming from CCD in such a way that 1/2 or 3/4 of pixel data is ignored.
-    unsigned ccd_size_divisor = 1;
-
-    // the optical resolution of the scanner.
+    // the optical resolution of the sensor that is being used.
     unsigned optical_resolution = 0;
 
     // the number of pixels at the optical resolution, not including segmentation overhead.
@@ -232,8 +221,10 @@ struct ScanSession {
     unsigned optical_line_count = 0;
 
     // the resolution of the output data.
-    // gl843-only
     unsigned output_resolution = 0;
+
+    // the offset in pixels from the beginning of output data
+    unsigned output_startx = 0;
 
     // the number of pixels in output data (after desegmentation)
     unsigned output_pixels = 0;
@@ -262,7 +253,7 @@ struct ScanSession {
     unsigned output_total_bytes = 0;
 
     // the number of staggered lines (i.e. lines that overlap during scanning due to line being
-    // thinner than the CCD element)
+    // thinner than the CCD element). Computed according to stagger_y.
     unsigned num_staggered_lines = 0;
 
     // the number of lines that color channels shift due to different physical positions of
@@ -276,6 +267,11 @@ struct ScanSession {
     // actual line shift of the blue color
     unsigned color_shift_lines_b = 0;
 
+    // The shifts that need to be applied to the output pixels in x direction.
+    StaggerConfig stagger_x;
+    // The shifts that need to be applied to the output pixels in y direction.
+    StaggerConfig stagger_y;
+
     // the number of scanner segments used in the current scan
     unsigned segment_count = 1;
 
@@ -283,8 +279,18 @@ struct ScanSession {
     unsigned pixel_startx = 0;
     unsigned pixel_endx = 0;
 
-    // certain scanners require the logical pixel count to be multiplied on certain resolutions
-    unsigned pixel_count_multiplier = 1;
+    /*  The following defines the ratio between logical pixel count and pixel count setting sent to
+        the scanner. The ratio is affected by the following:
+
+        - Certain scanners just like to multiply the pixel number by a multiplier that depends on
+          the resolution.
+
+        - The sensor may be configured to output one value per multiple physical pixels
+
+        - The scanner will automatically average the pixels that come from the sensor using a
+          certain ratio.
+    */
+    Ratio pixel_count_ratio = Ratio{1, 1};
 
     // Distance in pixels between consecutive pixels, e.g. between odd and even pixels. Note that
     // the number of segments can be large.
@@ -300,6 +306,10 @@ struct ScanSession {
     // Currently it's always zero.
     unsigned output_segment_start_offset = 0;
 
+    // How many pixels the shading data is offset to the right from the acquired data. Calculated
+    // in shading resolution.
+    int shading_pixel_offset = 0;
+
     // the size of the read buffer.
     size_t buffer_size_read = 0;
 
@@ -308,11 +318,6 @@ struct ScanSession {
 
     // whether calibration should be performed host-side
     bool use_host_side_calib = false;
-
-    // what pipeline modifications are needed
-    bool pipeline_needs_reorder = false;
-    bool pipeline_needs_ccd = false;
-    bool pipeline_needs_shrink = false;
 
     void assert_computed() const
     {
@@ -332,13 +337,13 @@ void serialize(Stream& str, ScanSession& x)
     serialize(str, x.params);
     serialize_newline(str);
     serialize(str, x.computed);
-    serialize(str, x.hwdpi_divisor);
-    serialize(str, x.ccd_size_divisor);
+    serialize(str, x.full_resolution);
     serialize(str, x.optical_resolution);
     serialize(str, x.optical_pixels);
     serialize(str, x.optical_pixels_raw);
     serialize(str, x.optical_line_count);
     serialize(str, x.output_resolution);
+    serialize(str, x.output_startx);
     serialize(str, x.output_pixels);
     serialize(str, x.output_channel_bytes);
     serialize(str, x.output_line_bytes);
@@ -352,19 +357,19 @@ void serialize(Stream& str, ScanSession& x)
     serialize(str, x.color_shift_lines_r);
     serialize(str, x.color_shift_lines_g);
     serialize(str, x.color_shift_lines_b);
+    serialize(str, x.stagger_x);
+    serialize(str, x.stagger_y);
     serialize(str, x.segment_count);
     serialize(str, x.pixel_startx);
     serialize(str, x.pixel_endx);
-    serialize(str, x.pixel_count_multiplier);
+    serialize(str, x.pixel_count_ratio);
     serialize(str, x.conseq_pixel_dist);
     serialize(str, x.output_segment_pixel_group_count);
     serialize(str, x.output_segment_start_offset);
+    serialize(str, x.shading_pixel_offset);
     serialize(str, x.buffer_size_read);
     serialize(str, x.enable_ledadd);
     serialize(str, x.use_host_side_calib);
-    serialize(str, x.pipeline_needs_reorder);
-    serialize(str, x.pipeline_needs_ccd);
-    serialize(str, x.pipeline_needs_shrink);
 }
 
 std::ostream& operator<<(std::ostream& out, const SANE_Parameters& params);

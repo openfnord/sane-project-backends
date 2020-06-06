@@ -46,7 +46,6 @@
 
 #include "calibration.h"
 #include "command_set.h"
-#include "buffer.h"
 #include "enums.h"
 #include "image_pipeline.h"
 #include "motor.h"
@@ -78,6 +77,17 @@ struct Genesys_Gpo
     GenesysRegisterSettingSet regs;
 };
 
+struct MemoryLayout
+{
+    // This is used on GL845, GL846, GL847 and GL124 which have special registers to define the
+    // memory layout
+    MemoryLayout() = default;
+
+    ValueFilter<ModelId> models;
+
+    GenesysRegisterSettingSet regs;
+};
+
 struct MethodResolutions
 {
     std::vector<ScanMethod> methods;
@@ -87,6 +97,16 @@ struct MethodResolutions
     unsigned get_min_resolution_x() const
     {
         return *std::min_element(resolutions_x.begin(), resolutions_x.end());
+    }
+
+    unsigned get_nearest_resolution_x(unsigned resolution) const
+    {
+        return *std::min_element(resolutions_x.begin(), resolutions_x.end(),
+                                 [&](unsigned lhs, unsigned rhs)
+        {
+            return std::abs(static_cast<int>(lhs) - static_cast<int>(resolution)) <
+                     std::abs(static_cast<int>(rhs) - static_cast<int>(resolution));
+        });
     }
 
     unsigned get_min_resolution_y() const
@@ -186,7 +206,7 @@ struct Genesys_Model
     // Amount of feeding needed to eject document after finishing scanning in mm
     float eject_feed = 0;
 
-    // Line-distance correction (in pixel at optical_ydpi) for CCD scanners
+    // Line-distance correction (in pixel at motor base_ydpi) for CCD scanners
     SANE_Int ld_shift_r = 0;
     SANE_Int ld_shift_g = 0;
     SANE_Int ld_shift_b = 0;
@@ -244,8 +264,8 @@ struct Genesys_Device
     // frees commonly used data
     void clear();
 
-    SANE_Word vendorId = 0;			/**< USB vendor identifier */
-    SANE_Word productId = 0;			/**< USB product identifier */
+    std::uint16_t vendorId = 0; // USB vendor identifier
+    std::uint16_t productId = 0; // USB product identifier
 
     // USB mode:
     // 0: not set
@@ -262,7 +282,7 @@ struct Genesys_Device
     // acquiring the positions of the black and white strips and the actual scan area
     bool ignore_offsets = false;
 
-    Genesys_Model *model = nullptr;
+    const Genesys_Model* model = nullptr;
 
     // pointers to low level functions
     std::unique_ptr<CommandSet> cmd_set;
@@ -272,6 +292,7 @@ struct Genesys_Device
     Genesys_Settings settings;
     Genesys_Frontend frontend, frontend_initial;
     Genesys_Gpo gpo;
+    MemoryLayout memory_layout;
     Genesys_Motor motor;
     std::uint8_t control[6] = {};
 
@@ -296,13 +317,6 @@ struct Genesys_Device
     // for sheetfed scanner's, is TRUE when there is a document in the scanner
     bool document = false;
 
-    Genesys_Buffer read_buffer;
-
-    // buffer for digital lineart from gray data
-    Genesys_Buffer binarize_buffer;
-    // local buffer for gray data during dynamix lineart
-    Genesys_Buffer local_buffer;
-
     // total bytes read sent to frontend
     size_t total_bytes_read = 0;
     // total bytes read to be sent to frontend
@@ -310,9 +324,6 @@ struct Genesys_Device
 
     // contains computed data for the current setup
     ScanSession session;
-
-    // look up table used in dynamic rasterization
-    unsigned char lineart_lut[256] = {};
 
     Calibration calibration_cache;
 
@@ -322,22 +333,13 @@ struct Genesys_Device
     // array describing the order of the sub-segments of the sensor
     std::vector<unsigned> segment_order;
 
-    // buffer to handle even/odd data
-    Genesys_Buffer oe_buffer = {};
-
     // stores information about how the input image should be processed
     ImagePipelineStack pipeline;
 
     // an buffer that allows reading from `pipeline` in chunks of any size
     ImageBuffer pipeline_buffer;
 
-    // when true the scanned picture is first buffered to allow software image enhancements
-    bool buffer_image = false;
-
-    // image buffer where the scanned picture is stored
-    std::vector<std::uint8_t> img_buffer;
-
-    ImagePipelineNodeBytesSource& get_pipeline_source();
+    ImagePipelineNodeBufferedCallableSource& get_pipeline_source();
 
     std::unique_ptr<ScannerInterface> interface;
 
@@ -365,6 +367,8 @@ std::ostream& operator<<(std::ostream& out, const Genesys_Device& dev);
 
 void apply_reg_settings_to_device(Genesys_Device& dev, const GenesysRegisterSettingSet& regs);
 
+void apply_reg_settings_to_device_write_only(Genesys_Device& dev,
+                                             const GenesysRegisterSettingSet& regs);
 GenesysRegisterSettingSet
     apply_reg_settings_to_device_with_backup(Genesys_Device& dev,
                                              const GenesysRegisterSettingSet& regs);

@@ -1,6 +1,6 @@
 /* SANE - Scanner Access Now Easy.
 
-   Copyright (C) 2011-2019 Rolf Bensch <rolf at bensch hyphen online dot de>
+   Copyright (C) 2011-2020 Rolf Bensch <rolf at bensch hyphen online dot de>
    Copyright (C) 2007-2008 Nicolas Martin, <nicols-guest at alioth dot debian dot org>
    Copyright (C) 2006-2007 Wittawat Yamwong <wittawat@web.de>
 
@@ -67,6 +67,7 @@
 # include "../include/sane/sanei_backend.h"
 # include "../include/sane/sanei_config.h"
 # include "../include/sane/sanei_jpeg.h"
+# include "../include/sane/sanei_usb.h"
 
 #ifdef NDEBUG
 # define PDBG(x)
@@ -541,6 +542,8 @@ control_scalar_option (pixma_sane_t * ss, SANE_Int n, SANE_Action a, void *v,
   option_descriptor_t *opt = &(OPT_IN_CTX[n]);
   SANE_Word val;
 
+  /* PDBG (pixma_dbg (4, "*control_scalar_option***** n = %u, a = %u\n", n, a)); */
+
   switch (a)
     {
     case SANE_ACTION_GET_VALUE:
@@ -604,6 +607,8 @@ control_string_option (pixma_sane_t * ss, SANE_Int n, SANE_Action a, void *v,
   const SANE_String_Const *slist = opt->sod.constraint.string_list;
   SANE_String str = (SANE_String) v;
 
+  /* PDBG (pixma_dbg (4, "*control_string_option***** n = %u, a = %u\n", n, a)); */
+
   if (opt->sod.constraint_type == SANE_CONSTRAINT_NONE)
     {
       switch (a)
@@ -656,6 +661,7 @@ static SANE_Status
 control_option (pixma_sane_t * ss, SANE_Int n,
 		SANE_Action a, void *v, SANE_Int * info)
 {
+  SANE_Option_Descriptor *sod = &SOD (n);
   int result, i;
   const pixma_config_t *cfg;
   SANE_Int dummy;
@@ -673,25 +679,59 @@ control_option (pixma_sane_t * ss, SANE_Int n,
   switch (n)
     {
       case opt_gamma_table:
-        switch (a)
-          {
-          case SANE_ACTION_SET_VALUE:
-            clamp_value (ss, n, v, info);
-            for (i = 0; i != 4096; i++)
-              ss->gamma_table[i] = *((SANE_Int *) v + i);
-            break;
-          case SANE_ACTION_GET_VALUE:
-            for (i = 0; i != 4096; i++)
-              *((SANE_Int *) v + i) = ss->gamma_table[i];
-            break;
-          case SANE_ACTION_SET_AUTO:
-            pixma_fill_gamma_table (AUTO_GAMMA, ss->gamma_table,
-                  sizeof (ss->gamma_table));
-            break;
-          default:
-            return SANE_STATUS_UNSUPPORTED;
-          }
-        return SANE_STATUS_GOOD;
+        {
+          int table_size = sod->size / sizeof (SANE_Word);
+          int byte_cnt = table_size == 1024 ? 2 : 1;
+
+          switch (a)
+            {
+            case SANE_ACTION_SET_VALUE:
+              PDBG (pixma_dbg (4, "*control_option***** opt_gamma_table: SANE_ACTION_SET_VALUE with %d values ***** \n", table_size));
+              clamp_value (ss, n, v, info);
+              if (byte_cnt == 1)
+                {
+                  for (i = 0; i < table_size; i++)
+                    ss->gamma_table[i] = *((SANE_Int *) v + i);
+                }
+              else
+                {
+                  for (i = 0; i < table_size; i++)
+                    {
+                      ss->gamma_table[i * 2] = *((SANE_Int *) v + i);
+                      ss->gamma_table[i * 2 + 1] = *((uint8_t *)((SANE_Int *) v + i) + 1);
+                    }
+                }
+              /* PDBG (pixma_hexdump (4, (uint8_t *)v, table_size * 4)); */
+              /* PDBG (pixma_hexdump (4, ss->gamma_table, table_size * byte_cnt)); */
+              break;
+            case SANE_ACTION_GET_VALUE:
+              PDBG (pixma_dbg (4, "*control_option***** opt_gamma_table: SANE_ACTION_GET_VALUE ***** \n"));
+              if (byte_cnt == 1)
+                {
+                  for (i = 0; i < table_size; i++)
+                    *((SANE_Int *) v + i) = ss->gamma_table[i];
+                }
+              else
+                {
+                  for (i = 0; i < table_size; i++)
+                    {
+                      *((SANE_Int *) v + i) = ss->gamma_table[i * 2];
+                      *((uint8_t *)((SANE_Int *) v + i) + 1) = ss->gamma_table[i * 2 + 1];
+                    }
+                }
+              break;
+            case SANE_ACTION_SET_AUTO:
+              PDBG (pixma_dbg (4, "*control_option***** opt_gamma_table: SANE_ACTION_SET_AUTO with gamma=%f ***** \n",
+                               SANE_UNFIX (OVAL (opt_gamma).w)));
+              pixma_fill_gamma_table (SANE_UNFIX (OVAL (opt_gamma).w),
+                                      ss->gamma_table, table_size);
+              /* PDBG (pixma_hexdump (4, ss->gamma_table, table_size * byte_cnt)); */
+              break;
+            default:
+              return SANE_STATUS_UNSUPPORTED;
+            }
+          return SANE_STATUS_GOOD;
+        }
 
       case opt_button_update:
         if (a == SANE_ACTION_SET_VALUE)
@@ -744,15 +784,24 @@ control_option (pixma_sane_t * ss, SANE_Int n,
         {
           if (enable_option (ss, opt_gamma_table, OVAL (opt_custom_gamma).b))
             *info |= SANE_INFO_RELOAD_OPTIONS;
+          if (OVAL (opt_custom_gamma).b)
+            sane_control_option (ss, opt_gamma_table, SANE_ACTION_SET_AUTO,
+                                 NULL, NULL);
+
         }
       break;
     case opt_gamma:
       if (a == SANE_ACTION_SET_VALUE || a == SANE_ACTION_SET_AUTO)
         {
-          /* PDBG (pixma_dbg (4, "*control_option***** gamma = %f *\n",
-                           SANE_UNFIX (OVAL (opt_gamma).w))); */
+          int table_size = SOD (opt_gamma_table).size / sizeof(SANE_Word);
+          PDBG (pixma_dbg (4, "*control_option***** gamma = %f *\n",
+                           SANE_UNFIX (OVAL (opt_gamma).w)));
+          PDBG (pixma_dbg (4, "*control_option***** table size = %d *\n",
+                           (int)(SOD (opt_gamma_table).size / sizeof (SANE_Word))));
           pixma_fill_gamma_table (SANE_UNFIX (OVAL (opt_gamma).w),
-                                  ss->gamma_table, sizeof (ss->gamma_table));
+                                  ss->gamma_table, table_size);
+          /* PDBG (pixma_hexdump (4, ss->gamma_table,
+                               table_size == 1024 ? 2048 : table_size)); */
         }
       break;
     case opt_mode:
@@ -826,8 +875,8 @@ print_scan_param (int level, const pixma_scan_param_t * sp)
 	     sp->line_size, sp->image_size, sp->channels, sp->depth);
   pixma_dbg (level, "  dpi=%ux%u offset=(%u,%u) dimension=%ux%u\n",
 	     sp->xdpi, sp->ydpi, sp->x, sp->y, sp->w, sp->h);
-  pixma_dbg (level, "  gamma_table=%p source=%d\n", sp->gamma_table,
-	     sp->source);
+  pixma_dbg (level, "  gamma=%f gamma_table=%p source=%d\n", sp->gamma,
+       sp->gamma_table, sp->source);
   pixma_dbg (level, "  adf-wait=%d\n", sp->adf_wait);
 }
 #endif
@@ -872,7 +921,8 @@ calc_scan_param (pixma_sane_t * ss, pixma_scan_param_t * sp)
     sp->h = 1;
   sp->tpu_offset_added = 0;
 
-  sp->gamma_table = (OVAL (opt_custom_gamma).b) ? ss->gamma_table : NULL;
+  sp->gamma = SANE_UNFIX (OVAL (opt_gamma).w);
+  sp->gamma_table = ss->gamma_table;
   sp->source = ss->source_map[OVAL (opt_source).w];
   sp->mode = ss->mode_map[OVAL (opt_mode).w];
   sp->adf_pageid = ss->page_count;
@@ -896,6 +946,8 @@ init_option_descriptors (pixma_sane_t * ss)
   int i;
 
   cfg = pixma_get_config (ss->s);
+
+  /* PDBG (pixma_dbg (4, "*init_option_descriptors*****\n")); */
 
   /* setup range for the scan area. */
   ss->xrange.min = SANE_FIX (0);
@@ -944,11 +996,32 @@ init_option_descriptors (pixma_sane_t * ss)
   /* Enable options that are available only in some scanners. */
   if (cfg->cap & PIXMA_CAP_GAMMA_TABLE)
     {
+      SANE_Option_Descriptor *sod = &SOD (opt_gamma_table);
+
+      /* some scanners have a large gamma table with 4096 entries */
+      if (cfg->cap & PIXMA_CAP_GT_4096)
+        {
+          static const SANE_Range constraint_gamma_table_4096 = { 0,0xff,0 };
+          sod->desc = SANE_I18N("Gamma-correction table with 4096 entries. In color mode this option equally affects the red, green, and blue channels simultaneously (i.e., it is an intensity gamma table).");
+          sod->size = 4096 * sizeof(SANE_Word);
+          sod->constraint.range = &constraint_gamma_table_4096;
+        }
+
+      /* PDBG (pixma_dbg (4, "*%s***** PIXMA_CAP_GAMMA_TABLE ***** \n",
+                       __func__)); */
+      /* PDBG (pixma_dbg (4, "%s: gamma_table_contraint.max = %d\n",
+                       __func__,  sod->constraint.range->max)); */
+      /* PDBG (pixma_dbg (4, "%s: gamma_table_size = %d\n",
+                       __func__,  sod->size / sizeof(SANE_Word))); */
+
+      /* activate option gamma */
       enable_option (ss, opt_gamma, SANE_TRUE);
+      sane_control_option (ss, opt_gamma, SANE_ACTION_SET_AUTO,
+                           NULL, NULL);
+      /* activate option custom gamma table */
       enable_option (ss, opt_custom_gamma, SANE_TRUE);
       sane_control_option (ss, opt_custom_gamma, SANE_ACTION_SET_AUTO,
-			   NULL, NULL);
-      pixma_fill_gamma_table (AUTO_GAMMA, ss->gamma_table, 4096);
+                           NULL, NULL);
     }
   enable_option (ss, opt_button_controlled,
 		 ((cfg->cap & PIXMA_CAP_EVENTS) != 0));
@@ -1597,6 +1670,7 @@ sane_exit (void)
     sane_close (first_scanner);
   cleanup_device_list ();
   pixma_cleanup ();
+  sanei_usb_exit ();
 }
 
 SANE_Status
@@ -1624,7 +1698,11 @@ sane_open (SANE_String_Const name, SANE_Handle * h)
   nscanners = pixma_find_scanners (conf_devices, SANE_FALSE);
   if (nscanners == 0)
     return SANE_STATUS_INVAL;
-  if (name[0] == '\0')
+
+  /* also get device id if we replay a xml file
+   * otherwise name contains the xml filename
+   * and further replay will fail  */
+  if (name[0] == '\0' || strstr (name, ".xml"))
     name = pixma_get_device_id (0);
 
   /* Have we already opened the scanner? */
@@ -2037,15 +2115,15 @@ type group
   title Gamma
 
 type bool custom-gamma
-  default SANE_TRUE
+  default SANE_FALSE
   title @SANE_TITLE_CUSTOM_GAMMA
   desc  @SANE_DESC_CUSTOM_GAMMA
   cap soft_select soft_detect automatic inactive
 
-type int gamma-table[4096]
-  constraint (0,255,0)
+type int gamma-table[1024]
+  constraint (0,0xffff,0)
   title @SANE_TITLE_GAMMA_VECTOR
-  desc  @SANE_DESC_GAMMA_VECTOR
+  desc  Gamma-correction table with 1024 entries. In color mode this option equally affects the red, green, and blue channels simultaneously (i.e., it is an intensity gamma table).
   cap soft_select soft_detect automatic inactive
 
 type fixed gamma
@@ -2150,7 +2228,7 @@ type int adf-wait
   default 0
   constraint (0,3600,1)
   title ADF Waiting Time
-  desc  When set, the scanner searches the waiting time in seconds for a new document inserted into the automatic document feeder.
+  desc  When set, the scanner waits upto the specified time in seconds for a new document inserted into the automatic document feeder.
   cap soft_select soft_detect automatic inactive
 
 rem -------------------------------------------

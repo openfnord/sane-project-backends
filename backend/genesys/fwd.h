@@ -46,9 +46,6 @@
 
 namespace genesys {
 
-// buffer.h
-struct Genesys_Buffer;
-
 // calibration.h
 struct Genesys_Calibration_Cache;
 
@@ -74,7 +71,6 @@ class Image;
 
 // image_buffer.h
 class ImageBuffer;
-class ImageBufferGenesysUsb;
 
 // image_pipeline.h
 class ImagePipelineNode;
@@ -86,7 +82,7 @@ struct Pixel;
 struct RawPixel;
 
 // low.h
-struct Genesys_USB_Device_Entry;
+struct UsbDeviceEntry;
 
 // motor.h
 struct Genesys_Motor;
@@ -111,8 +107,6 @@ class ScannerInterfaceUsb;
 class TestScannerInterface;
 
 // sensor.h
-class ScanMethodFilter;
-class ResolutionFilter;
 struct GenesysFrontendLayout;
 struct Genesys_Frontend;
 struct SensorExposure;
@@ -122,6 +116,10 @@ struct Genesys_Sensor;
 struct Genesys_Settings;
 struct SetupParams;
 struct ScanSession;
+
+// value_filter.h
+template<class T> class ValueFilter;
+template<class T> class ValueFilterAny;
 
 // test_usb_device.h
 class TestUsbDevice;

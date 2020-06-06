@@ -75,18 +75,6 @@ public:
     virtual bool get_next_row_data(std::uint8_t* out_data) = 0;
 };
 
-class ImagePipelineNodeBytesSource : public ImagePipelineNode
-{
-public:
-    std::size_t remaining_bytes() const { return remaining_bytes_; }
-    void set_remaining_bytes(std::size_t bytes) { remaining_bytes_ = bytes; }
-
-    std::size_t consume_remaining_bytes(std::size_t bytes);
-
-private:
-    std::size_t remaining_bytes_ = 0;
-};
-
 // A pipeline node that produces data from a callable
 class ImagePipelineNodeCallableSource : public ImagePipelineNode
 {
@@ -118,7 +106,7 @@ private:
 };
 
 // A pipeline node that produces data from a callable requesting fixed-size chunks.
-class ImagePipelineNodeBufferedCallableSource : public ImagePipelineNodeBytesSource
+class ImagePipelineNodeBufferedCallableSource : public ImagePipelineNode
 {
 public:
     using ProducerCallback = std::function<bool(std::size_t size, std::uint8_t* out_data)>;
@@ -135,8 +123,9 @@ public:
 
     bool get_next_row_data(std::uint8_t* out_data) override;
 
-    std::size_t buffer_size() const { return buffer_.size(); }
-    std::size_t buffer_available() const { return buffer_.available(); }
+    std::size_t remaining_bytes() const { return buffer_.remaining_size(); }
+    void set_remaining_bytes(std::size_t bytes) { buffer_.set_remaining_size(bytes); }
+    void set_last_read_multiple(std::size_t bytes) { buffer_.set_last_read_multiple(bytes); }
 
 private:
     ProducerCallback producer_;
@@ -150,38 +139,8 @@ private:
     ImageBuffer buffer_;
 };
 
-class ImagePipelineNodeBufferedGenesysUsb : public ImagePipelineNodeBytesSource
-{
-public:
-    using ProducerCallback = std::function<void(std::size_t size, std::uint8_t* out_data)>;
-
-    ImagePipelineNodeBufferedGenesysUsb(std::size_t width, std::size_t height,
-                                        PixelFormat format, std::size_t total_size,
-                                        std::size_t buffer_size, ProducerCallback producer);
-
-    std::size_t get_width() const override { return width_; }
-    std::size_t get_height() const override { return height_; }
-    PixelFormat get_format() const override { return format_; }
-
-    bool eof() const override { return eof_; }
-
-    bool get_next_row_data(std::uint8_t* out_data) override;
-
-    std::size_t buffer_available() const { return buffer_.available(); }
-
-private:
-    ProducerCallback producer_;
-    std::size_t width_ = 0;
-    std::size_t height_ = 0;
-    PixelFormat format_ = PixelFormat::UNKNOWN;
-
-    bool eof_ = false;
-
-    ImageBufferGenesysUsb buffer_;
-};
-
 // A pipeline node that produces data from the given array.
-class ImagePipelineNodeArraySource : public ImagePipelineNodeBytesSource
+class ImagePipelineNodeArraySource : public ImagePipelineNode
 {
 public:
     ImagePipelineNodeArraySource(std::size_t width, std::size_t height, PixelFormat format,
@@ -301,7 +260,7 @@ public:
                                        std::size_t pixels_per_chunk);
 };
 
-// A pipeline that swaps bytes in 16-bit components on big-endian systems
+// A pipeline that swaps bytes in 16-bit components and does nothing otherwise.
 class ImagePipelineNodeSwap16BitEndian : public ImagePipelineNode
 {
 public:
@@ -318,6 +277,23 @@ public:
 private:
     ImagePipelineNode& source_;
     bool needs_swapping_ = false;
+};
+
+class ImagePipelineNodeInvert : public ImagePipelineNode
+{
+public:
+    ImagePipelineNodeInvert(ImagePipelineNode& source);
+
+    std::size_t get_width() const override { return source_.get_width(); }
+    std::size_t get_height() const override { return source_.get_height(); }
+    PixelFormat get_format() const override { return source_.get_format(); }
+
+    bool eof() const override { return source_.eof(); }
+
+    bool get_next_row_data(std::uint8_t* out_data) override;
+
+private:
+    ImagePipelineNode& source_;
 };
 
 // A pipeline node that merges 3 mono lines into a color channel
@@ -376,7 +352,7 @@ public:
                                          unsigned shift_r, unsigned shift_g, unsigned shift_b);
 
     std::size_t get_width() const override { return source_.get_width(); }
-    std::size_t get_height() const override { return source_.get_height() - extra_height_; }
+    std::size_t get_height() const override { return height_; }
     PixelFormat get_format() const override { return source_.get_format(); }
 
     bool eof() const override { return source_.eof(); }
@@ -386,23 +362,23 @@ public:
 private:
     ImagePipelineNode& source_;
     std::size_t extra_height_ = 0;
+    std::size_t height_ = 0;
 
     std::array<unsigned, 3> channel_shifts_;
 
     RowBuffer buffer_;
 };
 
-// A pipeline node that shifts pixels across lines by the given offsets (performs unstaggering)
+// A pipeline node that shifts pixels across lines by the given offsets (performs vertical
+// unstaggering)
 class ImagePipelineNodePixelShiftLines : public ImagePipelineNode
 {
 public:
-    constexpr static std::size_t MAX_SHIFTS = 2;
-
     ImagePipelineNodePixelShiftLines(ImagePipelineNode& source,
                                      const std::vector<std::size_t>& shifts);
 
     std::size_t get_width() const override { return source_.get_width(); }
-    std::size_t get_height() const override { return source_.get_height() - extra_height_; }
+    std::size_t get_height() const override { return height_; }
     PixelFormat get_format() const override { return source_.get_format(); }
 
     bool eof() const override { return source_.eof(); }
@@ -412,11 +388,43 @@ public:
 private:
     ImagePipelineNode& source_;
     std::size_t extra_height_ = 0;
+    std::size_t height_ = 0;
 
     std::vector<std::size_t> pixel_shifts_;
 
     RowBuffer buffer_;
 };
+
+// A pipeline node that shifts pixels across columns by the given offsets. Each row is divided
+// into pixel groups of shifts.size() pixels. For each output group starting at position xgroup,
+// the i-th pixel will be set to the input pixel at position xgroup + shifts[i].
+class ImagePipelineNodePixelShiftColumns : public ImagePipelineNode
+{
+public:
+    ImagePipelineNodePixelShiftColumns(ImagePipelineNode& source,
+                                       const std::vector<std::size_t>& shifts);
+
+    std::size_t get_width() const override { return width_; }
+    std::size_t get_height() const override { return source_.get_height(); }
+    PixelFormat get_format() const override { return source_.get_format(); }
+
+    bool eof() const override { return source_.eof(); }
+
+    bool get_next_row_data(std::uint8_t* out_data) override;
+
+private:
+    ImagePipelineNode& source_;
+    std::size_t width_ = 0;
+    std::size_t extra_width_ = 0;
+
+    std::vector<std::size_t> pixel_shifts_;
+
+    std::vector<std::uint8_t> temp_buffer_;
+};
+
+// exposed for tests
+std::size_t compute_pixel_shift_extra_width(std::size_t source_width,
+                                            const std::vector<std::size_t>& shifts);
 
 // A pipeline node that extracts a sub-image from the image. Padding and cropping is done as needed.
 // The class can't pad to the left of the image currently, as only positive offsets are accepted.
@@ -516,6 +524,19 @@ class ImagePipelineStack
 {
 public:
     ImagePipelineStack() {}
+    ImagePipelineStack(ImagePipelineStack&& other)
+    {
+        clear();
+        nodes_ = std::move(other.nodes_);
+    }
+
+    ImagePipelineStack& operator=(ImagePipelineStack&& other)
+    {
+        clear();
+        nodes_ = std::move(other.nodes_);
+        return *this;
+    }
+
     ~ImagePipelineStack() { clear(); }
 
     std::size_t get_input_width() const;
@@ -535,20 +556,22 @@ public:
     void clear();
 
     template<class Node, class... Args>
-    void push_first_node(Args&&... args)
+    Node& push_first_node(Args&&... args)
     {
         if (!nodes_.empty()) {
             throw SaneException("Trying to append first node when there are existing nodes");
         }
         nodes_.emplace_back(std::unique_ptr<Node>(new Node(std::forward<Args>(args)...)));
+        return static_cast<Node&>(*nodes_.back());
     }
 
     template<class Node, class... Args>
-    void push_node(Args&&... args)
+    Node& push_node(Args&&... args)
     {
         ensure_node_exists();
         nodes_.emplace_back(std::unique_ptr<Node>(new Node(*nodes_.back(),
                                                            std::forward<Args>(args)...)));
+        return static_cast<Node&>(*nodes_.back());
     }
 
     bool get_next_row_data(std::uint8_t* out_data)

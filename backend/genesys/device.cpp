@@ -102,10 +102,6 @@ Genesys_Device::~Genesys_Device()
 
 void Genesys_Device::clear()
 {
-    read_buffer.clear();
-    binarize_buffer.clear();
-    local_buffer.clear();
-
     calib_file.clear();
 
     calibration_cache.clear();
@@ -114,9 +110,9 @@ void Genesys_Device::clear()
     dark_average_data.clear();
 }
 
-ImagePipelineNodeBytesSource& Genesys_Device::get_pipeline_source()
+ImagePipelineNodeBufferedCallableSource& Genesys_Device::get_pipeline_source()
 {
-    return static_cast<ImagePipelineNodeBytesSource&>(pipeline.front());
+    return static_cast<ImagePipelineNodeBufferedCallableSource&>(pipeline.front());
 }
 
 bool Genesys_Device::is_head_pos_known(ScanHeadId scan_head) const
@@ -227,8 +223,12 @@ std::ostream& operator<<(std::ostream& out, const Genesys_Device& dev)
         << "    initial_regs: " << format_indent_braced_list(4, dev.initial_regs) << '\n'
         << "    settings: " << format_indent_braced_list(4, dev.settings) << '\n'
         << "    frontend: " << format_indent_braced_list(4, dev.frontend) << '\n'
-        << "    frontend_initial: " << format_indent_braced_list(4, dev.frontend_initial) << '\n'
-        << "    gpo.regs: " << format_indent_braced_list(4, dev.gpo.regs) << '\n'
+        << "    frontend_initial: " << format_indent_braced_list(4, dev.frontend_initial) << '\n';
+    if (!dev.memory_layout.regs.empty()) {
+        out << "    memory_layout.regs: "
+            << format_indent_braced_list(4, dev.memory_layout.regs) << '\n';
+    }
+    out << "    gpo.regs: " << format_indent_braced_list(4, dev.gpo.regs) << '\n'
         << "    motor: " << format_indent_braced_list(4, dev.motor) << '\n'
         << "    control[0..6]: " << std::hex
         << static_cast<unsigned>(dev.control[0]) << ' '
@@ -254,22 +254,24 @@ std::ostream& operator<<(std::ostream& out, const Genesys_Device& dev)
         << "    read_active: " << dev.read_active << '\n'
         << "    parking: " << dev.parking << '\n'
         << "    document: " << dev.document << '\n'
-        << "    read_buffer.size(): " << dev.read_buffer.size() << '\n'
-        << "    binarize_buffer.size(): " << dev.binarize_buffer.size() << '\n'
-        << "    local_buffer.size(): " << dev.local_buffer.size() << '\n'
-        << "    oe_buffer.size(): " << dev.oe_buffer.size() << '\n'
         << "    total_bytes_read: " << dev.total_bytes_read << '\n'
         << "    total_bytes_to_read: " << dev.total_bytes_to_read << '\n'
         << "    session: " << format_indent_braced_list(4, dev.session) << '\n'
-        << "    lineart_lut: (not printed)\n"
         << "    calibration_cache: (not printed)\n"
         << "    line_count: " << dev.line_count << '\n'
         << "    segment_order: "
         << format_indent_braced_list(4, format_vector_unsigned(4, dev.segment_order)) << '\n'
-        << "    buffer_image: " << dev.buffer_image << '\n'
-        << "    img_buffer.size(): " << dev.img_buffer.size() << '\n'
         << '}';
     return out;
+}
+
+void apply_reg_settings_to_device_write_only(Genesys_Device& dev,
+                                             const GenesysRegisterSettingSet& regs)
+{
+    GenesysRegisterSettingSet backup;
+    for (const auto& reg : regs) {
+        dev.interface->write_register(reg.address, reg.value);
+    }
 }
 
 void apply_reg_settings_to_device(Genesys_Device& dev, const GenesysRegisterSettingSet& regs)

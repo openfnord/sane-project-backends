@@ -1,6 +1,6 @@
 /* SANE - Scanner Access Now Easy.
 
-   Copyright (C) 2011-2019 Rolf Bensch <rolf at bensch hyphen online dot de>
+   Copyright (C) 2011-2020 Rolf Bensch <rolf at bensch hyphen online dot de>
    Copyright (C) 2006-2007 Wittawat Yamwong <wittawat@web.de>
 
    This file is part of the SANE package.
@@ -205,6 +205,7 @@ uint8_t *pixma_newcmd (pixma_cmdbuf_t *, unsigned cmd,
 int pixma_exec (pixma_t *, pixma_cmdbuf_t *);
 int pixma_exec_short_cmd (pixma_t *, pixma_cmdbuf_t *, unsigned cmd);
 int pixma_map_status_errno (unsigned status);
+int pixma_parse_xml_response(const char *xml_message);
 /**@}*/
 
 #define pixma_fill_checksum(start, end) do {		\

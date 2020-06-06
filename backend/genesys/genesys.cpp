@@ -61,9 +61,9 @@
 #define DEBUG_NOT_STATIC
 
 #include "genesys.h"
-#include "conv.h"
 #include "gl124_registers.h"
 #include "gl841_registers.h"
+#include "gl842_registers.h"
 #include "gl843_registers.h"
 #include "gl846_registers.h"
 #include "gl847_registers.h"
@@ -73,7 +73,6 @@
 #include "test_scanner_interface.h"
 #include "test_settings.h"
 #include "../include/sane/sanei_config.h"
-#include "../include/sane/sanei_magic.h"
 
 #include <array>
 #include <cmath>
@@ -111,8 +110,8 @@ namespace {
 static SANE_String_Const mode_list[] = {
   SANE_VALUE_SCAN_MODE_COLOR,
   SANE_VALUE_SCAN_MODE_GRAY,
-  /* SANE_TITLE_HALFTONE,  currently unused */
-  SANE_VALUE_SCAN_MODE_LINEART,
+    // SANE_TITLE_HALFTONE, not used
+    // SANE_VALUE_SCAN_MODE_LINEART, not used
     nullptr
 };
 
@@ -129,12 +128,6 @@ static SANE_String_Const cis_color_filter_list[] = {
   SANE_I18N ("Blue"),
   SANE_I18N ("None"),
     nullptr
-};
-
-static SANE_Range swdespeck_range = {
-  1,
-  9,
-  1
 };
 
 static SANE_Range time_range = {
@@ -167,12 +160,6 @@ static const SANE_Range percentage_range = {
     float_to_fixed(1)      // quantization
 };
 
-static const SANE_Range threshold_curve_range = {
-  0,			/* minimum */
-  127,		        /* maximum */
-  1			/* quantization */
-};
-
 /**
  * range for brightness and contrast
  */
@@ -191,7 +178,7 @@ static const SANE_Range expiration_range = {
   1		/* quantization */
 };
 
-const Genesys_Sensor& sanei_genesys_find_sensor_any(Genesys_Device* dev)
+const Genesys_Sensor& sanei_genesys_find_sensor_any(const Genesys_Device* dev)
 {
     DBG_HELPER(dbg);
     for (const auto& sensor : *s_sensors) {
@@ -202,7 +189,7 @@ const Genesys_Sensor& sanei_genesys_find_sensor_any(Genesys_Device* dev)
     throw std::runtime_error("Given device does not have sensor defined");
 }
 
-Genesys_Sensor* find_sensor_impl(Genesys_Device* dev, unsigned dpi, unsigned channels,
+Genesys_Sensor* find_sensor_impl(const Genesys_Device* dev, unsigned dpi, unsigned channels,
                                  ScanMethod scan_method)
 {
     DBG_HELPER_ARGS(dbg, "dpi: %d, channels: %d, scan_method: %d", dpi, channels,
@@ -217,7 +204,7 @@ Genesys_Sensor* find_sensor_impl(Genesys_Device* dev, unsigned dpi, unsigned cha
     return nullptr;
 }
 
-bool sanei_genesys_has_sensor(Genesys_Device* dev, unsigned dpi, unsigned channels,
+bool sanei_genesys_has_sensor(const Genesys_Device* dev, unsigned dpi, unsigned channels,
                               ScanMethod scan_method)
 {
     DBG_HELPER_ARGS(dbg, "dpi: %d, channels: %d, scan_method: %d", dpi, channels,
@@ -225,8 +212,8 @@ bool sanei_genesys_has_sensor(Genesys_Device* dev, unsigned dpi, unsigned channe
     return find_sensor_impl(dev, dpi, channels, scan_method) != nullptr;
 }
 
-const Genesys_Sensor& sanei_genesys_find_sensor(Genesys_Device* dev, unsigned dpi, unsigned channels,
-                                                ScanMethod scan_method)
+const Genesys_Sensor& sanei_genesys_find_sensor(const Genesys_Device* dev, unsigned dpi,
+                                                unsigned channels, ScanMethod scan_method)
 {
     DBG_HELPER_ARGS(dbg, "dpi: %d, channels: %d, scan_method: %d", dpi, channels,
                     static_cast<unsigned>(scan_method));
@@ -250,12 +237,14 @@ Genesys_Sensor& sanei_genesys_find_sensor_for_write(Genesys_Device* dev, unsigne
 
 
 std::vector<std::reference_wrapper<const Genesys_Sensor>>
-    sanei_genesys_find_sensors_all(Genesys_Device* dev, ScanMethod scan_method)
+    sanei_genesys_find_sensors_all(const Genesys_Device* dev, ScanMethod scan_method)
 {
     DBG_HELPER_ARGS(dbg, "scan_method: %d", static_cast<unsigned>(scan_method));
     std::vector<std::reference_wrapper<const Genesys_Sensor>> ret;
-    for (const Genesys_Sensor& sensor : sanei_genesys_find_sensors_all_for_write(dev, scan_method)) {
-        ret.push_back(sensor);
+    for (auto& sensor : *s_sensors) {
+        if (dev->model->sensor_id == sensor.sensor_id && sensor.method == scan_method) {
+            ret.push_back(sensor);
+        }
     }
     return ret;
 }
@@ -308,39 +297,30 @@ void sanei_genesys_init_structs (Genesys_Device * dev)
         }
     }
 
+    if (dev->model->asic_type == AsicType::GL845 ||
+        dev->model->asic_type == AsicType::GL846 ||
+        dev->model->asic_type == AsicType::GL847 ||
+        dev->model->asic_type == AsicType::GL124)
+    {
+        bool memory_layout_found = false;
+        for (const auto& memory_layout : *s_memory_layout) {
+            if (memory_layout.models.matches(dev->model->model_id)) {
+                dev->memory_layout = memory_layout;
+                memory_layout_found = true;
+                break;
+            }
+        }
+        if (!memory_layout_found) {
+            throw SaneException("Could not find memory layout");
+        }
+    }
+
     if (!motor_ok || !gpo_ok || !fe_ok) {
         throw SaneException("bad description(s) for fe/gpo/motor=%d/%d/%d\n",
                             static_cast<unsigned>(dev->model->sensor_id),
                             static_cast<unsigned>(dev->model->gpio_id),
                             static_cast<unsigned>(dev->model->motor_id));
     }
-}
-
-/* Generate slope table for motor movement */
-/**
- * This function generates a slope table using the slope from the motor struct
- * truncated at the given exposure time or step count, whichever comes first.
- * The summed time of the acceleration steps is returned, and the
- * number of accerelation steps is put into used_steps.
- *
- * @param dev            Device struct
- * @param slope_table    Table to write to
- * @param step_type      Generate table for this step_type. 0=>full, 1=>half,
- *                       2=>quarter
- * @param exposure_time  Minimum exposure time of a scan line
- * @param yres           Resolution of a scan line
- * @param used_steps     Final number of steps is stored here
- * @return               Motor slope table
- * @note  all times in pixel time
- */
-MotorSlopeTable sanei_genesys_create_slope_table3(AsicType asic_type, const Genesys_Motor& motor,
-                                                  StepType step_type, int exposure_time,
-                                                  unsigned yres)
-{
-    unsigned target_speed_w = (exposure_time * yres) / motor.base_ydpi;
-
-    return create_slope_table(motor.get_slope_with_step_type(step_type), target_speed_w,
-                              step_type, 1, 1, get_slope_table_max_size(asic_type));
 }
 
 /** @brief computes gamma table
@@ -411,34 +391,30 @@ void sanei_genesys_create_default_gamma_table(Genesys_Device* dev,
     Note: The enhance option of the scanners does _not_ help. It only halves
           the amount of pixels transfered.
  */
-SANE_Int sanei_genesys_exposure_time2(Genesys_Device * dev, float ydpi,
-                                      StepType step_type, int endpixel, int exposure_by_led)
+SANE_Int sanei_genesys_exposure_time2(Genesys_Device * dev, const MotorProfile& profile, float ydpi,
+                                      int endpixel, int exposure_by_led)
 {
   int exposure_by_ccd = endpixel + 32;
-    unsigned max_speed_motor_w = dev->motor.get_slope_with_step_type(step_type).max_speed_w;
+    unsigned max_speed_motor_w = profile.slope.max_speed_w;
     int exposure_by_motor = static_cast<int>((max_speed_motor_w * dev->motor.base_ydpi) / ydpi);
 
   int exposure = exposure_by_ccd;
 
-  if (exposure < exposure_by_motor)
-    exposure = exposure_by_motor;
+    if (exposure < exposure_by_motor) {
+        exposure = exposure_by_motor;
+    }
 
-  if (exposure < exposure_by_led && dev->model->is_cis)
-    exposure = exposure_by_led;
+    if (exposure < exposure_by_led && dev->model->is_cis) {
+        exposure = exposure_by_led;
+    }
 
-    DBG(DBG_info, "%s: ydpi=%d, step=%d, endpixel=%d led=%d => exposure=%d\n", __func__,
-        static_cast<int>(ydpi), static_cast<unsigned>(step_type), endpixel,
-        exposure_by_led, exposure);
-  return exposure;
+    return exposure;
 }
 
 
 /* Sends a block of shading information to the scanner.
    The data is placed at address 0x0000 for color mode, gray mode and
    unconditionally for the following CCD chips: HP2300, HP2400 and HP5345
-   In the other cases (lineart, halftone on ccd chips not mentioned) the
-   addresses are 0x2a00 for dpihw==0, 0x5500 for dpihw==1 and 0xa800 for
-   dpihw==2. //Note: why this?
 
    The data needs to be of size "size", and in little endian byte order.
  */
@@ -446,7 +422,6 @@ static void genesys_send_offset_and_shading(Genesys_Device* dev, const Genesys_S
                                             uint8_t* data, int size)
 {
     DBG_HELPER_ARGS(dbg, "(size = %d)", size);
-  int dpihw;
   int start_address;
 
   /* ASIC higher than gl843 doesn't have register 2A/2B, so we route to
@@ -457,45 +432,7 @@ static void genesys_send_offset_and_shading(Genesys_Device* dev, const Genesys_S
         return;
     }
 
-  /* gl646, gl84[123] case */
-  dpihw = dev->reg.get8(0x05) >> 6;
-
-  /* TODO invert the test so only the 2 models behaving like that are
-   * tested instead of adding all the others */
-  /* many scanners send coefficient for lineart/gray like in color mode */
-  if ((dev->settings.scan_mode == ScanColorMode::LINEART ||
-       dev->settings.scan_mode == ScanColorMode::HALFTONE)
-        && dev->model->sensor_id != SensorId::CCD_PLUSTEK_OPTICBOOK_3800
-        && dev->model->sensor_id != SensorId::CCD_KVSS080
-        && dev->model->sensor_id != SensorId::CCD_G4050
-        && dev->model->sensor_id != SensorId::CCD_HP_4850C
-        && dev->model->sensor_id != SensorId::CCD_CANON_4400F
-        && dev->model->sensor_id != SensorId::CCD_CANON_8400F
-        && dev->model->sensor_id != SensorId::CCD_CANON_8600F
-        && dev->model->sensor_id != SensorId::CCD_DSMOBILE600
-        && dev->model->sensor_id != SensorId::CCD_XP300
-        && dev->model->sensor_id != SensorId::CCD_DP665
-        && dev->model->sensor_id != SensorId::CCD_DP685
-        && dev->model->sensor_id != SensorId::CIS_CANON_LIDE_80
-        && dev->model->sensor_id != SensorId::CCD_ROADWARRIOR
-        && dev->model->sensor_id != SensorId::CCD_HP2300
-        && dev->model->sensor_id != SensorId::CCD_HP2400
-        && dev->model->sensor_id != SensorId::CCD_HP3670
-        && dev->model->sensor_id != SensorId::CCD_5345)	/* lineart, halftone */
-    {
-        if (dpihw == 0) {		/* 600 dpi */
-            start_address = 0x02a00;
-        } else if (dpihw == 1) {	/* 1200 dpi */
-            start_address = 0x05500;
-        } else if (dpihw == 2) {	/* 2400 dpi */
-            start_address = 0x0a800;
-        } else {			/* reserved */
-            throw SaneException("unknown dpihw");
-        }
-    }
-    else { // color
-        start_address = 0x00;
-    }
+    start_address = 0x00;
 
     dev->interface->write_buffer(0x3c, start_address, data, size);
 }
@@ -541,6 +478,11 @@ void scanner_clear_scan_and_feed_counts(Genesys_Device& dev)
                                           gl841::REG_0x0D_CLRLNCNT);
             break;
         }
+        case AsicType::GL842: {
+            dev.interface->write_register(gl842::REG_0x0D,
+                                          gl842::REG_0x0D_CLRLNCNT);
+            break;
+        }
         case AsicType::GL843: {
             dev.interface->write_register(gl843::REG_0x0D,
                                           gl843::REG_0x0D_CLRLNCNT | gl843::REG_0x0D_CLRMCNT);
@@ -567,6 +509,119 @@ void scanner_clear_scan_and_feed_counts(Genesys_Device& dev)
     }
 }
 
+void scanner_send_slope_table(Genesys_Device* dev, const Genesys_Sensor& sensor, unsigned table_nr,
+                              const std::vector<uint16_t>& slope_table)
+{
+    DBG_HELPER_ARGS(dbg, "table_nr = %d, steps = %zu", table_nr, slope_table.size());
+
+    unsigned max_table_nr = 0;
+    switch (dev->model->asic_type) {
+        case AsicType::GL646: {
+            max_table_nr = 2;
+            break;
+        }
+        case AsicType::GL841:
+        case AsicType::GL842:
+        case AsicType::GL843:
+        case AsicType::GL845:
+        case AsicType::GL846:
+        case AsicType::GL847:
+        case AsicType::GL124: {
+            max_table_nr = 4;
+            break;
+        }
+        default:
+            throw SaneException("Unsupported ASIC type");
+    }
+
+    if (table_nr > max_table_nr) {
+        throw SaneException("invalid table number %d", table_nr);
+    }
+
+    std::vector<uint8_t> table;
+    table.reserve(slope_table.size() * 2);
+    for (std::size_t i = 0; i < slope_table.size(); i++) {
+        table.push_back(slope_table[i] & 0xff);
+        table.push_back(slope_table[i] >> 8);
+    }
+    if (dev->model->asic_type == AsicType::GL841) {
+        // BUG: some motor setup setting is wrong on GL841 scanners, as they need full motor table
+        // to be written even though this is not observed in the official scanners.
+        auto max_table_size = get_slope_table_max_size(dev->model->asic_type);
+        table.reserve(max_table_size * 2);
+        while (table.size() < max_table_size * 2) {
+            table.push_back(slope_table.back() & 0xff);
+            table.push_back(slope_table.back() >> 8);
+        }
+    }
+
+    if (dev->interface->is_mock()) {
+        dev->interface->record_slope_table(table_nr, slope_table);
+    }
+
+    switch (dev->model->asic_type) {
+        case AsicType::GL646: {
+            unsigned dpihw = dev->reg.find_reg(0x05).value >> 6;
+            unsigned start_address = 0;
+            if (dpihw == 0) { // 600 dpi
+                start_address = 0x08000;
+            } else if (dpihw == 1) { // 1200 dpi
+                start_address = 0x10000;
+            } else if (dpihw == 2) { // 2400 dpi
+                start_address = 0x1f800;
+            } else {
+                throw SaneException("Unexpected dpihw");
+            }
+            dev->interface->write_buffer(0x3c, start_address + table_nr * 0x100, table.data(),
+                                         table.size());
+            break;
+        }
+        case AsicType::GL841: {
+            unsigned start_address = 0;
+            switch (sensor.register_dpihw) {
+                case 600: start_address = 0x08000; break;
+                case 1200: start_address = 0x10000; break;
+                case 2400: start_address = 0x20000; break;
+                default: throw SaneException("Unexpected dpihw");
+            }
+            dev->interface->write_buffer(0x3c, start_address + table_nr * 0x200, table.data(),
+                                         table.size());
+            break;
+        }
+        case AsicType::GL842: {
+            // slope table addresses are fixed : 0x40000,  0x48000,  0x50000,  0x58000,  0x60000
+            // XXX STEF XXX USB 1.1 ? sanei_genesys_write_0x8c (dev, 0x0f, 0x14);
+            if (dev->model->model_id == ModelId::PLUSTEK_OPTICFILM_7200) {
+                dev->interface->write_buffer(0x3c, 0x010000 + 0x200 * table_nr, table.data(),
+                                             table.size());
+            } else {
+                dev->interface->write_gamma(0x28,  0x40000 + 0x8000 * table_nr, table.data(),
+                                            table.size());
+            }
+            break;
+        }
+        case AsicType::GL843: {
+            // slope table addresses are fixed : 0x40000,  0x48000,  0x50000,  0x58000,  0x60000
+            // XXX STEF XXX USB 1.1 ? sanei_genesys_write_0x8c (dev, 0x0f, 0x14);
+            dev->interface->write_gamma(0x28,  0x40000 + 0x8000 * table_nr, table.data(),
+                                        table.size());
+            break;
+        }
+        case AsicType::GL845:
+        case AsicType::GL846:
+        case AsicType::GL847:
+        case AsicType::GL124: {
+            // slope table addresses are fixed
+            dev->interface->write_ahb(0x10000000 + 0x4000 * table_nr, table.size(),
+                                      table.data());
+            break;
+        }
+        default:
+            throw SaneException("Unsupported ASIC type");
+    }
+
+}
+
 bool scanner_is_motor_stopped(Genesys_Device& dev)
 {
     switch (dev.model->asic_type) {
@@ -575,9 +630,18 @@ bool scanner_is_motor_stopped(Genesys_Device& dev)
             return !status.is_motor_enabled && status.is_feeding_finished;
         }
         case AsicType::GL841: {
+            auto status = scanner_read_status(dev);
             auto reg = dev.interface->read_register(gl841::REG_0x40);
 
-            return (!(reg & gl841::REG_0x40_DATAENB) && !(reg & gl841::REG_0x40_MOTMFLG));
+            return (!(reg & gl841::REG_0x40_DATAENB) && !(reg & gl841::REG_0x40_MOTMFLG) &&
+                    !status.is_motor_enabled);
+        }
+        case AsicType::GL842: {
+            auto status = scanner_read_status(dev);
+            auto reg = dev.interface->read_register(gl842::REG_0x40);
+
+            return (!(reg & gl842::REG_0x40_DATAENB) && !(reg & gl842::REG_0x40_MOTMFLG) &&
+                    !status.is_motor_enabled);
         }
         case AsicType::GL843: {
             auto status = scanner_read_status(dev);
@@ -613,12 +677,31 @@ bool scanner_is_motor_stopped(Genesys_Device& dev)
     }
 }
 
+void scanner_setup_sensor(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                          Genesys_Register_Set& regs)
+{
+    DBG_HELPER(dbg);
+
+    for (const auto& custom_reg : sensor.custom_regs) {
+        regs.set8(custom_reg.address, custom_reg.value);
+    }
+
+    if (dev.model->asic_type != AsicType::GL841 &&
+        dev.model->asic_type != AsicType::GL843)
+    {
+        regs_set_exposure(dev.model->asic_type, regs, sensor.exposure);
+    }
+
+    dev.segment_order = sensor.segment_order;
+}
+
 void scanner_stop_action(Genesys_Device& dev)
 {
     DBG_HELPER(dbg);
 
     switch (dev.model->asic_type) {
         case AsicType::GL841:
+        case AsicType::GL842:
         case AsicType::GL843:
         case AsicType::GL845:
         case AsicType::GL846:
@@ -660,6 +743,7 @@ void scanner_stop_action_no_move(Genesys_Device& dev, genesys::Genesys_Register_
     switch (dev.model->asic_type) {
         case AsicType::GL646:
         case AsicType::GL841:
+        case AsicType::GL842:
         case AsicType::GL843:
         case AsicType::GL845:
         case AsicType::GL846:
@@ -783,6 +867,12 @@ void scanner_move(Genesys_Device& dev, ScanMethod scan_method, unsigned steps, D
     }
 
     // wait until feed count reaches the required value
+    if (dev.model->model_id == ModelId::CANON_LIDE_700F) {
+        if (dev.cmd_set->needs_update_home_sensor_gpio()) {
+            dev.cmd_set->update_home_sensor_gpio(dev);
+        }
+    }
+
     // FIXME: should porbably wait for some timeout
     Status status;
     for (unsigned i = 0;; ++i) {
@@ -809,11 +899,22 @@ void scanner_move(Genesys_Device& dev, ScanMethod scan_method, unsigned steps, D
     dev.interface->sleep_ms(100);
 }
 
+void scanner_move_to_ta(Genesys_Device& dev)
+{
+    DBG_HELPER(dbg);
+
+    unsigned feed = static_cast<unsigned>((dev.model->y_offset_sensor_to_ta * dev.motor.base_ydpi) /
+                                           MM_PER_INCH);
+    scanner_move(dev, dev.model->default_method, feed, Direction::FORWARD);
+}
+
 void scanner_move_back_home(Genesys_Device& dev, bool wait_until_home)
 {
     DBG_HELPER_ARGS(dbg, "wait_until_home = %d", wait_until_home);
 
     switch (dev.model->asic_type) {
+        case AsicType::GL841:
+        case AsicType::GL842:
         case AsicType::GL843:
         case AsicType::GL845:
         case AsicType::GL846:
@@ -822,6 +923,11 @@ void scanner_move_back_home(Genesys_Device& dev, bool wait_until_home)
             break;
         default:
             throw SaneException("Unsupported asic type");
+    }
+
+    if (dev.model->is_sheetfed) {
+        dbg.vlog(DBG_proc, "sheetfed scanner, skipping going back home");
+        return;
     }
 
     // FIXME: also check whether the scanner actually has a secondary head
@@ -977,7 +1083,9 @@ void scanner_move_back_home_ta(Genesys_Device& dev)
     DBG_HELPER(dbg);
 
     switch (dev.model->asic_type) {
+        case AsicType::GL842:
         case AsicType::GL843:
+        case AsicType::GL845:
             break;
         default:
             throw SaneException("Unsupported asic type");
@@ -1071,10 +1179,6 @@ void scanner_move_back_home_ta(Genesys_Device& dev)
     throw SaneException("Timeout waiting for XPA lamp to park");
 }
 
-namespace gl841 {
-    void gl841_stop_action(Genesys_Device* dev);
-} // namespace gl841
-
 void scanner_search_strip(Genesys_Device& dev, bool forward, bool black)
 {
     DBG_HELPER_ARGS(dbg, "%s %s", black ? "black" : "white", forward ? "forward" : "reverse");
@@ -1141,11 +1245,7 @@ void scanner_search_strip(Genesys_Device& dev, bool forward, bool black)
 
     if (is_testing_mode()) {
         dev.interface->test_checkpoint("search_strip");
-        if (dev.model->asic_type == AsicType::GL841) {
-            gl841::gl841_stop_action(&dev);
-        } else {
-            scanner_stop_action(dev);
-        }
+        scanner_stop_action(dev);
         return;
     }
 
@@ -1154,18 +1254,14 @@ void scanner_search_strip(Genesys_Device& dev, bool forward, bool black)
     // now we're on target, we can read data
     auto image = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes);
 
-    if (dev.model->asic_type == AsicType::GL841) {
-        gl841::gl841_stop_action(&dev);
-    } else {
-        scanner_stop_action(dev);
-    }
+    scanner_stop_action(dev);
 
     unsigned pass = 0;
-    if (DBG_LEVEL >= DBG_data) {
+    if (dbg_log_image_data()) {
         char title[80];
-        std::sprintf(title, "gl_search_strip_%s_%s%02d.pnm",
+        std::sprintf(title, "gl_search_strip_%s_%s%02d.tiff",
                      black ? "black" : "white", forward ? "fwd" : "bwd", pass);
-        sanei_genesys_write_pnm_file(title, image);
+        write_tiff_file(title, image);
     }
 
     // loop until strip is found or maximum pass number done
@@ -1183,12 +1279,12 @@ void scanner_search_strip(Genesys_Device& dev, bool forward, bool black)
 
         scanner_stop_action(dev);
 
-        if (DBG_LEVEL >= DBG_data) {
+        if (dbg_log_image_data()) {
             char title[80];
-            std::sprintf(title, "gl_search_strip_%s_%s%02d.pnm",
+            std::sprintf(title, "gl_search_strip_%s_%s%02d.tiff",
                          black ? "black" : "white",
                          forward ? "fwd" : "bwd", static_cast<int>(pass));
-            sanei_genesys_write_pnm_file(title, image);
+            write_tiff_file(title, image);
         }
 
         unsigned white_level = 90;
@@ -1272,6 +1368,928 @@ void scanner_search_strip(Genesys_Device& dev, bool forward, bool black)
     }
 }
 
+static int dark_average_channel(const Image& image, unsigned black, unsigned channel)
+{
+    auto channels = get_pixel_channels(image.get_format());
+
+    unsigned avg[3];
+
+    // computes average values on black margin
+    for (unsigned ch = 0; ch < channels; ch++) {
+        avg[ch] = 0;
+        unsigned count = 0;
+        // FIXME: start with the second line because the black pixels often have noise on the first
+        // line; the cause is probably incorrectly cleaned up previous scan
+        for (std::size_t y = 1; y < image.get_height(); y++) {
+            for (unsigned j = 0; j < black; j++) {
+                avg[ch] += image.get_raw_channel(j, y, ch);
+                count++;
+            }
+        }
+        if (count > 0) {
+            avg[ch] /= count;
+        }
+        DBG(DBG_info, "%s: avg[%d] = %d\n", __func__, ch, avg[ch]);
+    }
+    DBG(DBG_info, "%s: average = %d\n", __func__, avg[channel]);
+    return avg[channel];
+}
+
+bool should_calibrate_only_active_area(const Genesys_Device& dev,
+                                       const Genesys_Settings& settings)
+{
+    if (settings.scan_method == ScanMethod::TRANSPARENCY ||
+        settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
+    {
+        if (dev.model->model_id == ModelId::CANON_4400F && settings.xres >= 4800) {
+            return true;
+        }
+        if (dev.model->model_id == ModelId::CANON_8600F && settings.xres == 4800) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void scanner_offset_calibration(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                Genesys_Register_Set& regs)
+{
+    DBG_HELPER(dbg);
+
+    if (dev.model->asic_type == AsicType::GL842 &&
+        dev.frontend.layout.type != FrontendType::WOLFSON)
+    {
+        return;
+    }
+
+    if (dev.model->asic_type == AsicType::GL843 &&
+        dev.frontend.layout.type != FrontendType::WOLFSON)
+    {
+        return;
+    }
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846)
+    {
+        // no gain nor offset for AKM AFE
+        std::uint8_t reg04 = dev.interface->read_register(gl846::REG_0x04);
+        if ((reg04 & gl846::REG_0x04_FESET) == 0x02) {
+            return;
+        }
+    }
+    if (dev.model->asic_type == AsicType::GL847) {
+        // no gain nor offset for AKM AFE
+        std::uint8_t reg04 = dev.interface->read_register(gl847::REG_0x04);
+        if ((reg04 & gl847::REG_0x04_FESET) == 0x02) {
+            return;
+        }
+    }
+
+    if (dev.model->asic_type == AsicType::GL124) {
+        std::uint8_t reg0a = dev.interface->read_register(gl124::REG_0x0A);
+        if (((reg0a & gl124::REG_0x0A_SIFSEL) >> gl124::REG_0x0AS_SIFSEL) == 3) {
+            return;
+        }
+    }
+
+    unsigned target_pixels = dev.model->x_size_calib_mm * sensor.full_resolution / MM_PER_INCH;
+    unsigned start_pixel = 0;
+    unsigned black_pixels = (sensor.black_pixels * sensor.full_resolution) / sensor.full_resolution;
+
+    unsigned channels = 3;
+    unsigned lines = 1;
+    unsigned resolution = sensor.full_resolution;
+
+    const Genesys_Sensor* calib_sensor = &sensor;
+    if (dev.model->asic_type == AsicType::GL843) {
+        lines = 8;
+
+        // compute divider factor to compute final pixels number
+        const auto& dpihw_sensor = sanei_genesys_find_sensor(&dev, dev.settings.xres, channels,
+                                                             dev.settings.scan_method);
+        resolution = dpihw_sensor.shading_resolution;
+        unsigned factor = sensor.full_resolution / resolution;
+
+        calib_sensor = &sanei_genesys_find_sensor(&dev, resolution, channels,
+                                                  dev.settings.scan_method);
+
+        target_pixels = dev.model->x_size_calib_mm * resolution / MM_PER_INCH;
+        black_pixels = calib_sensor->black_pixels / factor;
+
+        if (should_calibrate_only_active_area(dev, dev.settings)) {
+            float offset = dev.model->x_offset_ta;
+            start_pixel = static_cast<int>((offset * calib_sensor->get_optical_resolution()) / MM_PER_INCH);
+
+            float size = dev.model->x_size_ta;
+            target_pixels = static_cast<int>((size * calib_sensor->get_optical_resolution()) / MM_PER_INCH);
+        }
+
+        if (dev.model->model_id == ModelId::CANON_4400F &&
+            dev.settings.scan_method == ScanMethod::FLATBED)
+        {
+            return;
+        }
+    }
+
+    if (dev.model->model_id == ModelId::CANON_5600F) {
+        // FIXME: use same approach as for GL843 scanners
+        lines = 8;
+    }
+
+    if (dev.model->asic_type == AsicType::GL847) {
+        calib_sensor = &sanei_genesys_find_sensor(&dev, resolution, channels,
+                                                  dev.settings.scan_method);
+    }
+
+    ScanFlag flags = ScanFlag::DISABLE_SHADING |
+                     ScanFlag::DISABLE_GAMMA |
+                     ScanFlag::SINGLE_LINE |
+                     ScanFlag::IGNORE_STAGGER_OFFSET |
+                     ScanFlag::IGNORE_COLOR_OFFSET;
+
+    if (dev.settings.scan_method == ScanMethod::TRANSPARENCY ||
+        dev.settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
+    {
+        flags |= ScanFlag::USE_XPA;
+    }
+
+    ScanSession session;
+    session.params.xres = resolution;
+    session.params.yres = resolution;
+    session.params.startx = start_pixel;
+    session.params.starty = 0;
+    session.params.pixels = target_pixels;
+    session.params.lines = lines;
+    session.params.depth = 8;
+    session.params.channels = channels;
+    session.params.scan_method = dev.settings.scan_method;
+    session.params.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
+    session.params.color_filter = dev.model->asic_type == AsicType::GL843 ? ColorFilter::RED
+                                                                          : dev.settings.color_filter;
+    session.params.flags = flags;
+    compute_session(&dev, session, *calib_sensor);
+
+    dev.cmd_set->init_regs_for_scan_session(&dev, *calib_sensor, &regs, session);
+
+    unsigned output_pixels = session.output_pixels;
+
+    sanei_genesys_set_motor_power(regs, false);
+
+    int top[3], bottom[3];
+    int topavg[3], bottomavg[3], avg[3];
+
+    // init gain and offset
+    for (unsigned ch = 0; ch < 3; ch++)
+    {
+        bottom[ch] = 10;
+        dev.frontend.set_offset(ch, bottom[ch]);
+        dev.frontend.set_gain(ch, 0);
+    }
+    dev.cmd_set->set_fe(&dev, *calib_sensor, AFE_SET);
+
+    // scan with bottom AFE settings
+    dev.interface->write_registers(regs);
+    DBG(DBG_info, "%s: starting first line reading\n", __func__);
+
+    dev.cmd_set->begin_scan(&dev, *calib_sensor, &regs, true);
+
+    if (is_testing_mode()) {
+        dev.interface->test_checkpoint("offset_calibration");
+        if (dev.model->asic_type == AsicType::GL842 ||
+            dev.model->asic_type == AsicType::GL843)
+        {
+            scanner_stop_action_no_move(dev, regs);
+        }
+        return;
+    }
+
+    Image first_line;
+    if (dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843)
+    {
+        first_line = read_unshuffled_image_from_scanner(&dev, session,
+                                                        session.output_total_bytes_raw);
+        scanner_stop_action_no_move(dev, regs);
+    } else {
+        first_line = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes);
+
+        if (dev.model->model_id == ModelId::CANON_5600F) {
+            scanner_stop_action_no_move(dev, regs);
+        }
+    }
+
+    if (dbg_log_image_data()) {
+        char fn[40];
+        std::snprintf(fn, 40, "gl843_bottom_offset_%03d_%03d_%03d.tiff",
+                      bottom[0], bottom[1], bottom[2]);
+        write_tiff_file(fn, first_line);
+    }
+
+    for (unsigned ch = 0; ch < 3; ch++) {
+        bottomavg[ch] = dark_average_channel(first_line, black_pixels, ch);
+        DBG(DBG_info, "%s: bottom avg %d=%d\n", __func__, ch, bottomavg[ch]);
+    }
+
+    // now top value
+    for (unsigned ch = 0; ch < 3; ch++) {
+        top[ch] = 255;
+        dev.frontend.set_offset(ch, top[ch]);
+    }
+    dev.cmd_set->set_fe(&dev, *calib_sensor, AFE_SET);
+
+    // scan with top AFE values
+    dev.interface->write_registers(regs);
+    DBG(DBG_info, "%s: starting second line reading\n", __func__);
+
+    dev.cmd_set->begin_scan(&dev, *calib_sensor, &regs, true);
+
+    Image second_line;
+    if (dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843)
+    {
+        second_line = read_unshuffled_image_from_scanner(&dev, session,
+                                                         session.output_total_bytes_raw);
+        scanner_stop_action_no_move(dev, regs);
+    } else {
+        second_line = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes);
+
+        if (dev.model->model_id == ModelId::CANON_5600F) {
+            scanner_stop_action_no_move(dev, regs);
+        }
+    }
+
+    for (unsigned ch = 0; ch < 3; ch++){
+        topavg[ch] = dark_average_channel(second_line, black_pixels, ch);
+        DBG(DBG_info, "%s: top avg %d=%d\n", __func__, ch, topavg[ch]);
+    }
+
+    unsigned pass = 0;
+
+    std::vector<std::uint8_t> debug_image;
+    std::size_t debug_image_lines = 0;
+    std::string debug_image_info;
+
+    // loop until acceptable level
+    while ((pass < 32) && ((top[0] - bottom[0] > 1) ||
+                           (top[1] - bottom[1] > 1) ||
+                           (top[2] - bottom[2] > 1)))
+    {
+        pass++;
+
+        for (unsigned ch = 0; ch < 3; ch++) {
+            if (top[ch] - bottom[ch] > 1) {
+                dev.frontend.set_offset(ch, (top[ch] + bottom[ch]) / 2);
+            }
+        }
+        dev.cmd_set->set_fe(&dev, *calib_sensor, AFE_SET);
+
+        // scan with no move
+        dev.interface->write_registers(regs);
+        DBG(DBG_info, "%s: starting second line reading\n", __func__);
+        dev.cmd_set->begin_scan(&dev, *calib_sensor, &regs, true);
+
+        if (dev.model->asic_type == AsicType::GL842 ||
+            dev.model->asic_type == AsicType::GL843)
+        {
+            second_line = read_unshuffled_image_from_scanner(&dev, session,
+                                                             session.output_total_bytes_raw);
+            scanner_stop_action_no_move(dev, regs);
+        } else {
+            second_line = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes);
+
+            if (dev.model->model_id == ModelId::CANON_5600F) {
+                scanner_stop_action_no_move(dev, regs);
+            }
+        }
+
+        if (dbg_log_image_data()) {
+            char title[100];
+            std::snprintf(title, 100, "lines: %d pixels_per_line: %d offsets[0..2]: %d %d %d\n",
+                          lines, output_pixels,
+                          dev.frontend.get_offset(0),
+                          dev.frontend.get_offset(1),
+                          dev.frontend.get_offset(2));
+            debug_image_info += title;
+            std::copy(second_line.get_row_ptr(0),
+                      second_line.get_row_ptr(0) + second_line.get_row_bytes() * second_line.get_height(),
+                      std::back_inserter(debug_image));
+            debug_image_lines += lines;
+        }
+
+        for (unsigned ch = 0; ch < 3; ch++) {
+            avg[ch] = dark_average_channel(second_line, black_pixels, ch);
+            DBG(DBG_info, "%s: avg[%d]=%d offset=%d\n", __func__, ch, avg[ch],
+                dev.frontend.get_offset(ch));
+        }
+
+        // compute new boundaries
+        for (unsigned ch = 0; ch < 3; ch++) {
+            if (topavg[ch] >= avg[ch]) {
+                topavg[ch] = avg[ch];
+                top[ch] = dev.frontend.get_offset(ch);
+            } else {
+                bottomavg[ch] = avg[ch];
+                bottom[ch] = dev.frontend.get_offset(ch);
+            }
+        }
+    }
+
+    if (dbg_log_image_data()) {
+        sanei_genesys_write_file("gl_offset_all_desc.txt",
+                                 reinterpret_cast<const std::uint8_t*>(debug_image_info.data()),
+                                 debug_image_info.size());
+        write_tiff_file("gl_offset_all.tiff", debug_image.data(), session.params.depth, channels,
+                        output_pixels, debug_image_lines);
+    }
+
+    DBG(DBG_info, "%s: offset=(%d,%d,%d)\n", __func__,
+        dev.frontend.get_offset(0),
+        dev.frontend.get_offset(1),
+        dev.frontend.get_offset(2));
+}
+
+/*  With offset and coarse calibration we only want to get our input range into
+    a reasonable shape. the fine calibration of the upper and lower bounds will
+    be done with shading.
+*/
+void scanner_coarse_gain_calibration(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                     Genesys_Register_Set& regs, unsigned dpi)
+{
+    DBG_HELPER_ARGS(dbg, "dpi = %d", dpi);
+
+    if (dev.model->asic_type == AsicType::GL842 &&
+        dev.frontend.layout.type != FrontendType::WOLFSON)
+    {
+        return;
+    }
+
+    if (dev.model->asic_type == AsicType::GL843 &&
+        dev.frontend.layout.type != FrontendType::WOLFSON)
+    {
+        return;
+    }
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846)
+    {
+        // no gain nor offset for AKM AFE
+        std::uint8_t reg04 = dev.interface->read_register(gl846::REG_0x04);
+        if ((reg04 & gl846::REG_0x04_FESET) == 0x02) {
+            return;
+        }
+    }
+
+    if (dev.model->asic_type == AsicType::GL847) {
+        // no gain nor offset for AKM AFE
+        std::uint8_t reg04 = dev.interface->read_register(gl847::REG_0x04);
+        if ((reg04 & gl847::REG_0x04_FESET) == 0x02) {
+            return;
+        }
+    }
+
+    if (dev.model->asic_type == AsicType::GL124) {
+        // no gain nor offset for TI AFE
+        std::uint8_t reg0a = dev.interface->read_register(gl124::REG_0x0A);
+        if (((reg0a & gl124::REG_0x0A_SIFSEL) >> gl124::REG_0x0AS_SIFSEL) == 3) {
+            return;
+        }
+    }
+
+    if (dev.model->asic_type == AsicType::GL841) {
+        // feed to white strip if needed
+        if (dev.model->y_offset_calib_white > 0) {
+            unsigned move = static_cast<unsigned>(
+                    (dev.model->y_offset_calib_white * (dev.motor.base_ydpi)) / MM_PER_INCH);
+            scanner_move(dev, dev.model->default_method, move, Direction::FORWARD);
+        }
+    }
+
+    // coarse gain calibration is always done in color mode
+    unsigned channels = 3;
+
+    unsigned resolution = sensor.full_resolution;
+    if (dev.model->asic_type == AsicType::GL841) {
+        const auto& dpihw_sensor = sanei_genesys_find_sensor(&dev, dev.settings.xres, channels,
+                                                             dev.settings.scan_method);
+        resolution = dpihw_sensor.shading_resolution;
+    }
+
+    if (dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843)
+    {
+        const auto& dpihw_sensor = sanei_genesys_find_sensor(&dev, dpi, channels,
+                                                             dev.settings.scan_method);
+        resolution = dpihw_sensor.shading_resolution;
+    }
+
+    float coeff = 1;
+
+    // Follow CKSEL
+    if (dev.model->sensor_id == SensorId::CCD_KVSS080 ||
+        dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846 ||
+        dev.model->asic_type == AsicType::GL847 ||
+        dev.model->asic_type == AsicType::GL124)
+    {
+        if (dev.settings.xres < sensor.full_resolution) {
+            coeff = 0.9f;
+        }
+    }
+
+    unsigned lines = 10;
+    if (dev.model->asic_type == AsicType::GL841) {
+        lines = 1;
+    }
+
+    const Genesys_Sensor* calib_sensor = &sensor;
+    if (dev.model->asic_type == AsicType::GL841 ||
+        dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843 ||
+        dev.model->asic_type == AsicType::GL847)
+    {
+        calib_sensor = &sanei_genesys_find_sensor(&dev, resolution, channels,
+                                                  dev.settings.scan_method);
+    }
+
+    ScanFlag flags = ScanFlag::DISABLE_SHADING |
+                     ScanFlag::DISABLE_GAMMA |
+                     ScanFlag::SINGLE_LINE |
+                     ScanFlag::IGNORE_STAGGER_OFFSET |
+                     ScanFlag::IGNORE_COLOR_OFFSET;
+
+    if (dev.settings.scan_method == ScanMethod::TRANSPARENCY ||
+        dev.settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
+    {
+        flags |= ScanFlag::USE_XPA;
+    }
+
+    ScanSession session;
+    session.params.xres = resolution;
+    session.params.yres = dev.model->asic_type == AsicType::GL841 ? dev.settings.yres : resolution;
+    session.params.startx = 0;
+    session.params.starty = 0;
+    session.params.pixels = dev.model->x_size_calib_mm * resolution / MM_PER_INCH;
+    session.params.lines = lines;
+    session.params.depth = dev.model->asic_type == AsicType::GL841 ? 16 : 8;
+    session.params.channels = channels;
+    session.params.scan_method = dev.settings.scan_method;
+    session.params.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
+    session.params.color_filter = dev.settings.color_filter;
+    session.params.flags = flags;
+    compute_session(&dev, session, *calib_sensor);
+
+    std::size_t pixels = session.output_pixels;
+
+    try {
+        dev.cmd_set->init_regs_for_scan_session(&dev, *calib_sensor, &regs, session);
+    } catch (...) {
+        if (dev.model->asic_type != AsicType::GL841) {
+            catch_all_exceptions(__func__, [&](){ sanei_genesys_set_motor_power(regs, false); });
+        }
+        throw;
+    }
+
+    if (dev.model->asic_type != AsicType::GL841) {
+        sanei_genesys_set_motor_power(regs, false);
+    }
+
+    dev.interface->write_registers(regs);
+
+    if (dev.model->asic_type != AsicType::GL841) {
+        dev.cmd_set->set_fe(&dev, *calib_sensor, AFE_SET);
+    }
+    dev.cmd_set->begin_scan(&dev, *calib_sensor, &regs, true);
+
+    if (is_testing_mode()) {
+        dev.interface->test_checkpoint("coarse_gain_calibration");
+        scanner_stop_action(dev);
+        dev.cmd_set->move_back_home(&dev, true);
+        return;
+    }
+
+    Image image;
+    if (dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843)
+    {
+        image = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes_raw);
+    } else if (dev.model->asic_type == AsicType::GL124) {
+        // BUG: we probably want to read whole image, not just first line
+        image = read_unshuffled_image_from_scanner(&dev, session, session.output_line_bytes);
+    } else {
+        image = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes);
+    }
+
+    if (dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843)
+    {
+        scanner_stop_action_no_move(dev, regs);
+    }
+
+    if (dbg_log_image_data()) {
+        write_tiff_file("gl_coarse_gain.tiff", image);
+    }
+
+    for (unsigned ch = 0; ch < channels; ch++) {
+        float curr_output = 0;
+        float target_value = 0;
+
+        if (dev.model->asic_type == AsicType::GL842 ||
+            dev.model->asic_type == AsicType::GL843)
+        {
+            std::vector<uint16_t> values;
+            // FIXME: start from the second line because the first line often has artifacts. Probably
+            // caused by unclean cleanup of previous scan
+            for (std::size_t x = pixels / 4; x < (pixels * 3 / 4); x++) {
+                values.push_back(image.get_raw_channel(x, 1, ch));
+            }
+
+            // pick target value at 95th percentile of all values. There may be a lot of black values
+            // in transparency scans for example
+            std::sort(values.begin(), values.end());
+            curr_output = static_cast<float>(values[unsigned((values.size() - 1) * 0.95)]);
+            target_value = calib_sensor->gain_white_ref * coeff;
+
+        } else if (dev.model->asic_type == AsicType::GL841) {
+            // FIXME: use the GL843 approach
+            unsigned max = 0;
+            for (std::size_t x = 0; x < image.get_width(); x++) {
+                auto value = image.get_raw_channel(x, 0, ch);
+                if (value > max) {
+                    max = value;
+                }
+            }
+
+            curr_output = max;
+            target_value = 65535.0f;
+        } else {
+            // FIXME: use the GL843 approach
+            auto width = image.get_width();
+
+            std::uint64_t total = 0;
+            for (std::size_t x = width / 4; x < (width * 3 / 4); x++) {
+                total += image.get_raw_channel(x, 0, ch);
+            }
+
+            curr_output = total / (width / 2);
+            target_value = calib_sensor->gain_white_ref * coeff;
+        }
+
+        std::uint8_t out_gain = compute_frontend_gain(curr_output, target_value,
+                                                      dev.frontend.layout.type);
+        dev.frontend.set_gain(ch, out_gain);
+
+        DBG(DBG_proc, "%s: channel %d, curr=%f, target=%f, out_gain:%d\n", __func__, ch,
+            curr_output, target_value, out_gain);
+
+        if (dev.model->asic_type == AsicType::GL841 &&
+            target_value / curr_output > 30)
+        {
+            DBG(DBG_error0, "****************************************\n");
+            DBG(DBG_error0, "*                                      *\n");
+            DBG(DBG_error0, "*  Extremely low Brightness detected.  *\n");
+            DBG(DBG_error0, "*  Check the scanning head is          *\n");
+            DBG(DBG_error0, "*  unlocked and moving.                *\n");
+            DBG(DBG_error0, "*                                      *\n");
+            DBG(DBG_error0, "****************************************\n");
+            throw SaneException(SANE_STATUS_JAMMED, "scanning head is locked");
+        }
+
+        dbg.vlog(DBG_info, "gain=(%d, %d, %d)", dev.frontend.get_gain(0), dev.frontend.get_gain(1),
+                 dev.frontend.get_gain(2));
+    }
+
+    if (dev.model->is_cis) {
+        std::uint8_t min_gain = std::min({dev.frontend.get_gain(0),
+                                          dev.frontend.get_gain(1),
+                                          dev.frontend.get_gain(2)});
+
+        dev.frontend.set_gain(0, min_gain);
+        dev.frontend.set_gain(1, min_gain);
+        dev.frontend.set_gain(2, min_gain);
+    }
+
+    dbg.vlog(DBG_info, "final gain=(%d, %d, %d)", dev.frontend.get_gain(0),
+             dev.frontend.get_gain(1), dev.frontend.get_gain(2));
+
+    scanner_stop_action(dev);
+
+    dev.cmd_set->move_back_home(&dev, true);
+}
+
+namespace gl124 {
+    void move_to_calibration_area(Genesys_Device* dev, const Genesys_Sensor& sensor,
+                                  Genesys_Register_Set& regs);
+} // namespace gl124
+
+SensorExposure scanner_led_calibration(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                       Genesys_Register_Set& regs)
+{
+    DBG_HELPER(dbg);
+
+    float move = 0;
+
+    if (dev.model->asic_type == AsicType::GL841) {
+        if (dev.model->y_offset_calib_white > 0) {
+            move = (dev.model->y_offset_calib_white * (dev.motor.base_ydpi)) / MM_PER_INCH;
+            scanner_move(dev, dev.model->default_method, static_cast<unsigned>(move),
+                         Direction::FORWARD);
+        }
+    } else if (dev.model->asic_type == AsicType::GL842 ||
+               dev.model->asic_type == AsicType::GL843)
+    {
+        // do nothing
+    } else if (dev.model->asic_type == AsicType::GL845 ||
+               dev.model->asic_type == AsicType::GL846 ||
+               dev.model->asic_type == AsicType::GL847)
+    {
+        move = dev.model->y_offset_calib_white;
+        move = static_cast<float>((move * (dev.motor.base_ydpi / 4)) / MM_PER_INCH);
+        if (move > 20) {
+            scanner_move(dev, dev.model->default_method, static_cast<unsigned>(move),
+                         Direction::FORWARD);
+        }
+    } else if (dev.model->asic_type == AsicType::GL124) {
+        gl124::move_to_calibration_area(&dev, sensor, regs);
+    }
+
+
+    unsigned channels = 3;
+    unsigned resolution = sensor.shading_resolution;
+    const auto& calib_sensor = sanei_genesys_find_sensor(&dev, resolution, channels,
+                                                         dev.settings.scan_method);
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846 ||
+        dev.model->asic_type == AsicType::GL847 ||
+        dev.model->asic_type == AsicType::GL124)
+    {
+        regs = dev.reg; // FIXME: apply this to all ASICs
+    }
+
+    unsigned yres = resolution;
+    if (dev.model->asic_type == AsicType::GL841) {
+        yres = dev.settings.yres; // FIXME: remove this
+    }
+
+    ScanSession session;
+    session.params.xres = resolution;
+    session.params.yres = yres;
+    session.params.startx = 0;
+    session.params.starty = 0;
+    session.params.pixels = dev.model->x_size_calib_mm * resolution / MM_PER_INCH;
+    session.params.lines = 1;
+    session.params.depth = 16;
+    session.params.channels = channels;
+    session.params.scan_method = dev.settings.scan_method;
+    session.params.scan_mode = ScanColorMode::COLOR_SINGLE_PASS;
+    session.params.color_filter = dev.settings.color_filter;
+    session.params.flags = ScanFlag::DISABLE_SHADING |
+                           ScanFlag::DISABLE_GAMMA |
+                           ScanFlag::SINGLE_LINE |
+                           ScanFlag::IGNORE_STAGGER_OFFSET |
+                           ScanFlag::IGNORE_COLOR_OFFSET;
+    compute_session(&dev, session, calib_sensor);
+
+    dev.cmd_set->init_regs_for_scan_session(&dev, calib_sensor, &regs, session);
+
+    if (dev.model->asic_type == AsicType::GL841) {
+        dev.interface->write_registers(regs); // FIXME: remove this
+    }
+
+    std::uint16_t exp[3];
+
+    if (dev.model->asic_type == AsicType::GL841) {
+        exp[0] = sensor.exposure.red;
+        exp[1] = sensor.exposure.green;
+        exp[2] = sensor.exposure.blue;
+    } else {
+        exp[0] = calib_sensor.exposure.red;
+        exp[1] = calib_sensor.exposure.green;
+        exp[2] = calib_sensor.exposure.blue;
+    }
+
+    std::uint16_t target = sensor.gain_white_ref * 256;
+
+    std::uint16_t min_exposure = 500; // only gl841
+    std::uint16_t max_exposure = ((exp[0] + exp[1] + exp[2]) / 3) * 2; // only gl841
+
+    std::uint16_t top[3] = {};
+    std::uint16_t bottom[3] = {};
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846)
+    {
+        bottom[0] = 29000;
+        bottom[1] = 29000;
+        bottom[2] = 29000;
+
+        top[0] = 41000;
+        top[1] = 51000;
+        top[2] = 51000;
+    } else if (dev.model->asic_type == AsicType::GL847) {
+        bottom[0] = 28000;
+        bottom[1] = 28000;
+        bottom[2] = 28000;
+
+        top[0] = 32000;
+        top[1] = 32000;
+        top[2] = 32000;
+    }
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846 ||
+        dev.model->asic_type == AsicType::GL847 ||
+        dev.model->asic_type == AsicType::GL124)
+    {
+        sanei_genesys_set_motor_power(regs, false);
+    }
+
+    bool acceptable = false;
+    for (unsigned i_test = 0; i_test < 100 && !acceptable; ++i_test) {
+        regs_set_exposure(dev.model->asic_type, regs, { exp[0], exp[1], exp[2] });
+
+        if (dev.model->asic_type == AsicType::GL841) {
+            // FIXME: remove
+            dev.interface->write_register(0x10, (exp[0] >> 8) & 0xff);
+            dev.interface->write_register(0x11, exp[0] & 0xff);
+            dev.interface->write_register(0x12, (exp[1] >> 8) & 0xff);
+            dev.interface->write_register(0x13, exp[1] & 0xff);
+            dev.interface->write_register(0x14, (exp[2] >> 8) & 0xff);
+            dev.interface->write_register(0x15, exp[2] & 0xff);
+        }
+
+        dev.interface->write_registers(regs);
+
+        dbg.log(DBG_info, "starting line reading");
+        dev.cmd_set->begin_scan(&dev, calib_sensor, &regs, true);
+
+        if (is_testing_mode()) {
+            dev.interface->test_checkpoint("led_calibration");
+            if (dev.model->asic_type == AsicType::GL841) {
+                scanner_stop_action(dev);
+                dev.cmd_set->move_back_home(&dev, true);
+                return { exp[0], exp[1], exp[2] };
+            } else if (dev.model->asic_type == AsicType::GL124) {
+                scanner_stop_action(dev);
+                return calib_sensor.exposure;
+            } else {
+                scanner_stop_action(dev);
+                dev.cmd_set->move_back_home(&dev, true);
+                return calib_sensor.exposure;
+            }
+        }
+
+        auto image = read_unshuffled_image_from_scanner(&dev, session, session.output_line_bytes);
+
+        scanner_stop_action(dev);
+
+        if (dbg_log_image_data()) {
+            char fn[30];
+            std::snprintf(fn, 30, "gl_led_%02d.tiff", i_test);
+            write_tiff_file(fn, image);
+        }
+
+        int avg[3];
+        for (unsigned ch = 0; ch < channels; ch++) {
+            avg[ch] = 0;
+            for (std::size_t x = 0; x < image.get_width(); x++) {
+                avg[ch] += image.get_raw_channel(x, 0, ch);
+            }
+            avg[ch] /= image.get_width();
+        }
+
+        dbg.vlog(DBG_info, "average: %d, %d, %d", avg[0], avg[1], avg[2]);
+
+        acceptable = true;
+
+        if (dev.model->asic_type == AsicType::GL841) {
+            if (avg[0] < avg[1] * 0.95 || avg[1] < avg[0] * 0.95 ||
+                avg[0] < avg[2] * 0.95 || avg[2] < avg[0] * 0.95 ||
+                avg[1] < avg[2] * 0.95 || avg[2] < avg[1] * 0.95)
+            {
+                acceptable = false;
+            }
+
+            // led exposure is not acceptable if white level is too low.
+            // ~80 hardcoded value for white level
+            if (avg[0] < 20000 || avg[1] < 20000 || avg[2] < 20000) {
+                acceptable = false;
+            }
+
+            // for scanners using target value
+            if (target > 0) {
+                acceptable = true;
+                for (unsigned i = 0; i < 3; i++) {
+                    // we accept +- 2% delta from target
+                    if (std::abs(avg[i] - target) > target / 50) {
+                        exp[i] = (exp[i] * target) / avg[i];
+                        acceptable = false;
+                    }
+                }
+            } else {
+                if (!acceptable) {
+                    unsigned avga = (avg[0] + avg[1] + avg[2]) / 3;
+                    exp[0] = (exp[0] * avga) / avg[0];
+                    exp[1] = (exp[1] * avga) / avg[1];
+                    exp[2] = (exp[2] * avga) / avg[2];
+                    /*  Keep the resulting exposures below this value. Too long exposure drives
+                        the ccd into saturation. We may fix this by relying on the fact that
+                        we get a striped scan without shading, by means of statistical calculation
+                    */
+                    unsigned avge = (exp[0] + exp[1] + exp[2]) / 3;
+
+                    if (avge > max_exposure) {
+                        exp[0] = (exp[0] * max_exposure) / avge;
+                        exp[1] = (exp[1] * max_exposure) / avge;
+                        exp[2] = (exp[2] * max_exposure) / avge;
+                    }
+                    if (avge < min_exposure) {
+                        exp[0] = (exp[0] * min_exposure) / avge;
+                        exp[1] = (exp[1] * min_exposure) / avge;
+                        exp[2] = (exp[2] * min_exposure) / avge;
+                    }
+
+                }
+            }
+        } else if (dev.model->asic_type == AsicType::GL845 ||
+                   dev.model->asic_type == AsicType::GL846)
+        {
+            for (unsigned i = 0; i < 3; i++) {
+                if (avg[i] < bottom[i]) {
+                    if (avg[i] != 0) {
+                        exp[i] = (exp[i] * bottom[i]) / avg[i];
+                    } else {
+                        exp[i] *= 10;
+                    }
+                    acceptable = false;
+                }
+                if (avg[i] > top[i]) {
+                    if (avg[i] != 0) {
+                        exp[i] = (exp[i] * top[i]) / avg[i];
+                    } else {
+                        exp[i] *= 10;
+                    }
+                    acceptable = false;
+                }
+            }
+        } else if (dev.model->asic_type == AsicType::GL847) {
+            for (unsigned i = 0; i < 3; i++) {
+                if (avg[i] < bottom[i] || avg[i] > top[i]) {
+                    auto target = (bottom[i] + top[i]) / 2;
+                    if (avg[i] != 0) {
+                        exp[i] = (exp[i] * target) / avg[i];
+                    } else {
+                        exp[i] *= 10;
+                    }
+
+                    acceptable = false;
+                }
+            }
+        } else if (dev.model->asic_type == AsicType::GL124) {
+            for (unsigned i = 0; i < 3; i++) {
+                // we accept +- 2% delta from target
+                if (std::abs(avg[i] - target) > target / 50) {
+                    float prev_weight = 0.5;
+                    if (avg[i] != 0) {
+                        exp[i] = exp[i] * prev_weight + ((exp[i] * target) / avg[i]) * (1 - prev_weight);
+                    } else {
+                        exp[i] = exp[i] * prev_weight + (exp[i] * 10) * (1 - prev_weight);
+                    }
+                    acceptable = false;
+                }
+            }
+        }
+    }
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846 ||
+        dev.model->asic_type == AsicType::GL847 ||
+        dev.model->asic_type == AsicType::GL124)
+    {
+        // set these values as final ones for scan
+        regs_set_exposure(dev.model->asic_type, dev.reg, { exp[0], exp[1], exp[2] });
+    }
+
+    if (dev.model->asic_type == AsicType::GL841 ||
+        dev.model->asic_type == AsicType::GL842 ||
+        dev.model->asic_type == AsicType::GL843)
+    {
+        dev.cmd_set->move_back_home(&dev, true);
+    }
+
+    if (dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846 ||
+        dev.model->asic_type == AsicType::GL847)
+    {
+        if (move > 20) {
+            dev.cmd_set->move_back_home(&dev, true);
+        }
+    }
+
+    dbg.vlog(DBG_info,"acceptable exposure: %d, %d, %d\n", exp[0], exp[1], exp[2]);
+
+    return { exp[0], exp[1], exp[2] };
+}
 
 void sanei_genesys_calculate_zmod(bool two_table,
                                   uint32_t exposure_time,
@@ -1331,16 +2349,20 @@ static void genesys_shading_calibration_impl(Genesys_Device* dev, const Genesys_
   size_t size;
   uint32_t pixels_per_line;
 
-    if (dev->model->asic_type == AsicType::GL843) {
+    if (dev->model->asic_type == AsicType::GL842 ||
+        dev->model->asic_type == AsicType::GL843 ||
+        dev->model->model_id == ModelId::CANON_5600F)
+    {
         pixels_per_line = dev->calib_session.output_pixels;
     } else {
+        // BUG: this selects incorrect pixel number
         pixels_per_line = dev->calib_session.params.pixels;
     }
     unsigned channels = dev->calib_session.params.channels;
 
     // BUG: we are using wrong pixel number here
     unsigned start_offset =
-            dev->calib_session.params.startx * sensor.optical_res / dev->calib_session.params.xres;
+            dev->calib_session.params.startx * sensor.full_resolution / dev->calib_session.params.xres;
     unsigned out_pixels_per_line = pixels_per_line + start_offset;
 
     // FIXME: we set this during both dark and white calibration. A cleaner approach should
@@ -1357,7 +2379,10 @@ static void genesys_shading_calibration_impl(Genesys_Device* dev, const Genesys_
 
     // FIXME: the current calculation is likely incorrect on non-GL843 implementations,
     // but this needs checking. Note the extra line when computing size.
-    if (dev->model->asic_type == AsicType::GL843) {
+    if (dev->model->asic_type == AsicType::GL842 ||
+        dev->model->asic_type == AsicType::GL843 ||
+        dev->model->model_id == ModelId::CANON_5600F)
+    {
         size = dev->calib_session.output_total_bytes_raw;
     } else {
         size = channels * 2 * pixels_per_line * (dev->calib_session.params.lines + 1);
@@ -1401,11 +2426,17 @@ static void genesys_shading_calibration_impl(Genesys_Device* dev, const Genesys_
 
     dev->cmd_set->end_scan(dev, &local_reg, true);
 
-    if (has_flag(dev->model->flags, ModelFlag::INVERTED_16BIT_DATA)) {
+    if (has_flag(dev->model->flags, ModelFlag::SWAP_16BIT_DATA)) {
         for (std::size_t i = 0; i < size / 2; ++i) {
             auto value = calibration_data[i];
             value = ((value >> 8) & 0xff) | ((value << 8) & 0xff00);
             calibration_data[i] = value;
+        }
+    }
+
+    if (has_flag(dev->model->flags, ModelFlag::INVERT_PIXEL_DATA)) {
+        for (std::size_t i = 0; i < size / 2; ++i) {
+            calibration_data[i] = 0xffff - calibration_data[i];
         }
     }
 
@@ -1418,24 +2449,14 @@ static void genesys_shading_calibration_impl(Genesys_Device* dev, const Genesys_
                                     dev->calib_session.params.lines, pixels_per_line * channels,
                                     0.5f);
 
-    if (DBG_LEVEL >= DBG_data) {
-        sanei_genesys_write_pnm_file16((log_filename_prefix + "_shading.pnm").c_str(),
-                                       calibration_data.data(),
-                                       channels, pixels_per_line, dev->calib_session.params.lines);
-        sanei_genesys_write_pnm_file16((log_filename_prefix + "_average.pnm").c_str(),
-                                       out_average_data.data(),
-                                       channels, out_pixels_per_line, 1);
+    if (dbg_log_image_data()) {
+        write_tiff_file(log_filename_prefix + "_shading.tiff", calibration_data.data(), 16,
+                        channels, pixels_per_line, dev->calib_session.params.lines);
+        write_tiff_file(log_filename_prefix + "_average.tiff", out_average_data.data(), 16,
+                        channels, out_pixels_per_line, 1);
     }
 }
 
-
-static void genesys_dark_shading_calibration(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                                             Genesys_Register_Set& local_reg)
-{
-    DBG_HELPER(dbg);
-    genesys_shading_calibration_impl(dev, sensor, local_reg, dev->dark_average_data, true,
-                                     "gl_black");
-}
 /*
  * this function builds dummy dark calibration data so that we can
  * compute shading coefficient in a clean way
@@ -1450,7 +2471,9 @@ static void genesys_dummy_dark_shading(Genesys_Device* dev, const Genesys_Sensor
   uint32_t skip, xend;
   int dummy1, dummy2, dummy3;	/* dummy black average per channel */
 
-    if (dev->model->asic_type == AsicType::GL843) {
+    if (dev->model->asic_type == AsicType::GL842 ||
+        dev->model->asic_type == AsicType::GL843)
+    {
         pixels_per_line = dev->calib_session.output_pixels;
     } else {
         pixels_per_line = dev->calib_session.params.pixels;
@@ -1460,7 +2483,7 @@ static void genesys_dummy_dark_shading(Genesys_Device* dev, const Genesys_Sensor
 
     // BUG: we are using wrong pixel number here
     unsigned start_offset =
-            dev->calib_session.params.startx * sensor.optical_res / dev->calib_session.params.xres;
+            dev->calib_session.params.startx * sensor.full_resolution / dev->calib_session.params.xres;
 
     unsigned out_pixels_per_line = pixels_per_line + start_offset;
 
@@ -1470,8 +2493,7 @@ static void genesys_dummy_dark_shading(Genesys_Device* dev, const Genesys_Sensor
 
   /* we average values on 'the left' where CCD pixels are under casing and
      give darkest values. We then use these as dummy dark calibration */
-  if (dev->settings.xres <= sensor.optical_res / 2)
-    {
+    if (dev->settings.xres <= sensor.full_resolution / 2) {
       skip = 4;
       xend = 36;
     }
@@ -1531,7 +2553,7 @@ static void genesys_repark_sensor_before_shading(Genesys_Device* dev)
         if (dev->settings.scan_method == ScanMethod::TRANSPARENCY ||
             dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
         {
-            dev->cmd_set->move_to_ta(dev);
+            scanner_move_to_ta(*dev);
         }
     }
 }
@@ -1544,12 +2566,108 @@ static void genesys_repark_sensor_after_white_shading(Genesys_Device* dev)
     }
 }
 
+static void genesys_host_shading_calibration_impl(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                                                  std::vector<std::uint16_t>& out_average_data,
+                                                  bool is_dark,
+                                                  const std::string& log_filename_prefix)
+{
+    DBG_HELPER(dbg);
+
+    if (is_dark && dev.settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED) {
+        // FIXME: dark shading currently not supported on infrared transparency scans
+        return;
+    }
+
+    auto local_reg = dev.reg;
+    dev.cmd_set->init_regs_for_shading(&dev, sensor, local_reg);
+
+    auto& session = dev.calib_session;
+    debug_dump(DBG_info, session);
+
+    // turn off motor and lamp power for flatbed scanners, but not for sheetfed scanners
+    // because they have a calibration sheet with a sufficient black strip
+    if (is_dark && !dev.model->is_sheetfed) {
+        sanei_genesys_set_lamp_power(&dev, sensor, local_reg, false);
+    } else {
+        sanei_genesys_set_lamp_power(&dev, sensor, local_reg, true);
+    }
+    sanei_genesys_set_motor_power(local_reg, true);
+
+    dev.interface->write_registers(local_reg);
+
+    if (is_dark) {
+        // wait some time to let lamp to get dark
+        dev.interface->sleep_ms(200);
+    } else if (has_flag(dev.model->flags, ModelFlag::DARK_CALIBRATION)) {
+        // make sure lamp is bright again
+        // FIXME: what about scanners that take a long time to warm the lamp?
+        dev.interface->sleep_ms(500);
+    }
+
+    bool start_motor = !is_dark;
+    dev.cmd_set->begin_scan(&dev, sensor, &local_reg, start_motor);
+
+    if (is_testing_mode()) {
+        dev.interface->test_checkpoint(is_dark ? "host_dark_shading_calibration"
+                                               : "host_white_shading_calibration");
+        dev.cmd_set->end_scan(&dev, &local_reg, true);
+        return;
+    }
+
+    Image image = read_unshuffled_image_from_scanner(&dev, session, session.output_total_bytes_raw);
+    scanner_stop_action(dev);
+
+    auto start_offset = session.params.startx;
+    auto out_pixels_per_line = start_offset + session.output_pixels;
+
+    // FIXME: we set this during both dark and white calibration. A cleaner approach should
+    // probably be used
+    dev.average_size = session.params.channels * out_pixels_per_line;
+
+    out_average_data.clear();
+    out_average_data.resize(dev.average_size);
+
+    std::fill(out_average_data.begin(),
+              out_average_data.begin() + start_offset * session.params.channels, 0);
+
+    compute_array_percentile_approx(out_average_data.data() +
+                                        start_offset * session.params.channels,
+                                    reinterpret_cast<std::uint16_t*>(image.get_row_ptr(0)),
+                                    session.params.lines,
+                                    session.output_pixels * session.params.channels,
+                                    0.5f);
+
+    if (dbg_log_image_data()) {
+        write_tiff_file(log_filename_prefix + "_host_shading.tiff", image);
+        write_tiff_file(log_filename_prefix + "_host_average.tiff", out_average_data.data(), 16,
+                        session.params.channels, out_pixels_per_line, 1);
+    }
+}
+
+static void genesys_dark_shading_calibration(Genesys_Device* dev, const Genesys_Sensor& sensor,
+                                             Genesys_Register_Set& local_reg)
+{
+    DBG_HELPER(dbg);
+    if (has_flag(dev->model->flags, ModelFlag::HOST_SIDE_CALIBRATION_COMPLETE_SCAN)) {
+        genesys_host_shading_calibration_impl(*dev, sensor, dev->dark_average_data, true,
+                                              "gl_black");
+    } else {
+        genesys_shading_calibration_impl(dev, sensor, local_reg, dev->dark_average_data, true,
+                                         "gl_black");
+    }
+}
+
 static void genesys_white_shading_calibration(Genesys_Device* dev, const Genesys_Sensor& sensor,
                                               Genesys_Register_Set& local_reg)
 {
     DBG_HELPER(dbg);
-    genesys_shading_calibration_impl(dev, sensor, local_reg, dev->white_average_data, false,
-                                     "gl_white");
+    if (has_flag(dev->model->flags, ModelFlag::HOST_SIDE_CALIBRATION_COMPLETE_SCAN)) {
+        genesys_host_shading_calibration_impl(*dev, sensor, dev->white_average_data, false,
+                                              "gl_white");
+    } else {
+        genesys_shading_calibration_impl(dev, sensor, local_reg, dev->white_average_data, false,
+                                         "gl_white");
+    }
 }
 
 // This calibration uses a scan over the calibration target, comprising a black and a white strip.
@@ -1575,7 +2693,9 @@ static void genesys_dark_white_shading_calibration(Genesys_Device* dev,
   uint32_t dark, white, dark_sum, white_sum, dark_count, white_count, col,
     dif;
 
-    if (dev->model->asic_type == AsicType::GL843) {
+    if (dev->model->asic_type == AsicType::GL842 ||
+        dev->model->asic_type == AsicType::GL843)
+    {
         pixels_per_line = dev->calib_session.output_pixels;
     } else {
         pixels_per_line = dev->calib_session.params.pixels;
@@ -1585,7 +2705,7 @@ static void genesys_dark_white_shading_calibration(Genesys_Device* dev,
 
     // BUG: we are using wrong pixel number here
     unsigned start_offset =
-            dev->calib_session.params.startx * sensor.optical_res / dev->calib_session.params.xres;
+            dev->calib_session.params.startx * sensor.full_resolution / dev->calib_session.params.xres;
 
     unsigned out_pixels_per_line = pixels_per_line + start_offset;
 
@@ -1597,7 +2717,9 @@ static void genesys_dark_white_shading_calibration(Genesys_Device* dev,
   dev->dark_average_data.clear();
   dev->dark_average_data.resize(dev->average_size);
 
-    if (dev->model->asic_type == AsicType::GL843) {
+    if (dev->model->asic_type == AsicType::GL842 ||
+        dev->model->asic_type == AsicType::GL843)
+    {
         size = dev->calib_session.output_total_bytes_raw;
     } else {
         // FIXME: on GL841 this is different than dev->calib_session.output_total_bytes_raw,
@@ -1625,19 +2747,15 @@ static void genesys_dark_white_shading_calibration(Genesys_Device* dev,
 
     dev->cmd_set->end_scan(dev, &local_reg, true);
 
-  if (DBG_LEVEL >= DBG_data)
-    {
-      if (dev->model->is_cis)
-        {
-          sanei_genesys_write_pnm_file("gl_black_white_shading.pnm", calibration_data.data(),
-                                       16, 1, pixels_per_line*channels,
-                                       dev->calib_session.params.lines);
-        }
-      else
-        {
-          sanei_genesys_write_pnm_file("gl_black_white_shading.pnm", calibration_data.data(),
-                                       16, channels, pixels_per_line,
-                                       dev->calib_session.params.lines);
+    if (dbg_log_image_data()) {
+        if (dev->model->is_cis) {
+            write_tiff_file("gl_black_white_shading.tiff", calibration_data.data(),
+                            16, 1, pixels_per_line*channels,
+                            dev->calib_session.params.lines);
+        } else {
+            write_tiff_file("gl_black_white_shading.tiff", calibration_data.data(),
+                            16, channels, pixels_per_line,
+                            dev->calib_session.params.lines);
         }
     }
 
@@ -1708,11 +2826,11 @@ static void genesys_dark_white_shading_calibration(Genesys_Device* dev,
         *average_white++ = white_sum;
     }
 
-    if (DBG_LEVEL >= DBG_data) {
-        sanei_genesys_write_pnm_file16("gl_white_average.pnm", dev->white_average_data.data(),
-                                       channels, out_pixels_per_line, 1);
-        sanei_genesys_write_pnm_file16("gl_dark_average.pnm", dev->dark_average_data.data(),
-                                       channels, out_pixels_per_line, 1);
+    if (dbg_log_image_data()) {
+        write_tiff_file("gl_white_average.tiff", dev->white_average_data.data(), 16, channels,
+                        out_pixels_per_line, 1);
+        write_tiff_file("gl_dark_average.tiff", dev->dark_average_data.data(), 16, channels,
+                        out_pixels_per_line, 1);
     }
 }
 
@@ -1819,13 +2937,12 @@ compute_averaged_planar (Genesys_Device * dev, const Genesys_Sensor& sensor,
  */
   res = dev->settings.xres;
 
-    if (sensor.get_ccd_size_divisor_for_dpi(dev->settings.xres) > 1)
-    {
+    if (sensor.full_resolution > sensor.get_optical_resolution()) {
         res *= 2;
     }
 
-  /* this should be evenly dividable */
-  basepixels = sensor.optical_res / res;
+    // this should be evenly dividable
+    basepixels = sensor.full_resolution / res;
 
   /* gl841 supports 1/1 1/2 1/3 1/4 1/5 1/6 1/8 1/10 1/12 1/15 averaging */
   if (basepixels < 1)
@@ -2110,9 +3227,10 @@ compute_shifted_coefficients (Genesys_Device * dev,
     auto cmat = color_order_to_cmat(color_order);
 
   x = dev->settings.xres;
-  if (sensor.get_ccd_size_divisor_for_dpi(dev->settings.xres) > 1)
-    x *= 2;							/* scanner is using half-ccd mode */
-  basepixels = sensor.optical_res / x;			/*this should be evenly dividable */
+    if (sensor.full_resolution > sensor.get_optical_resolution()) {
+        x *= 2;	// scanner is using half-ccd mode
+    }
+    basepixels = sensor.full_resolution / x; // this should be evenly dividable
 
       /* gl841 supports 1/1 1/2 1/3 1/4 1/5 1/6 1/8 1/10 1/12 1/15 averaging */
       if (basepixels < 1)
@@ -2198,9 +3316,11 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
 
     // BUG: we are using wrong pixel number here
     unsigned start_offset =
-            dev->calib_session.params.startx * sensor.optical_res / dev->calib_session.params.xres;
+            dev->calib_session.params.startx * sensor.full_resolution / dev->calib_session.params.xres;
 
-    if (dev->model->asic_type == AsicType::GL843) {
+    if (dev->model->asic_type == AsicType::GL842 ||
+        dev->model->asic_type == AsicType::GL843)
+    {
         pixels_per_line = dev->calib_session.output_pixels + start_offset;
     } else {
         pixels_per_line = dev->calib_session.params.pixels + start_offset;
@@ -2264,13 +3384,10 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
     }
 
   /* compute avg factor */
-  if(dev->settings.xres>sensor.optical_res)
-    {
-      factor=1;
-    }
-  else
-    {
-      factor=sensor.optical_res/dev->settings.xres;
+    if (dev->settings.xres > sensor.full_resolution) {
+        factor = 1;
+    } else {
+        factor = sensor.full_resolution / dev->settings.xres;
     }
 
   /* for GL646, shading data is planar if REG_0x01_FASTMOD is set and
@@ -2284,6 +3401,7 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
   switch (dev->model->sensor_id)
     {
     case SensorId::CCD_XP300:
+        case SensorId::CCD_DOCKETPORT_487:
     case SensorId::CCD_ROADWARRIOR:
     case SensorId::CCD_DP665:
     case SensorId::CCD_DP685:
@@ -2318,10 +3436,9 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
     case SensorId::CCD_HP2300:
       target_code = 0xdc00;
       o = 2;
-      if(dev->settings.xres<=sensor.optical_res/2)
-       {
-          o = o - sensor.dummy_pixel / 2;
-       }
+            if (dev->settings.xres <= sensor.full_resolution / 2) {
+                o = o - sensor.dummy_pixel / 2;
+            }
       compute_coefficients (dev,
                 shading_data.data(),
 			    pixels_per_line,
@@ -2334,7 +3451,7 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
     case SensorId::CCD_5345:
       target_code = 0xe000;
       o = 4;
-      if(dev->settings.xres<=sensor.optical_res/2)
+      if(dev->settings.xres<=sensor.full_resolution/2)
        {
           o = o - sensor.dummy_pixel;
        }
@@ -2381,9 +3498,12 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
     case SensorId::CCD_CANON_4400F:
     case SensorId::CCD_CANON_8400F:
     case SensorId::CCD_CANON_8600F:
+        case SensorId::CCD_PLUSTEK_OPTICFILM_7200:
     case SensorId::CCD_PLUSTEK_OPTICFILM_7200I:
     case SensorId::CCD_PLUSTEK_OPTICFILM_7300:
+        case SensorId::CCD_PLUSTEK_OPTICFILM_7400:
     case SensorId::CCD_PLUSTEK_OPTICFILM_7500I:
+        case SensorId::CCD_PLUSTEK_OPTICFILM_8200I:
       target_code = 0xe000;
       o = 0;
       compute_coefficients (dev,
@@ -2402,6 +3522,7 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
     case SensorId::CIS_CANON_LIDE_120:
     case SensorId::CIS_CANON_LIDE_210:
     case SensorId::CIS_CANON_LIDE_220:
+        case SensorId::CCD_CANON_5600F:
         /* TODO store this in a data struct so we avoid
          * growing this switch */
         switch(dev->model->sensor_id)
@@ -2432,6 +3553,7 @@ static void genesys_send_shading_coefficient(Genesys_Device* dev, const Genesys_
                                      target_code);
       break;
     case SensorId::CIS_CANON_LIDE_35:
+        case SensorId::CIS_CANON_LIDE_60:
       compute_averaged_planar (dev, sensor,
                                shading_data.data(),
                                pixels_per_line,
@@ -2567,20 +3689,13 @@ static void genesys_save_calibration(Genesys_Device* dev, const Genesys_Sensor& 
 #endif
 }
 
-/**
- * does the calibration process for a flatbed scanner
- * - offset calibration
- * - gain calibration
- * - shading calibration
- * @param dev device to calibrate
- */
 static void genesys_flatbed_calibration(Genesys_Device* dev, Genesys_Sensor& sensor)
 {
     DBG_HELPER(dbg);
-  uint32_t pixels_per_line;
+    uint32_t pixels_per_line;
 
-    unsigned coarse_res = sensor.optical_res;
-    if (dev->settings.yres <= sensor.optical_res / 2) {
+    unsigned coarse_res = sensor.full_resolution;
+    if (dev->settings.yres <= sensor.full_resolution / 2) {
         coarse_res /= 2;
     }
 
@@ -2596,19 +3711,23 @@ static void genesys_flatbed_calibration(Genesys_Device* dev, Genesys_Sensor& sen
 
     auto local_reg = dev->initial_regs;
 
-    // do offset calibration if needed
-    dev->interface->record_progress_message("offset_calibration");
-    dev->cmd_set->offset_calibration(dev, sensor, local_reg);
+    if (!has_flag(dev->model->flags, ModelFlag::DISABLE_ADC_CALIBRATION)) {
+        // do ADC calibration first.
+        dev->interface->record_progress_message("offset_calibration");
+        dev->cmd_set->offset_calibration(dev, sensor, local_reg);
 
-    dev->interface->record_progress_message("coarse_gain_calibration");
-    dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, coarse_res);
+        dev->interface->record_progress_message("coarse_gain_calibration");
+        dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, coarse_res);
+    }
 
-  if (dev->model->is_cis)
+    if (dev->model->is_cis &&
+        !has_flag(dev->model->flags, ModelFlag::DISABLE_EXPOSURE_CALIBRATION))
     {
-      /* the afe now sends valid data for doing led calibration */
+        // ADC now sends correct data, we can configure the exposure for the LEDs
         dev->interface->record_progress_message("led_calibration");
         switch (dev->model->asic_type) {
             case AsicType::GL124:
+            case AsicType::GL841:
             case AsicType::GL845:
             case AsicType::GL846:
             case AsicType::GL847: {
@@ -2625,13 +3744,14 @@ static void genesys_flatbed_calibration(Genesys_Device* dev, Genesys_Sensor& sen
             }
         }
 
+        if (!has_flag(dev->model->flags, ModelFlag::DISABLE_ADC_CALIBRATION)) {
+            // recalibrate ADC again for the new LED exposure
+            dev->interface->record_progress_message("offset_calibration");
+            dev->cmd_set->offset_calibration(dev, sensor, local_reg);
 
-        // calibrate afe again to match new exposure
-        dev->interface->record_progress_message("offset_calibration");
-        dev->cmd_set->offset_calibration(dev, sensor, local_reg);
-
-        dev->interface->record_progress_message("coarse_gain_calibration");
-        dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, coarse_res);
+            dev->interface->record_progress_message("coarse_gain_calibration");
+            dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, coarse_res);
+        }
     }
 
   /* we always use sensor pixel number when the ASIC can't handle multi-segments sensor */
@@ -2647,33 +3767,35 @@ static void genesys_flatbed_calibration(Genesys_Device* dev, Genesys_Sensor& sen
     dev->interface->record_progress_message("sanei_genesys_init_shading_data");
     sanei_genesys_init_shading_data(dev, sensor, pixels_per_line);
 
-  if (dev->settings.scan_method == ScanMethod::TRANSPARENCY ||
-      dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
-  {
-        dev->cmd_set->move_to_ta(dev);
-  }
+    if (dev->settings.scan_method == ScanMethod::TRANSPARENCY ||
+        dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
+    {
+        scanner_move_to_ta(*dev);
+    }
 
     // shading calibration
-    if (has_flag(dev->model->flags, ModelFlag::DARK_WHITE_CALIBRATION)) {
-        dev->interface->record_progress_message("genesys_dark_white_shading_calibration");
-        genesys_dark_white_shading_calibration(dev, sensor, local_reg);
-    } else {
-        DBG(DBG_proc, "%s : genesys_dark_shading_calibration local_reg ", __func__);
-        debug_dump(DBG_proc, local_reg);
+    if (!has_flag(dev->model->flags, ModelFlag::DISABLE_SHADING_CALIBRATION)) {
+        if (has_flag(dev->model->flags, ModelFlag::DARK_WHITE_CALIBRATION)) {
+            dev->interface->record_progress_message("genesys_dark_white_shading_calibration");
+            genesys_dark_white_shading_calibration(dev, sensor, local_reg);
+        } else {
+            DBG(DBG_proc, "%s : genesys_dark_shading_calibration local_reg ", __func__);
+            debug_dump(DBG_proc, local_reg);
 
-        if (has_flag(dev->model->flags, ModelFlag::DARK_CALIBRATION)) {
-            dev->interface->record_progress_message("genesys_dark_shading_calibration");
-            genesys_dark_shading_calibration(dev, sensor, local_reg);
-            genesys_repark_sensor_before_shading(dev);
-        }
+            if (has_flag(dev->model->flags, ModelFlag::DARK_CALIBRATION)) {
+                dev->interface->record_progress_message("genesys_dark_shading_calibration");
+                genesys_dark_shading_calibration(dev, sensor, local_reg);
+                genesys_repark_sensor_before_shading(dev);
+            }
 
-        dev->interface->record_progress_message("genesys_white_shading_calibration");
-        genesys_white_shading_calibration(dev, sensor, local_reg);
+            dev->interface->record_progress_message("genesys_white_shading_calibration");
+            genesys_white_shading_calibration(dev, sensor, local_reg);
 
-        genesys_repark_sensor_after_white_shading(dev);
+            genesys_repark_sensor_after_white_shading(dev);
 
-        if (!has_flag(dev->model->flags, ModelFlag::DARK_CALIBRATION)) {
-            genesys_dummy_dark_shading(dev, sensor);
+            if (!has_flag(dev->model->flags, ModelFlag::DARK_CALIBRATION)) {
+                genesys_dummy_dark_shading(dev, sensor);
+            }
         }
     }
 
@@ -2702,15 +3824,7 @@ static void genesys_sheetfed_calibration(Genesys_Device* dev, Genesys_Sensor& se
     // first step, load document
     dev->cmd_set->load_document(dev);
 
-  /* led, offset and gain calibration are influenced by scan
-   * settings. So we set it to sensor resolution */
-  dev->settings.xres = sensor.optical_res;
-  /* XP200 needs to calibrate a full and half sensor's resolution */
-    if (dev->model->sensor_id == SensorId::CIS_XP200 &&
-        dev->settings.xres <= sensor.optical_res / 2)
-    {
-        dev->settings.xres /= 2;
-    }
+    unsigned coarse_res = sensor.full_resolution;
 
   /* the afe needs to sends valid data even before calibration */
 
@@ -2722,14 +3836,31 @@ static void genesys_sheetfed_calibration(Genesys_Device* dev, Genesys_Sensor& se
         throw;
     }
 
-  if (dev->model->is_cis)
-    {
-        dev->cmd_set->led_calibration(dev, sensor, local_reg);
+    if (!has_flag(dev->model->flags, ModelFlag::DISABLE_ADC_CALIBRATION)) {
+        // do ADC calibration first.
+        dev->interface->record_progress_message("offset_calibration");
+        dev->cmd_set->offset_calibration(dev, sensor, local_reg);
+
+        dev->interface->record_progress_message("coarse_gain_calibration");
+        dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, coarse_res);
     }
 
-    dev->cmd_set->offset_calibration(dev, sensor, local_reg);
+    if (dev->model->is_cis &&
+        !has_flag(dev->model->flags, ModelFlag::DISABLE_EXPOSURE_CALIBRATION))
+    {
+        // ADC now sends correct data, we can configure the exposure for the LEDs
+        dev->interface->record_progress_message("led_calibration");
+        dev->cmd_set->led_calibration(dev, sensor, local_reg);
 
-    dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, sensor.optical_res);
+        if (!has_flag(dev->model->flags, ModelFlag::DISABLE_ADC_CALIBRATION)) {
+            // recalibrate ADC again for the new LED exposure
+            dev->interface->record_progress_message("offset_calibration");
+            dev->cmd_set->offset_calibration(dev, sensor, local_reg);
+
+            dev->interface->record_progress_message("coarse_gain_calibration");
+            dev->cmd_set->coarse_gain_calibration(dev, sensor, local_reg, coarse_res);
+        }
+    }
 
   /* search for a full width black strip and then do a 16 bit scan to
    * gather black shading data */
@@ -2797,7 +3928,7 @@ static void genesys_sheetfed_calibration(Genesys_Device* dev, Genesys_Sensor& se
     dev->cmd_set->eject_document(dev);
 
     // restore settings
-    dev->settings.xres = sensor.optical_res;
+    dev->settings.xres = sensor.full_resolution;
 }
 
 /**
@@ -2827,24 +3958,23 @@ static void genesys_warmup_lamp(Genesys_Device* dev)
 {
     DBG_HELPER(dbg);
     unsigned seconds = 0;
-  int pixel;
-  int channels, total_size;
-  double first_average = 0;
-  double second_average = 0;
-  int difference = 255;
-    int lines = 3;
 
   const auto& sensor = sanei_genesys_find_sensor_any(dev);
 
-    dev->cmd_set->init_regs_for_warmup(dev, sensor, &dev->reg, &channels, &total_size);
+    dev->cmd_set->init_regs_for_warmup(dev, sensor, &dev->reg);
     dev->interface->write_registers(dev->reg);
+
+    auto total_pixels =  dev->session.output_pixels;
+    auto total_size = dev->session.output_line_bytes;
+    auto channels = dev->session.params.channels;
+    auto lines = dev->session.output_line_count;
 
   std::vector<uint8_t> first_line(total_size);
   std::vector<uint8_t> second_line(total_size);
 
-  do
-    {
-      DBG(DBG_info, "%s: one more loop\n", __func__);
+    do {
+        first_line = second_line;
+
         dev->cmd_set->begin_scan(dev, sensor, &dev->reg, false);
 
         if (is_testing_mode()) {
@@ -2855,72 +3985,44 @@ static void genesys_warmup_lamp(Genesys_Device* dev)
 
         wait_until_buffer_non_empty(dev);
 
-        try {
-            sanei_genesys_read_data_from_scanner(dev, first_line.data(), total_size);
-        } catch (...) {
-            // FIXME: document why this retry is here
-            sanei_genesys_read_data_from_scanner(dev, first_line.data(), total_size);
-        }
-
-        dev->cmd_set->end_scan(dev, &dev->reg, true);
-
-        dev->interface->sleep_ms(1000);
-      seconds++;
-
-        dev->cmd_set->begin_scan(dev, sensor, &dev->reg, false);
-
-        wait_until_buffer_non_empty(dev);
-
         sanei_genesys_read_data_from_scanner(dev, second_line.data(), total_size);
         dev->cmd_set->end_scan(dev, &dev->reg, true);
 
-      /* compute difference between the two scans */
-      for (pixel = 0; pixel < total_size; pixel++)
-	{
+        // compute difference between the two scans
+        double first_average = 0;
+        double second_average = 0;
+        for (unsigned pixel = 0; pixel < total_size; pixel++) {
             // 16 bit data
             if (dev->session.params.depth == 16) {
-	      first_average += (first_line[pixel] + first_line[pixel + 1] * 256);
-	      second_average += (second_line[pixel] + second_line[pixel + 1] * 256);
-	      pixel++;
-	    }
-	  else
-	    {
-	      first_average += first_line[pixel];
-	      second_average += second_line[pixel];
-	    }
-	}
-        if (dev->session.params.depth == 16) {
-	  first_average /= pixel;
-	  second_average /= pixel;
-            difference = static_cast<int>(std::fabs(first_average - second_average));
-	  DBG(DBG_info, "%s: average = %.2f, diff = %.3f\n", __func__,
-	      100 * ((second_average) / (256 * 256)),
-	      100 * (difference / second_average));
+                first_average += (first_line[pixel] + first_line[pixel + 1] * 256);
+                second_average += (second_line[pixel] + second_line[pixel + 1] * 256);
+                pixel++;
+            } else {
+                first_average += first_line[pixel];
+                second_average += second_line[pixel];
+            }
+        }
 
-	  if (second_average > (100 * 256)
-	      && (difference / second_average) < 0.002)
-	    break;
-	}
-      else
-	{
-	  first_average /= pixel;
-	  second_average /= pixel;
-	  if (DBG_LEVEL >= DBG_data)
-	    {
-              sanei_genesys_write_pnm_file("gl_warmup1.pnm", first_line.data(), 8, channels,
-                                           total_size / (lines * channels), lines);
-              sanei_genesys_write_pnm_file("gl_warmup2.pnm", second_line.data(), 8, channels,
-                                           total_size / (lines * channels), lines);
-	    }
-	  DBG(DBG_info, "%s: average 1 = %.2f, average 2 = %.2f\n", __func__, first_average,
-	      second_average);
-          /* if delta below 15/255 ~= 5.8%, lamp is considred warm enough */
-	  if (fabs (first_average - second_average) < 15
-	      && second_average > 55)
-	    break;
-	}
+        first_average /= total_pixels;
+        second_average /= total_pixels;
 
-      /* sleep another second before next loop */
+        if (dbg_log_image_data()) {
+            write_tiff_file("gl_warmup1.tiff", first_line.data(), dev->session.params.depth,
+                            channels, total_size / (lines * channels), lines);
+            write_tiff_file("gl_warmup2.tiff", second_line.data(), dev->session.params.depth,
+                            channels, total_size / (lines * channels), lines);
+        }
+
+        DBG(DBG_info, "%s: average 1 = %.2f, average 2 = %.2f\n", __func__, first_average,
+            second_average);
+
+        float average_difference = std::fabs(first_average - second_average) / second_average;
+        if (second_average > 0 && average_difference < 0.005)
+        {
+            dbg.vlog(DBG_info, "difference: %f, exiting", average_difference);
+            break;
+        }
+
         dev->interface->sleep_ms(1000);
         seconds++;
     } while (seconds < WARMUP_TIME);
@@ -2936,12 +4038,44 @@ static void genesys_warmup_lamp(Genesys_Device* dev)
     }
 }
 
+static void init_regs_for_scan(Genesys_Device& dev, const Genesys_Sensor& sensor,
+                               Genesys_Register_Set& regs)
+{
+    DBG_HELPER(dbg);
+    debug_dump(DBG_info, dev.settings);
+
+    auto session = dev.cmd_set->calculate_scan_session(&dev, sensor, dev.settings);
+
+    if (dev.model->asic_type == AsicType::GL124 ||
+        dev.model->asic_type == AsicType::GL845 ||
+        dev.model->asic_type == AsicType::GL846 ||
+        dev.model->asic_type == AsicType::GL847)
+    {
+        /*  Fast move to scan area:
+
+            We don't move fast the whole distance since it would involve computing
+            acceleration/deceleration distance for scan resolution. So leave a remainder for it so
+            scan makes the final move tuning
+        */
+
+        if (dev.settings.get_channels() * dev.settings.yres >= 600 && session.params.starty > 700) {
+            scanner_move(dev, dev.model->default_method,
+                         static_cast<unsigned>(session.params.starty - 500),
+                         Direction::FORWARD);
+            session.params.starty = 500;
+        }
+        compute_session(&dev, session, sensor);
+    }
+
+    dev.cmd_set->init_regs_for_scan_session(&dev, sensor, &regs, session);
+}
 
 // High-level start of scanning
 static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
 {
     DBG_HELPER(dbg);
   unsigned int steps, expected;
+
 
   /* since not all scanners are set ot wait for head to park
    * we check we are not still parking before starting a new scan */
@@ -2954,9 +4088,15 @@ static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
 
   /* wait for lamp warmup : until a warmup for TRANSPARENCY is designed, skip
    * it when scanning from XPA. */
-    if (!has_flag(dev->model->flags, ModelFlag::SKIP_WARMUP) &&
-        (dev->settings.scan_method == ScanMethod::FLATBED))
+    if (has_flag(dev->model->flags, ModelFlag::WARMUP) &&
+        (dev->settings.scan_method != ScanMethod::TRANSPARENCY_INFRARED))
     {
+        if (dev->settings.scan_method == ScanMethod::TRANSPARENCY ||
+            dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
+        {
+            scanner_move_to_ta(*dev);
+        }
+
         genesys_warmup_lamp(dev);
     }
 
@@ -2971,7 +4111,7 @@ static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
     if (dev->settings.scan_method == ScanMethod::TRANSPARENCY ||
         dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
     {
-        dev->cmd_set->move_to_ta(dev);
+        scanner_move_to_ta(*dev);
     }
 
   /* load document if needed (for sheetfed scanner for instance) */
@@ -2990,22 +4130,18 @@ static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
   /* try to use cached calibration first */
   if (!genesys_restore_calibration (dev, sensor))
     {
-       /* calibration : sheetfed scanners can't calibrate before each scan */
-       /* and also those who have the NO_CALIBRATION flag                  */
-        if (!has_flag(dev->model->flags, ModelFlag::NO_CALIBRATION) && !dev->model->is_sheetfed) {
+        // calibration : sheetfed scanners can't calibrate before each scan.
+        // also don't run calibration for those scanners where all passes are disabled
+        bool shading_disabled =
+                has_flag(dev->model->flags, ModelFlag::DISABLE_ADC_CALIBRATION) &&
+                has_flag(dev->model->flags, ModelFlag::DISABLE_EXPOSURE_CALIBRATION) &&
+                has_flag(dev->model->flags, ModelFlag::DISABLE_SHADING_CALIBRATION);
+        if (!shading_disabled && !dev->model->is_sheetfed) {
             genesys_scanner_calibration(dev, sensor);
-          genesys_save_calibration (dev, sensor);
-	}
-      else
-	{
+            genesys_save_calibration(dev, sensor);
+        } else {
           DBG(DBG_warn, "%s: no calibration done\n", __func__);
-	}
-    }
-
-  /* build look up table for dynamic lineart */
-    if (dev->settings.scan_mode == ScanColorMode::LINEART) {
-        sanei_genesys_load_lut(dev->lineart_lut, 8, 8, 50, 205, dev->settings.threshold_curve,
-                               dev->settings.threshold-127);
+        }
     }
 
     dev->cmd_set->wait_for_motor_stop(dev);
@@ -3017,10 +4153,10 @@ static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
     if (dev->settings.scan_method == ScanMethod::TRANSPARENCY ||
         dev->settings.scan_method == ScanMethod::TRANSPARENCY_INFRARED)
     {
-        dev->cmd_set->move_to_ta(dev);
+        scanner_move_to_ta(*dev);
     }
 
-    dev->cmd_set->init_regs_for_scan(dev, sensor, dev->reg);
+    init_regs_for_scan(*dev, sensor, dev->reg);
 
   /* no lamp during scan */
     if (lamp_off) {
@@ -3030,7 +4166,7 @@ static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
   /* GL124 is using SHDAREA, so we have to wait for scan to be set up before
    * sending shading data */
     if (dev->cmd_set->has_send_shading_data() &&
-        !has_flag(dev->model->flags, ModelFlag::NO_CALIBRATION))
+        !has_flag(dev->model->flags, ModelFlag::DISABLE_SHADING_CALIBRATION))
     {
         genesys_send_shading_coefficient(dev, sensor);
     }
@@ -3072,33 +4208,6 @@ static void genesys_start_scan(Genesys_Device* dev, bool lamp_off)
     }
 }
 
-static void genesys_fill_read_buffer(Genesys_Device* dev)
-{
-    DBG_HELPER(dbg);
-
-  /* for sheetfed scanner, we must check is document is shorter than
-   * the requested scan */
-    if (dev->model->is_sheetfed) {
-        dev->cmd_set->detect_document_end(dev);
-    }
-
-    std::size_t size = dev->read_buffer.size() - dev->read_buffer.avail();
-
-  /* due to sensors and motors, not all data can be directly used. It
-   * may have to be read from another intermediate buffer and then processed.
-   * There are currently 3 intermediate stages:
-   * - handling of odd/even sensors
-   * - handling of line interpolation for motors that can't have low
-   *   enough dpi
-   * - handling of multi-segments sensors
-   *
-   * This is also the place where full duplex data will be handled.
-   */
-    dev->pipeline_buffer.get_data(size, dev->read_buffer.get_write_pos(size));
-
-    dev->read_buffer.produce(size);
-}
-
 /* this function does the effective data read in a manner that suits
    the scanner. It does data reordering and resizing if need.
    It also manages EOF and I/O errors, and line distance correction.
@@ -3108,8 +4217,6 @@ static void genesys_read_ordered_data(Genesys_Device* dev, SANE_Byte* destinatio
 {
     DBG_HELPER(dbg);
     size_t bytes = 0;
-  uint8_t *work_buffer_src;
-  Genesys_Buffer *src_buffer;
 
     if (!dev->read_active) {
       *len = 0;
@@ -3134,61 +4241,22 @@ static void genesys_read_ordered_data(Genesys_Device* dev, SANE_Byte* destinatio
         throw SaneException(SANE_STATUS_EOF, "nothing more to scan: EOF");
     }
 
-/* convert data */
-/*
-  0. fill_read_buffer
--------------- read_buffer ----------------------
-  1a). (opt)uncis                    (assumes color components to be laid out
-                                    planar)
-  1b). (opt)reverse_RGB              (assumes pixels to be BGR or BBGGRR))
--------------- lines_buffer ----------------------
-  2a). (opt)line_distance_correction (assumes RGB or RRGGBB)
-  2b). (opt)unstagger                (assumes pixels to be depth*channels/8
-                                      bytes long, unshrinked)
-------------- shrink_buffer ---------------------
-  3. (opt)shrink_lines             (assumes component separation in pixels)
--------------- out_buffer -----------------------
-  4. memcpy to destination (for lineart with bit reversal)
-*/
-/*FIXME: for lineart we need sub byte addressing in buffers, or conversion to
-  bytes at 0. and back to bits at 4.
-Problems with the first approach:
-  - its not clear how to check if we need to output an incomplete byte
-    because it is the last one.
- */
-/*FIXME: add lineart support for gl646. in the meantime add logic to convert
-  from gray to lineart at the end? would suffer the above problem,
-  total_bytes_to_read and total_bytes_read help in that case.
- */
-
     if (is_testing_mode()) {
         if (dev->total_bytes_read + *len > dev->total_bytes_to_read) {
             *len = dev->total_bytes_to_read - dev->total_bytes_read;
         }
         dev->total_bytes_read += *len;
     } else {
-        genesys_fill_read_buffer(dev);
+        if (dev->model->is_sheetfed) {
+            dev->cmd_set->detect_document_end(dev);
+        }
 
-        src_buffer = &(dev->read_buffer);
-
-        /* move data to destination */
-        bytes = std::min(src_buffer->avail(), *len);
-
-        work_buffer_src = src_buffer->get_read_pos();
-
-        std::memcpy(destination, work_buffer_src, bytes);
-        *len = bytes;
-
-        /* avoid signaling some extra data because we have treated a full block
-        * on the last block */
         if (dev->total_bytes_read + *len > dev->total_bytes_to_read) {
             *len = dev->total_bytes_to_read - dev->total_bytes_read;
         }
 
-        /* count bytes sent to frontend */
+        dev->pipeline_buffer.get_data(*len, destination);
         dev->total_bytes_read += *len;
-
-        src_buffer->consume(bytes);
     }
 
   /* end scan if all needed data have been read */
@@ -3262,181 +4330,113 @@ static unsigned pick_resolution(const std::vector<unsigned>& resolutions, unsign
     return best_res;
 }
 
+static Genesys_Settings calculate_scan_settings(Genesys_Scanner* s)
+{
+    DBG_HELPER(dbg);
+
+    const auto* dev = s->dev;
+    Genesys_Settings settings;
+    settings.scan_method = s->scan_method;
+    settings.scan_mode = option_string_to_scan_color_mode(s->mode);
+
+    settings.depth = s->bit_depth;
+
+    if (settings.depth > 8) {
+        settings.depth = 16;
+    } else if (settings.depth < 8) {
+        settings.depth = 1;
+    }
+
+    const auto& resolutions = dev->model->get_resolution_settings(settings.scan_method);
+
+    settings.xres = pick_resolution(resolutions.resolutions_x, s->resolution, "X");
+    settings.yres = pick_resolution(resolutions.resolutions_y, s->resolution, "Y");
+
+    settings.tl_x = fixed_to_float(s->pos_top_left_x);
+    settings.tl_y = fixed_to_float(s->pos_top_left_y);
+    float br_x = fixed_to_float(s->pos_bottom_right_x);
+    float br_y = fixed_to_float(s->pos_bottom_right_y);
+
+    settings.lines = static_cast<unsigned>(((br_y - settings.tl_y) * settings.yres) /
+                                            MM_PER_INCH);
+
+
+    unsigned pixels_per_line = static_cast<unsigned>(((br_x - settings.tl_x) * settings.xres) /
+                                                     MM_PER_INCH);
+
+    const auto& sensor = sanei_genesys_find_sensor(dev, settings.xres, settings.get_channels(),
+                                                   settings.scan_method);
+
+    pixels_per_line = session_adjust_output_pixels(pixels_per_line, *dev, sensor,
+                                                   settings.xres, settings.yres, true);
+
+    unsigned xres_factor = s->resolution / settings.xres;
+    settings.pixels = pixels_per_line;
+    settings.requested_pixels = pixels_per_line * xres_factor;
+
+    if (s->color_filter == "Red") {
+        settings.color_filter = ColorFilter::RED;
+    } else if (s->color_filter == "Green") {
+        settings.color_filter = ColorFilter::GREEN;
+    } else if (s->color_filter == "Blue") {
+        settings.color_filter = ColorFilter::BLUE;
+    } else {
+        settings.color_filter = ColorFilter::NONE;
+    }
+
+    if (s->color_filter == "None") {
+        settings.true_gray = 1;
+    } else {
+        settings.true_gray = 0;
+    }
+
+    // brigthness and contrast only for for 8 bit scans
+    if (s->bit_depth == 8) {
+        settings.contrast = (s->contrast * 127) / 100;
+        settings.brightness = (s->brightness * 127) / 100;
+    } else {
+        settings.contrast = 0;
+        settings.brightness = 0;
+    }
+
+    settings.expiration_time = s->expiration_time;
+
+    return settings;
+}
+
+static SANE_Parameters calculate_scan_parameters(const Genesys_Device& dev,
+                                                 const Genesys_Settings& settings)
+{
+    DBG_HELPER(dbg);
+
+    auto sensor = sanei_genesys_find_sensor(&dev, settings.xres, settings.get_channels(),
+                                            settings.scan_method);
+    auto session = dev.cmd_set->calculate_scan_session(&dev, sensor, settings);
+    auto pipeline = build_image_pipeline(dev, session, 0, false);
+
+    SANE_Parameters params;
+    if (settings.scan_mode == ScanColorMode::GRAY) {
+        params.format = SANE_FRAME_GRAY;
+    } else {
+        params.format = SANE_FRAME_RGB;
+    }
+    // only single-pass scanning supported
+    params.last_frame = true;
+    params.depth = settings.depth;
+    params.lines = pipeline.get_output_height();
+    params.pixels_per_line = pipeline.get_output_width();
+    params.bytes_per_line = pipeline.get_output_row_bytes();
+
+    return params;
+}
+
 static void calc_parameters(Genesys_Scanner* s)
 {
     DBG_HELPER(dbg);
-    float tl_x = 0, tl_y = 0, br_x = 0, br_y = 0;
 
-    tl_x = fixed_to_float(s->pos_top_left_x);
-    tl_y = fixed_to_float(s->pos_top_left_y);
-    br_x = fixed_to_float(s->pos_bottom_right_x);
-    br_y = fixed_to_float(s->pos_bottom_right_y);
-
-    s->params.last_frame = true;	/* only single pass scanning supported */
-
-    if (s->mode == SANE_VALUE_SCAN_MODE_GRAY || s->mode == SANE_VALUE_SCAN_MODE_LINEART) {
-        s->params.format = SANE_FRAME_GRAY;
-    } else {
-        s->params.format = SANE_FRAME_RGB;
-    }
-
-    if (s->mode == SANE_VALUE_SCAN_MODE_LINEART) {
-        s->params.depth = 1;
-    } else {
-        s->params.depth = s->bit_depth;
-    }
-
-    s->dev->settings.scan_method = s->scan_method;
-    const auto& resolutions = s->dev->model->get_resolution_settings(s->dev->settings.scan_method);
-
-    s->dev->settings.depth = s->bit_depth;
-
-  /* interpolation */
-  s->dev->settings.disable_interpolation = s->disable_interpolation;
-
-  // FIXME: use correct sensor
-  const auto& sensor = sanei_genesys_find_sensor_any(s->dev);
-
-    // hardware settings
-    if (static_cast<unsigned>(s->resolution) > sensor.optical_res &&
-        s->dev->settings.disable_interpolation)
-    {
-        s->dev->settings.xres = sensor.optical_res;
-    } else {
-        s->dev->settings.xres = s->resolution;
-    }
-    s->dev->settings.yres = s->resolution;
-
-    s->dev->settings.xres = pick_resolution(resolutions.resolutions_x, s->dev->settings.xres, "X");
-    s->dev->settings.yres = pick_resolution(resolutions.resolutions_y, s->dev->settings.yres, "Y");
-
-    s->params.lines = static_cast<unsigned>(((br_y - tl_y) * s->dev->settings.yres) /
-                                            MM_PER_INCH);
-    unsigned pixels_per_line = static_cast<unsigned>(((br_x - tl_x) * s->dev->settings.xres) /
-                                                     MM_PER_INCH);
-
-  /* we need an even pixels number
-   * TODO invert test logic or generalize behaviour across all ASICs */
-    if (has_flag(s->dev->model->flags, ModelFlag::SIS_SENSOR) ||
-        s->dev->model->asic_type == AsicType::GL847 ||
-        s->dev->model->asic_type == AsicType::GL124 ||
-        s->dev->model->asic_type == AsicType::GL845 ||
-        s->dev->model->asic_type == AsicType::GL846 ||
-        s->dev->model->asic_type == AsicType::GL843)
-    {
-        if (s->dev->settings.xres <= 1200) {
-            pixels_per_line = (pixels_per_line / 4) * 4;
-        } else if (s->dev->settings.xres < s->dev->settings.yres) {
-            // BUG: this is an artifact of the fact that the resolution was twice as large than
-            // the actual resolution when scanning above the supported scanner X resolution
-            pixels_per_line = (pixels_per_line / 8) * 8;
-        } else {
-            pixels_per_line = (pixels_per_line / 16) * 16;
-        }
-    }
-
-  /* corner case for true lineart for sensor with several segments
-   * or when xres is doubled to match yres */
-    if (s->dev->settings.xres >= 1200 && (
-                s->dev->model->asic_type == AsicType::GL124 ||
-                s->dev->model->asic_type == AsicType::GL847 ||
-                s->dev->session.params.xres < s->dev->session.params.yres))
-    {
-        if (s->dev->settings.xres < s->dev->settings.yres) {
-            // FIXME: this is an artifact of the fact that the resolution was twice as large than
-            // the actual resolution when scanning above the supported scanner X resolution
-            pixels_per_line = (pixels_per_line / 8) * 8;
-        } else {
-            pixels_per_line = (pixels_per_line / 16) * 16;
-        }
-    }
-
-    unsigned xres_factor = s->resolution / s->dev->settings.xres;
-
-    unsigned bytes_per_line = 0;
-
-  if (s->params.depth > 8)
-    {
-      s->params.depth = 16;
-        bytes_per_line = 2 * pixels_per_line;
-    }
-  else if (s->params.depth == 1)
-    {
-        // round down pixel number. This will is lossy operation, at most 7 pixels will be lost
-        pixels_per_line = (pixels_per_line / 8) * 8;
-        bytes_per_line = pixels_per_line / 8;
-    } else {
-        bytes_per_line = pixels_per_line;
-    }
-
-    if (s->params.format == SANE_FRAME_RGB) {
-        bytes_per_line *= 3;
-    }
-
-    s->dev->settings.scan_mode = option_string_to_scan_color_mode(s->mode);
-
-  s->dev->settings.lines = s->params.lines;
-    s->dev->settings.pixels = pixels_per_line;
-    s->dev->settings.requested_pixels = pixels_per_line * xres_factor;
-    s->params.pixels_per_line = pixels_per_line * xres_factor;
-    s->params.bytes_per_line = bytes_per_line * xres_factor;
-  s->dev->settings.tl_x = tl_x;
-  s->dev->settings.tl_y = tl_y;
-
-    // threshold setting
-    s->dev->settings.threshold = static_cast<int>(2.55f * (fixed_to_float(s->threshold)));
-
-    // color filter
-    if (s->color_filter == "Red") {
-        s->dev->settings.color_filter = ColorFilter::RED;
-    } else if (s->color_filter == "Green") {
-        s->dev->settings.color_filter = ColorFilter::GREEN;
-    } else if (s->color_filter == "Blue") {
-        s->dev->settings.color_filter = ColorFilter::BLUE;
-    } else {
-        s->dev->settings.color_filter = ColorFilter::NONE;
-    }
-
-    // true gray
-    if (s->color_filter == "None") {
-        s->dev->settings.true_gray = 1;
-    } else {
-        s->dev->settings.true_gray = 0;
-    }
-
-    // threshold curve for dynamic rasterization
-    s->dev->settings.threshold_curve = s->threshold_curve;
-
-  /* some digital processing requires the whole picture to be buffered */
-  /* no digital processing takes place when doing preview, or when bit depth is
-   * higher than 8 bits */
-    if ((s->swdespeck || s->swcrop || s->swdeskew || s->swderotate ||(fixed_to_float(s->swskip)>0))
-        && (!s->preview)
-        && (s->bit_depth <= 8))
-    {
-        s->dev->buffer_image = true;
-    }
-  else
-    {
-        s->dev->buffer_image = false;
-    }
-
-  /* brigthness and contrast only for for 8 bit scans */
-  if(s->bit_depth <= 8)
-    {
-      s->dev->settings.contrast = (s->contrast * 127) / 100;
-      s->dev->settings.brightness = (s->brightness * 127) / 100;
-    }
-  else
-    {
-      s->dev->settings.contrast=0;
-      s->dev->settings.brightness=0;
-    }
-
-  /* cache expiration time */
-   s->dev->settings.expiration_time = s->expiration_time;
+    s->dev->settings = calculate_scan_settings(s);
+    s->params = calculate_scan_parameters(*s->dev, s->dev->settings);
 }
-
 
 static void create_bpp_list (Genesys_Scanner * s, const std::vector<unsigned>& bpp)
 {
@@ -3540,7 +4540,7 @@ static std::string calibration_filename(Genesys_Device *currdev)
   /* count models of the same names if several scanners attached */
     if(s_devices->size() > 1) {
         for (const auto& dev : *s_devices) {
-            if (dev.model->model_id == currdev->model->model_id) {
+            if (dev.vendorId == currdev->vendorId && dev.productId == currdev->productId) {
                 count++;
             }
         }
@@ -3630,7 +4630,7 @@ static void init_options(Genesys_Scanner* s)
 {
     DBG_HELPER(dbg);
   SANE_Int option;
-  Genesys_Model *model = s->dev->model;
+    const Genesys_Model* model = s->dev->model;
 
   memset (s->opt, 0, sizeof (s->opt));
 
@@ -3811,61 +4811,6 @@ static void init_options(Genesys_Scanner* s)
    * memory than used by the full scanned image and may fail at high
    * resolution
    */
-  /* software deskew */
-  s->opt[OPT_SWDESKEW].name = "swdeskew";
-  s->opt[OPT_SWDESKEW].title = "Software deskew";
-  s->opt[OPT_SWDESKEW].desc = "Request backend to rotate skewed pages digitally";
-  s->opt[OPT_SWDESKEW].type = SANE_TYPE_BOOL;
-  s->opt[OPT_SWDESKEW].cap = SANE_CAP_SOFT_SELECT | SANE_CAP_SOFT_DETECT | SANE_CAP_ADVANCED;
-  s->swdeskew = false;
-
-  /* software deskew */
-  s->opt[OPT_SWDESPECK].name = "swdespeck";
-  s->opt[OPT_SWDESPECK].title = "Software despeck";
-  s->opt[OPT_SWDESPECK].desc = "Request backend to remove lone dots digitally";
-  s->opt[OPT_SWDESPECK].type = SANE_TYPE_BOOL;
-  s->opt[OPT_SWDESPECK].cap = SANE_CAP_SOFT_SELECT | SANE_CAP_SOFT_DETECT | SANE_CAP_ADVANCED;
-  s->swdespeck = false;
-
-  /* software despeckle radius */
-  s->opt[OPT_DESPECK].name = "despeck";
-  s->opt[OPT_DESPECK].title = "Software despeckle diameter";
-  s->opt[OPT_DESPECK].desc = "Maximum diameter of lone dots to remove from scan";
-  s->opt[OPT_DESPECK].type = SANE_TYPE_INT;
-  s->opt[OPT_DESPECK].unit = SANE_UNIT_NONE;
-  s->opt[OPT_DESPECK].constraint_type = SANE_CONSTRAINT_RANGE;
-  s->opt[OPT_DESPECK].constraint.range = &swdespeck_range;
-  s->opt[OPT_DESPECK].cap = SANE_CAP_SOFT_SELECT | SANE_CAP_SOFT_DETECT | SANE_CAP_ADVANCED | SANE_CAP_INACTIVE;
-  s->despeck = 1;
-
-  /* crop by software */
-  s->opt[OPT_SWCROP].name = "swcrop";
-  s->opt[OPT_SWCROP].title = SANE_I18N ("Software crop");
-  s->opt[OPT_SWCROP].desc = SANE_I18N ("Request backend to remove border from pages digitally");
-  s->opt[OPT_SWCROP].type = SANE_TYPE_BOOL;
-  s->opt[OPT_SWCROP].cap = SANE_CAP_SOFT_SELECT | SANE_CAP_SOFT_DETECT | SANE_CAP_ADVANCED;
-  s->opt[OPT_SWCROP].unit = SANE_UNIT_NONE;
-  s->swcrop = false;
-
-  /* Software blank page skip */
-  s->opt[OPT_SWSKIP].name = "swskip";
-  s->opt[OPT_SWSKIP].title = SANE_I18N ("Software blank skip percentage");
-  s->opt[OPT_SWSKIP].desc = SANE_I18N("Request driver to discard pages with low numbers of dark pixels");
-  s->opt[OPT_SWSKIP].type = SANE_TYPE_FIXED;
-  s->opt[OPT_SWSKIP].unit = SANE_UNIT_PERCENT;
-  s->opt[OPT_SWSKIP].constraint_type = SANE_CONSTRAINT_RANGE;
-  s->opt[OPT_SWSKIP].constraint.range = &(percentage_range);
-  s->opt[OPT_SWSKIP].cap = SANE_CAP_SOFT_SELECT | SANE_CAP_SOFT_DETECT | SANE_CAP_ADVANCED;
-  s->swskip = 0;    // disable by default
-
-  /* Software Derotate */
-  s->opt[OPT_SWDEROTATE].name = "swderotate";
-  s->opt[OPT_SWDEROTATE].title = SANE_I18N ("Software derotate");
-  s->opt[OPT_SWDEROTATE].desc = SANE_I18N("Request driver to detect and correct 90 degree image rotation");
-  s->opt[OPT_SWDEROTATE].type = SANE_TYPE_BOOL;
-  s->opt[OPT_SWDEROTATE].cap = SANE_CAP_SOFT_SELECT | SANE_CAP_SOFT_DETECT | SANE_CAP_ADVANCED;
-  s->opt[OPT_SWDEROTATE].unit = SANE_UNIT_NONE;
-  s->swderotate = false;
 
   /* Software brightness */
   s->opt[OPT_BRIGHTNESS].name = SANE_NAME_BRIGHTNESS;
@@ -3897,39 +4842,6 @@ static void init_options(Genesys_Scanner* s)
   s->opt[OPT_EXTRAS_GROUP].cap = SANE_CAP_ADVANCED;
   s->opt[OPT_EXTRAS_GROUP].size = 0;
   s->opt[OPT_EXTRAS_GROUP].constraint_type = SANE_CONSTRAINT_NONE;
-
-  /* BW threshold */
-  s->opt[OPT_THRESHOLD].name = SANE_NAME_THRESHOLD;
-  s->opt[OPT_THRESHOLD].title = SANE_TITLE_THRESHOLD;
-  s->opt[OPT_THRESHOLD].desc = SANE_DESC_THRESHOLD;
-  s->opt[OPT_THRESHOLD].type = SANE_TYPE_FIXED;
-  s->opt[OPT_THRESHOLD].unit = SANE_UNIT_PERCENT;
-  s->opt[OPT_THRESHOLD].constraint_type = SANE_CONSTRAINT_RANGE;
-  s->opt[OPT_THRESHOLD].constraint.range = &percentage_range;
-    s->threshold = float_to_fixed(50);
-
-  /* BW threshold curve */
-  s->opt[OPT_THRESHOLD_CURVE].name = "threshold-curve";
-  s->opt[OPT_THRESHOLD_CURVE].title = SANE_I18N ("Threshold curve");
-  s->opt[OPT_THRESHOLD_CURVE].desc = SANE_I18N ("Dynamic threshold curve, from light to dark, normally 50-65");
-  s->opt[OPT_THRESHOLD_CURVE].type = SANE_TYPE_INT;
-  s->opt[OPT_THRESHOLD_CURVE].unit = SANE_UNIT_NONE;
-  s->opt[OPT_THRESHOLD_CURVE].constraint_type = SANE_CONSTRAINT_RANGE;
-  s->opt[OPT_THRESHOLD_CURVE].constraint.range = &threshold_curve_range;
-  s->threshold_curve = 50;
-
-  /* disable_interpolation */
-  s->opt[OPT_DISABLE_INTERPOLATION].name = "disable-interpolation";
-  s->opt[OPT_DISABLE_INTERPOLATION].title =
-    SANE_I18N ("Disable interpolation");
-  s->opt[OPT_DISABLE_INTERPOLATION].desc =
-    SANE_I18N
-    ("When using high resolutions where the horizontal resolution is smaller "
-     "than the vertical resolution this disables horizontal interpolation.");
-  s->opt[OPT_DISABLE_INTERPOLATION].type = SANE_TYPE_BOOL;
-  s->opt[OPT_DISABLE_INTERPOLATION].unit = SANE_UNIT_NONE;
-  s->opt[OPT_DISABLE_INTERPOLATION].constraint_type = SANE_CONSTRAINT_NONE;
-  s->disable_interpolation = false;
 
   /* color filter */
   s->opt[OPT_COLOR_FILTER].name = "color-filter";
@@ -4192,35 +5104,38 @@ check_present (SANE_String_Const devname) noexcept
   return SANE_STATUS_GOOD;
 }
 
-static Genesys_Device* attach_usb_device(const char* devname,
-                                         std::uint16_t vendor_id, std::uint16_t product_id)
+const UsbDeviceEntry& get_matching_usb_dev(std::uint16_t vendor_id, std::uint16_t product_id,
+                                           std::uint16_t bcd_device)
 {
-    Genesys_USB_Device_Entry* found_usb_dev = nullptr;
     for (auto& usb_dev : *s_usb_devices) {
-        if (usb_dev.vendor == vendor_id &&
-            usb_dev.product == product_id)
-        {
-            found_usb_dev = &usb_dev;
-            break;
+        if (usb_dev.matches(vendor_id, product_id, bcd_device)) {
+            return usb_dev;
         }
     }
 
-    if (found_usb_dev == nullptr) {
-        throw SaneException("vendor 0x%xd product 0x%xd is not supported by this backend",
-                            vendor_id, product_id);
-    }
+    throw SaneException("vendor 0x%x product 0x%x (bcdDevice 0x%x) "
+                        "is not supported by this backend",
+                        vendor_id, product_id, bcd_device);
+}
+
+static Genesys_Device* attach_usb_device(const char* devname,
+                                         std::uint16_t vendor_id, std::uint16_t product_id,
+                                         std::uint16_t bcd_device)
+{
+    const auto& usb_dev = get_matching_usb_dev(vendor_id, product_id, bcd_device);
 
     s_devices->emplace_back();
     Genesys_Device* dev = &s_devices->back();
     dev->file_name = devname;
-
-    dev->model = &found_usb_dev->model;
-    dev->vendorId = found_usb_dev->vendor;
-    dev->productId = found_usb_dev->product;
+    dev->vendorId = vendor_id;
+    dev->productId = product_id;
+    dev->model = &usb_dev.model();
     dev->usb_mode = 0; // i.e. unset
     dev->already_initialized = false;
     return dev;
 }
+
+static bool s_attach_device_by_name_evaluate_bcd_device = false;
 
 static Genesys_Device* attach_device_by_name(SANE_String_Const devname, bool may_wait)
 {
@@ -4244,26 +5159,31 @@ static Genesys_Device* attach_device_by_name(SANE_String_Const devname, bool may
     usb_dev.open(devname);
     DBG(DBG_info, "%s: device `%s' successfully opened\n", __func__, devname);
 
-    int vendor, product;
-    usb_dev.get_vendor_product(vendor, product);
+    auto vendor_id = usb_dev.get_vendor_id();
+    auto product_id = usb_dev.get_product_id();
+    auto bcd_device = UsbDeviceEntry::BCD_DEVICE_NOT_SET;
+    if (s_attach_device_by_name_evaluate_bcd_device) {
+        // when the device is already known before scanning, we don't want to call get_bcd_device()
+        // when iterating devices, as that will interfere with record/replay during testing.
+        bcd_device = usb_dev.get_bcd_device();
+    }
     usb_dev.close();
 
   /* KV-SS080 is an auxiliary device which requires a master device to be here */
-  if(vendor == 0x04da && product == 0x100f)
-    {
+    if (vendor_id == 0x04da && product_id == 0x100f) {
         present = false;
-      sanei_usb_find_devices (vendor, 0x1006, check_present);
-      sanei_usb_find_devices (vendor, 0x1007, check_present);
-      sanei_usb_find_devices (vendor, 0x1010, check_present);
+        sanei_usb_find_devices(vendor_id, 0x1006, check_present);
+        sanei_usb_find_devices(vendor_id, 0x1007, check_present);
+        sanei_usb_find_devices(vendor_id, 0x1010, check_present);
         if (present == false) {
             throw SaneException("master device not present");
         }
     }
 
-    Genesys_Device* dev = attach_usb_device(devname, vendor, product);
+    Genesys_Device* dev = attach_usb_device(devname, vendor_id, product_id, bcd_device);
 
-    DBG(DBG_info, "%s: found %s flatbed scanner %s at %s\n", __func__, dev->model->vendor,
-        dev->model->model, dev->file_name.c_str());
+    DBG(DBG_info, "%s: found %u flatbed scanner %u at %s\n", __func__, vendor_id, product_id,
+        dev->file_name.c_str());
 
     return dev;
 }
@@ -4298,7 +5218,8 @@ static void probe_genesys_devices()
     DBG_HELPER(dbg);
     if (is_testing_mode()) {
         attach_usb_device(get_testing_device_name().c_str(),
-                          get_testing_vendor_id(), get_testing_product_id());
+                          get_testing_vendor_id(), get_testing_product_id(),
+                          get_testing_bcd_device());
         return;
     }
 
@@ -4309,7 +5230,12 @@ static void probe_genesys_devices()
     config.values = nullptr;
   config.count = 0;
 
-    TIE(sanei_configure_attach(GENESYS_CONFIG_FILE, &config, config_attach_genesys));
+    auto status = sanei_configure_attach(GENESYS_CONFIG_FILE, &config, config_attach_genesys);
+    if (status == SANE_STATUS_ACCESS_DENIED) {
+        dbg.vlog(DBG_error0, "Critical error: Couldn't access configuration file '%s'",
+                 GENESYS_CONFIG_FILE);
+    }
+    TIE(status);
 
     DBG(DBG_info, "%s: %zu devices currently attached\n", __func__, s_devices->size());
 }
@@ -4321,7 +5247,7 @@ static void probe_genesys_devices()
    of Genesys_Calibration_Cache as is.
 */
 static const char* CALIBRATION_IDENT = "sane_genesys";
-static const int CALIBRATION_VERSION = 27;
+static const int CALIBRATION_VERSION = 31;
 
 bool read_calibration(std::istream& str, Genesys_Device::Calibration& calibration,
                       const std::string& path)
@@ -4390,114 +5316,6 @@ static void write_calibration(Genesys_Device::Calibration& calibration, const st
     write_calibration(str, calibration);
 }
 
-/** @brief buffer scanned picture
- * In order to allow digital processing, we must be able to put all the
- * scanned picture in a buffer.
- */
-static void genesys_buffer_image(Genesys_Scanner *s)
-{
-    DBG_HELPER(dbg);
-  size_t maximum;     /**> maximum bytes size of the scan */
-  size_t len;	      /**> length of scanned data read */
-  size_t total;	      /**> total of butes read */
-  size_t size;	      /**> size of image buffer */
-  size_t read_size;   /**> size of reads */
-  int lines;	      /** number of lines of the scan */
-  Genesys_Device *dev = s->dev;
-
-  /* compute maximum number of lines for the scan */
-  if (s->params.lines > 0)
-    {
-      lines = s->params.lines;
-    }
-  else
-    {
-        lines = static_cast<int>((dev->model->y_size * dev->settings.yres) / MM_PER_INCH);
-    }
-  DBG(DBG_info, "%s: buffering %d lines of %d bytes\n", __func__, lines,
-      s->params.bytes_per_line);
-
-  /* maximum bytes to read */
-  maximum = s->params.bytes_per_line * lines;
-    if (s->dev->settings.scan_mode == ScanColorMode::LINEART) {
-      maximum *= 8;
-    }
-
-  /* initial size of the read buffer */
-  size =
-    ((2048 * 2048) / s->params.bytes_per_line) * s->params.bytes_per_line;
-
-  /* read size */
-  read_size = size / 2;
-
-  dev->img_buffer.resize(size);
-
-  /* loop reading data until we reach maximum or EOF */
-    total = 0;
-    while (total < maximum) {
-      len = size - maximum;
-      if (len > read_size)
-	{
-	  len = read_size;
-	}
-
-        try {
-            genesys_read_ordered_data(dev, dev->img_buffer.data() + total, &len);
-        } catch (const SaneException& e) {
-            if (e.status() == SANE_STATUS_EOF) {
-                // ideally we shouldn't end up here, but because computations are duplicated and
-                // slightly different everywhere in the genesys backend, we have no other choice
-                break;
-            }
-            throw;
-        }
-      total += len;
-
-        // do we need to enlarge read buffer ?
-        if (total + read_size > size) {
-            size += read_size;
-            dev->img_buffer.resize(size);
-        }
-    }
-
-  /* since digital processing is going to take place,
-   * issue head parking command so that the head move while
-   * computing so we can save time
-   */
-    if (!dev->model->is_sheetfed && !dev->parking) {
-        dev->cmd_set->move_back_home(dev, has_flag(dev->model->flags, ModelFlag::MUST_WAIT));
-        dev->parking = !has_flag(s->dev->model->flags, ModelFlag::MUST_WAIT);
-    }
-
-  /* in case of dynamic lineart, we have buffered gray data which
-   * must be converted to lineart first */
-    if (s->dev->settings.scan_mode == ScanColorMode::LINEART) {
-      total/=8;
-      std::vector<uint8_t> lineart(total);
-
-      genesys_gray_lineart (dev,
-                            dev->img_buffer.data(),
-                            lineart.data(),
-                            dev->settings.pixels,
-                            (total*8)/dev->settings.pixels,
-                            dev->settings.threshold);
-      dev->img_buffer = lineart;
-    }
-
-  /* update counters */
-  dev->total_bytes_to_read = total;
-  dev->total_bytes_read = 0;
-
-  /* update params */
-  s->params.lines = total / s->params.bytes_per_line;
-  if (DBG_LEVEL >= DBG_io2)
-    {
-      sanei_genesys_write_pnm_file("gl_unprocessed.pnm", dev->img_buffer.data(), s->params.depth,
-                                   s->params.format==SANE_FRAME_RGB ? 3 : 1,
-                                   s->params.pixels_per_line, s->params.lines);
-    }
-}
-
 /* -------------------------- SANE API functions ------------------------- */
 
 void sane_init_impl(SANE_Int * version_code, SANE_Auth_Callback authorize)
@@ -4523,9 +5341,6 @@ void sane_init_impl(SANE_Int * version_code, SANE_Auth_Callback authorize)
         sanei_usb_init();
     }
 
-  /* init sanei_magic */
-  sanei_magic_init();
-
   s_scanners.init();
   s_devices.init();
   s_sane_devices.init();
@@ -4534,6 +5349,7 @@ void sane_init_impl(SANE_Int * version_code, SANE_Auth_Callback authorize)
   genesys_init_sensor_tables();
   genesys_init_frontend_tables();
     genesys_init_gpo_tables();
+    genesys_init_memory_layout_tables();
     genesys_init_motor_tables();
     genesys_init_usb_device_tables();
 
@@ -4547,6 +5363,7 @@ void sane_init_impl(SANE_Int * version_code, SANE_Auth_Callback authorize)
     );
 
     // cold-plug case :detection of allready connected scanners
+    s_attach_device_by_name_evaluate_bcd_device = false;
     probe_genesys_devices();
 }
 
@@ -4586,6 +5403,7 @@ void sane_get_devices_impl(const SANE_Device *** device_list, SANE_Bool local_on
         // hot-plug case : detection of newly connected scanners */
         sanei_usb_scan_devices();
     }
+    s_attach_device_by_name_evaluate_bcd_device = true;
     probe_genesys_devices();
 
     s_sane_devices->clear();
@@ -4652,7 +5470,7 @@ static void sane_open_impl(SANE_String_Const devicename, SANE_Handle * handle)
         }
 
         if (dev) {
-            DBG(DBG_info, "%s: found `%s' in devlist\n", __func__, dev->model->name);
+            DBG(DBG_info, "%s: found `%s' in devlist\n", __func__, dev->file_name.c_str());
         } else if (is_testing_mode()) {
             DBG(DBG_info, "%s: couldn't find `%s' in devlist, not attaching", __func__, devicename);
         } else {
@@ -4674,36 +5492,53 @@ static void sane_open_impl(SANE_String_Const devicename, SANE_Handle * handle)
         throw SaneException("could not find the device to open: %s", devicename);
     }
 
-    if (has_flag(dev->model->flags, ModelFlag::UNTESTED)) {
-      DBG(DBG_error0, "WARNING: Your scanner is not fully supported or at least \n");
-      DBG(DBG_error0, "         had only limited testing. Please be careful and \n");
-      DBG(DBG_error0, "         report any failure/success to \n");
-      DBG(DBG_error0, "         sane-devel@alioth-lists.debian.net. Please provide as many\n");
-      DBG(DBG_error0, "         details as possible, e.g. the exact name of your\n");
-      DBG(DBG_error0, "         scanner and what does (not) work.\n");
-    }
-
-    dbg.vstatus("open device '%s'", dev->file_name.c_str());
-
     if (is_testing_mode()) {
-        auto interface = std::unique_ptr<TestScannerInterface>{new TestScannerInterface{dev}};
+        // during testing we need to initialize dev->model before test scanner interface is created
+        // as that it needs to know what type of chip it needs to mimic.
+        auto vendor_id = get_testing_vendor_id();
+        auto product_id = get_testing_product_id();
+        auto bcd_device = get_testing_bcd_device();
+
+        dev->model = &get_matching_usb_dev(vendor_id, product_id, bcd_device).model();
+
+        auto interface = std::unique_ptr<TestScannerInterface>{
+                new TestScannerInterface{dev, vendor_id, product_id, bcd_device}};
         interface->set_checkpoint_callback(get_testing_checkpoint_callback());
         dev->interface = std::move(interface);
+
+        dev->interface->get_usb_device().open(dev->file_name.c_str());
     } else {
         dev->interface = std::unique_ptr<ScannerInterfaceUsb>{new ScannerInterfaceUsb{dev}};
+
+        dbg.vstatus("open device '%s'", dev->file_name.c_str());
+        dev->interface->get_usb_device().open(dev->file_name.c_str());
+        dbg.clear();
+
+        auto bcd_device = dev->interface->get_usb_device().get_bcd_device();
+
+        dev->model = &get_matching_usb_dev(dev->vendorId, dev->productId, bcd_device).model();
     }
-    dev->interface->get_usb_device().open(dev->file_name.c_str());
-    dbg.clear();
+
+    dbg.vlog(DBG_info, "Opened device %s", dev->model->name);
+
+    if (has_flag(dev->model->flags, ModelFlag::UNTESTED)) {
+        DBG(DBG_error0, "WARNING: Your scanner is not fully supported or at least \n");
+        DBG(DBG_error0, "         had only limited testing. Please be careful and \n");
+        DBG(DBG_error0, "         report any failure/success to \n");
+        DBG(DBG_error0, "         sane-devel@alioth-lists.debian.net. Please provide as many\n");
+        DBG(DBG_error0, "         details as possible, e.g. the exact name of your\n");
+        DBG(DBG_error0, "         scanner and what does (not) work.\n");
+    }
 
   s_scanners->push_back(Genesys_Scanner());
   auto* s = &s_scanners->back();
 
-  s->dev = dev;
+    s->dev = dev;
     s->scanning = false;
-    s->dev->parking = false;
-    s->dev->read_active = false;
-  s->dev->force_calibration = 0;
-  s->dev->line_count = 0;
+    dev->parking = false;
+    dev->read_active = false;
+    dev->force_calibration = 0;
+    dev->line_count = 0;
 
   *handle = s;
 
@@ -4711,31 +5546,18 @@ static void sane_open_impl(SANE_String_Const devicename, SANE_Handle * handle)
         sanei_genesys_init_structs (dev);
     }
 
+    dev->cmd_set = create_cmd_set(dev->model->asic_type);
+
     init_options(s);
 
-    sanei_genesys_init_cmd_set(s->dev);
+    DBG_INIT();
 
     // FIXME: we create sensor tables for the sensor, this should happen when we know which sensor
     // we will select
     dev->cmd_set->init(dev);
 
     // some hardware capabilities are detected through sensors
-    s->dev->cmd_set->update_hardware_sensors (s);
-
-  /* here is the place to fetch a stored calibration cache */
-  if (s->dev->force_calibration == 0)
-    {
-        auto path = calibration_filename(s->dev);
-        s->calibration_file = path;
-        s->dev->calib_file = path;
-      DBG(DBG_info, "%s: Calibration filename set to:\n", __func__);
-      DBG(DBG_info, "%s: >%s<\n", __func__, s->dev->calib_file.c_str());
-
-        catch_all_exceptions(__func__, [&]()
-        {
-            sanei_genesys_read_calibration(s->dev->calibration_cache, s->dev->calib_file);
-        });
-    }
+    dev->cmd_set->update_hardware_sensors (s);
 }
 
 SANE_GENESYS_API_LINKAGE
@@ -4767,46 +5589,42 @@ sane_close_impl(SANE_Handle handle)
       return;			/* oops, not a handle we know about */
     }
 
-  Genesys_Scanner* s = &*it;
+    auto* dev = it->dev;
 
-  /* eject document for sheetfed scanners */
-    if (s->dev->model->is_sheetfed) {
-        catch_all_exceptions(__func__, [&](){ s->dev->cmd_set->eject_document(s->dev); });
-    }
-  else
-    {
-      /* in case scanner is parking, wait for the head
-       * to reach home position */
-        if (s->dev->parking) {
-            sanei_genesys_wait_for_home(s->dev);
+    // eject document for sheetfed scanners
+    if (dev->model->is_sheetfed) {
+        catch_all_exceptions(__func__, [&](){ dev->cmd_set->eject_document(dev); });
+    } else {
+        // in case scanner is parking, wait for the head to reach home position
+        if (dev->parking) {
+            sanei_genesys_wait_for_home(dev);
         }
     }
 
     // enable power saving before leaving
-    s->dev->cmd_set->save_power(s->dev, true);
+    dev->cmd_set->save_power(dev, true);
 
     // here is the place to store calibration cache
-    if (s->dev->force_calibration == 0 && !is_testing_mode()) {
-        catch_all_exceptions(__func__, [&](){ write_calibration(s->dev->calibration_cache,
-                                                                s->dev->calib_file); });
+    if (dev->force_calibration == 0 && !is_testing_mode()) {
+        catch_all_exceptions(__func__, [&](){ write_calibration(dev->calibration_cache,
+                                                                dev->calib_file); });
     }
 
-    s->dev->already_initialized = false;
-
-  s->dev->clear();
+    dev->already_initialized = false;
+    dev->clear();
 
     // LAMP OFF : same register across all the ASICs */
-    s->dev->interface->write_register(0x03, 0x00);
+    dev->interface->write_register(0x03, 0x00);
 
-    catch_all_exceptions(__func__, [&](){ s->dev->interface->get_usb_device().clear_halt(); });
+    catch_all_exceptions(__func__, [&](){ dev->interface->get_usb_device().clear_halt(); });
 
     // we need this to avoid these ASIC getting stuck in bulk writes
-    catch_all_exceptions(__func__, [&](){ s->dev->interface->get_usb_device().reset(); });
+    catch_all_exceptions(__func__, [&](){ dev->interface->get_usb_device().reset(); });
 
-    // not freeing s->dev because it's in the dev list
-    catch_all_exceptions(__func__, [&](){ s->dev->interface->get_usb_device().close(); });
+    // not freeing dev because it's in the dev list
+    catch_all_exceptions(__func__, [&](){ dev->interface->get_usb_device().close(); });
 
-  s_scanners->erase(it);
+    s_scanners->erase(it);
 }
 
 SANE_GENESYS_API_LINKAGE
@@ -4871,18 +5689,19 @@ static void print_option(DebugMessageHelper& dbg, const Genesys_Scanner& s, int 
 static void get_option_value(Genesys_Scanner* s, int option, void* val)
 {
     DBG_HELPER_ARGS(dbg, "option: %s (%d)", s->opt[option].name, option);
+    auto* dev = s->dev;
   unsigned int i;
     SANE_Word* table = nullptr;
   std::vector<uint16_t> gamma_table;
   unsigned option_size = 0;
 
     const Genesys_Sensor* sensor = nullptr;
-    if (sanei_genesys_has_sensor(s->dev, s->dev->settings.xres, s->dev->settings.get_channels(),
-                                 s->dev->settings.scan_method))
+    if (sanei_genesys_has_sensor(dev, dev->settings.xres, dev->settings.get_channels(),
+                                 dev->settings.scan_method))
     {
-        sensor = &sanei_genesys_find_sensor(s->dev, s->dev->settings.xres,
-                                            s->dev->settings.get_channels(),
-                                            s->dev->settings.scan_method);
+        sensor = &sanei_genesys_find_sensor(dev, dev->settings.xres,
+                                            dev->settings.get_channels(),
+                                            dev->settings.scan_method);
     }
 
   switch (option)
@@ -4913,38 +5732,11 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
     case OPT_PREVIEW:
         *reinterpret_cast<SANE_Word*>(val) = s->preview;
         break;
-    case OPT_THRESHOLD:
-        *reinterpret_cast<SANE_Word*>(val) = s->threshold;
-        break;
-    case OPT_THRESHOLD_CURVE:
-        *reinterpret_cast<SANE_Word*>(val) = s->threshold_curve;
-        break;
-    case OPT_DISABLE_INTERPOLATION:
-        *reinterpret_cast<SANE_Word*>(val) = s->disable_interpolation;
-        break;
     case OPT_LAMP_OFF:
         *reinterpret_cast<SANE_Word*>(val) = s->lamp_off;
         break;
     case OPT_LAMP_OFF_TIME:
         *reinterpret_cast<SANE_Word*>(val) = s->lamp_off_time;
-        break;
-    case OPT_SWDESKEW:
-        *reinterpret_cast<SANE_Word*>(val) = s->swdeskew;
-        break;
-    case OPT_SWCROP:
-        *reinterpret_cast<SANE_Word*>(val) = s->swcrop;
-        break;
-    case OPT_SWDESPECK:
-        *reinterpret_cast<SANE_Word*>(val) = s->swdespeck;
-        break;
-    case OPT_SWDEROTATE:
-        *reinterpret_cast<SANE_Word*>(val) = s->swderotate;
-        break;
-    case OPT_SWSKIP:
-        *reinterpret_cast<SANE_Word*>(val) = s->swskip;
-        break;
-    case OPT_DESPECK:
-        *reinterpret_cast<SANE_Word*>(val) = s->despeck;
         break;
     case OPT_CONTRAST:
         *reinterpret_cast<SANE_Word*>(val) = s->contrast;
@@ -4979,13 +5771,13 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
             throw SaneException("Unsupported scanner mode selected");
 
         table = reinterpret_cast<SANE_Word*>(val);
-        if (s->color_filter == "Red") {
-            gamma_table = get_gamma_table(s->dev, *sensor, GENESYS_RED);
-        } else if (s->color_filter == "Blue") {
-            gamma_table = get_gamma_table(s->dev, *sensor, GENESYS_BLUE);
-        } else {
-            gamma_table = get_gamma_table(s->dev, *sensor, GENESYS_GREEN);
-        }
+            if (s->color_filter == "Red") {
+                gamma_table = get_gamma_table(dev, *sensor, GENESYS_RED);
+            } else if (s->color_filter == "Blue") {
+                gamma_table = get_gamma_table(dev, *sensor, GENESYS_BLUE);
+            } else {
+                gamma_table = get_gamma_table(dev, *sensor, GENESYS_GREEN);
+            }
         option_size = s->opt[option].size / sizeof (SANE_Word);
         if (gamma_table.size() != option_size) {
             throw std::runtime_error("The size of the gamma tables does not match");
@@ -4999,7 +5791,7 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
             throw SaneException("Unsupported scanner mode selected");
 
         table = reinterpret_cast<SANE_Word*>(val);
-        gamma_table = get_gamma_table(s->dev, *sensor, GENESYS_RED);
+            gamma_table = get_gamma_table(dev, *sensor, GENESYS_RED);
         option_size = s->opt[option].size / sizeof (SANE_Word);
         if (gamma_table.size() != option_size) {
             throw std::runtime_error("The size of the gamma tables does not match");
@@ -5013,7 +5805,7 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
             throw SaneException("Unsupported scanner mode selected");
 
         table = reinterpret_cast<SANE_Word*>(val);
-        gamma_table = get_gamma_table(s->dev, *sensor, GENESYS_GREEN);
+            gamma_table = get_gamma_table(dev, *sensor, GENESYS_GREEN);
         option_size = s->opt[option].size / sizeof (SANE_Word);
         if (gamma_table.size() != option_size) {
             throw std::runtime_error("The size of the gamma tables does not match");
@@ -5027,7 +5819,7 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
             throw SaneException("Unsupported scanner mode selected");
 
         table = reinterpret_cast<SANE_Word*>(val);
-        gamma_table = get_gamma_table(s->dev, *sensor, GENESYS_BLUE);
+            gamma_table = get_gamma_table(dev, *sensor, GENESYS_BLUE);
         option_size = s->opt[option].size / sizeof (SANE_Word);
         if (gamma_table.size() != option_size) {
             throw std::runtime_error("The size of the gamma tables does not match");
@@ -5059,11 +5851,10 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
 
             bool result = true;
 
-            auto session = s->dev->cmd_set->calculate_scan_session(s->dev, *sensor,
-                                                                   s->dev->settings);
+            auto session = dev->cmd_set->calculate_scan_session(dev, *sensor, dev->settings);
 
-            for (auto& cache : s->dev->calibration_cache) {
-                if (sanei_genesys_is_compatible_calibration(s->dev, session, &cache, false)) {
+            for (auto& cache : dev->calibration_cache) {
+                if (sanei_genesys_is_compatible_calibration(dev, session, &cache, false)) {
                     *reinterpret_cast<SANE_Bool*>(val) = SANE_FALSE;
                 }
             }
@@ -5082,6 +5873,7 @@ static void get_option_value(Genesys_Scanner* s, int option, void* val)
 static void set_calibration_value(Genesys_Scanner* s, const char* val)
 {
     DBG_HELPER(dbg);
+    auto dev = s->dev;
 
     std::string new_calib_path = val;
     Genesys_Device::Calibration new_calibration;
@@ -5096,8 +5888,8 @@ static void set_calibration_value(Genesys_Scanner* s, const char* val)
         return;
     }
 
-    s->dev->calibration_cache = std::move(new_calibration);
-    s->dev->calib_file = new_calib_path;
+    dev->calibration_cache = std::move(new_calibration);
+    dev->calib_file = new_calib_path;
     s->calibration_file = new_calib_path;
     DBG(DBG_info, "%s: Calibration filename set to '%s':\n", __func__, new_calib_path.c_str());
 }
@@ -5108,12 +5900,13 @@ static void set_option_value(Genesys_Scanner* s, int option, void *val, SANE_Int
     DBG_HELPER_ARGS(dbg, "option: %s (%d)", s->opt[option].name, option);
     print_option(dbg, *s, option, val);
 
+    auto* dev = s->dev;
+
   SANE_Word *table;
   unsigned int i;
   unsigned option_size = 0;
 
-  switch (option)
-    {
+    switch (option) {
     case OPT_TL_X:
         s->pos_top_left_x = *reinterpret_cast<SANE_Word*>(val);
         calc_parameters(s);
@@ -5139,46 +5932,6 @@ static void set_option_value(Genesys_Scanner* s, int option, void *val, SANE_Int
         calc_parameters(s);
         *myinfo |= SANE_INFO_RELOAD_PARAMS;
         break;
-    case OPT_THRESHOLD:
-        s->threshold = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_THRESHOLD_CURVE:
-        s->threshold_curve = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_SWCROP:
-        s->swcrop = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_SWDESKEW:
-        s->swdeskew = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_DESPECK:
-        s->despeck = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_SWDEROTATE:
-        s->swderotate = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_SWSKIP:
-        s->swskip = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
-    case OPT_DISABLE_INTERPOLATION:
-        s->disable_interpolation = *reinterpret_cast<SANE_Word*>(val);
-        calc_parameters(s);
-        *myinfo |= SANE_INFO_RELOAD_PARAMS;
-        break;
     case OPT_LAMP_OFF:
         s->lamp_off = *reinterpret_cast<SANE_Word*>(val);
         calc_parameters(s);
@@ -5199,38 +5952,14 @@ static void set_option_value(Genesys_Scanner* s, int option, void *val, SANE_Int
         calc_parameters(s);
         *myinfo |= SANE_INFO_RELOAD_PARAMS;
         break;
-    case OPT_SWDESPECK:
-        s->swdespeck = *reinterpret_cast<SANE_Word*>(val);
-        if (s->swdespeck) {
-            ENABLE(OPT_DESPECK);
-        } else {
-            DISABLE(OPT_DESPECK);
-        }
-        calc_parameters(s);
-      *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
-      break;
     /* software enhancement functions only apply to 8 or 1 bits data */
     case OPT_BIT_DEPTH:
         s->bit_depth = *reinterpret_cast<SANE_Word*>(val);
         if(s->bit_depth>8)
         {
-          DISABLE(OPT_SWDESKEW);
-          DISABLE(OPT_SWDESPECK);
-          DISABLE(OPT_SWCROP);
-          DISABLE(OPT_DESPECK);
-          DISABLE(OPT_SWDEROTATE);
-          DISABLE(OPT_SWSKIP);
           DISABLE(OPT_CONTRAST);
           DISABLE(OPT_BRIGHTNESS);
-        }
-      else
-        {
-          ENABLE(OPT_SWDESKEW);
-          ENABLE(OPT_SWDESPECK);
-          ENABLE(OPT_SWCROP);
-          ENABLE(OPT_DESPECK);
-          ENABLE(OPT_SWDEROTATE);
-          ENABLE(OPT_SWSKIP);
+            } else {
           ENABLE(OPT_CONTRAST);
           ENABLE(OPT_BRIGHTNESS);
         }
@@ -5249,38 +5978,22 @@ static void set_option_value(Genesys_Scanner* s, int option, void *val, SANE_Int
         }
         break;
     }
-    case OPT_MODE:
-      s->mode = reinterpret_cast<const char*>(val);
+        case OPT_MODE: {
+            s->mode = reinterpret_cast<const char*>(val);
 
-      if (s->mode == SANE_VALUE_SCAN_MODE_LINEART)
-	{
-	  ENABLE (OPT_THRESHOLD);
-	  ENABLE (OPT_THRESHOLD_CURVE);
-	  DISABLE (OPT_BIT_DEPTH);
-                if (s->dev->model->asic_type != AsicType::GL646 || !s->dev->model->is_cis) {
+            if (s->mode == SANE_VALUE_SCAN_MODE_GRAY) {
+                if (dev->model->asic_type != AsicType::GL646 || !dev->model->is_cis) {
                     ENABLE(OPT_COLOR_FILTER);
                 }
-	}
-      else
-	{
-	  DISABLE (OPT_THRESHOLD);
-	  DISABLE (OPT_THRESHOLD_CURVE);
-          if (s->mode == SANE_VALUE_SCAN_MODE_GRAY)
-	    {
-                    if (s->dev->model->asic_type != AsicType::GL646 || !s->dev->model->is_cis) {
-                        ENABLE(OPT_COLOR_FILTER);
-                    }
-	      create_bpp_list (s, s->dev->model->bpp_gray_values);
-                    s->bit_depth = s->dev->model->bpp_gray_values[0];
-	    }
-	  else
-	    {
-	      DISABLE (OPT_COLOR_FILTER);
-	      create_bpp_list (s, s->dev->model->bpp_color_values);
-                    s->bit_depth = s->dev->model->bpp_color_values[0];
-	    }
-	}
-        calc_parameters(s);
+                create_bpp_list(s, dev->model->bpp_gray_values);
+                s->bit_depth = dev->model->bpp_gray_values[0];
+            } else {
+                DISABLE(OPT_COLOR_FILTER);
+                create_bpp_list(s, dev->model->bpp_color_values);
+                s->bit_depth = dev->model->bpp_color_values[0];
+            }
+
+            calc_parameters(s);
 
       /* if custom gamma, toggle gamma table options according to the mode */
       if (s->custom_gamma)
@@ -5303,28 +6016,31 @@ static void set_option_value(Genesys_Scanner* s, int option, void *val, SANE_Int
 
       *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
       break;
+        }
     case OPT_COLOR_FILTER:
       s->color_filter = reinterpret_cast<const char*>(val);
         calc_parameters(s);
       break;
-    case OPT_CALIBRATION_FILE:
-            if (s->dev->force_calibration == 0) {
+        case OPT_CALIBRATION_FILE: {
+            if (dev->force_calibration == 0) {
                 set_calibration_value(s, reinterpret_cast<const char*>(val));
             }
             break;
-    case OPT_LAMP_OFF_TIME:
-        if (*reinterpret_cast<SANE_Word*>(val) != s->lamp_off_time) {
-            s->lamp_off_time = *reinterpret_cast<SANE_Word*>(val);
-                s->dev->cmd_set->set_powersaving(s->dev, s->lamp_off_time);
         }
-        break;
-    case OPT_EXPIRATION_TIME:
-        if (*reinterpret_cast<SANE_Word*>(val) != s->expiration_time) {
-            s->expiration_time = *reinterpret_cast<SANE_Word*>(val);
+        case OPT_LAMP_OFF_TIME: {
+            if (*reinterpret_cast<SANE_Word*>(val) != s->lamp_off_time) {
+                s->lamp_off_time = *reinterpret_cast<SANE_Word*>(val);
+                    dev->cmd_set->set_powersaving(dev, s->lamp_off_time);
+            }
+            break;
         }
-        break;
-
-    case OPT_CUSTOM_GAMMA:
+        case OPT_EXPIRATION_TIME: {
+            if (*reinterpret_cast<SANE_Word*>(val) != s->expiration_time) {
+                s->expiration_time = *reinterpret_cast<SANE_Word*>(val);
+            }
+            break;
+        }
+        case OPT_CUSTOM_GAMMA: {
       *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
         s->custom_gamma = *reinterpret_cast<SANE_Bool*>(val);
 
@@ -5350,88 +6066,96 @@ static void set_option_value(Genesys_Scanner* s, int option, void *val, SANE_Int
 	  DISABLE (OPT_GAMMA_VECTOR_R);
 	  DISABLE (OPT_GAMMA_VECTOR_G);
 	  DISABLE (OPT_GAMMA_VECTOR_B);
-            for (auto& table : s->dev->gamma_override_tables) {
-                table.clear();
+                for (auto& table : dev->gamma_override_tables) {
+                    table.clear();
+                }
             }
-	}
-      break;
+            break;
+        }
 
-    case OPT_GAMMA_VECTOR:
-        table = reinterpret_cast<SANE_Word*>(val);
-        option_size = s->opt[option].size / sizeof (SANE_Word);
+        case OPT_GAMMA_VECTOR: {
+            table = reinterpret_cast<SANE_Word*>(val);
+            option_size = s->opt[option].size / sizeof (SANE_Word);
 
-        s->dev->gamma_override_tables[GENESYS_RED].resize(option_size);
-        s->dev->gamma_override_tables[GENESYS_GREEN].resize(option_size);
-        s->dev->gamma_override_tables[GENESYS_BLUE].resize(option_size);
-        for (i = 0; i < option_size; i++) {
-            s->dev->gamma_override_tables[GENESYS_RED][i] = table[i];
-            s->dev->gamma_override_tables[GENESYS_GREEN][i] = table[i];
-            s->dev->gamma_override_tables[GENESYS_BLUE][i] = table[i];
+            dev->gamma_override_tables[GENESYS_RED].resize(option_size);
+            dev->gamma_override_tables[GENESYS_GREEN].resize(option_size);
+            dev->gamma_override_tables[GENESYS_BLUE].resize(option_size);
+            for (i = 0; i < option_size; i++) {
+                dev->gamma_override_tables[GENESYS_RED][i] = table[i];
+                dev->gamma_override_tables[GENESYS_GREEN][i] = table[i];
+                dev->gamma_override_tables[GENESYS_BLUE][i] = table[i];
+            }
+            break;
         }
-      break;
-    case OPT_GAMMA_VECTOR_R:
-        table = reinterpret_cast<SANE_Word*>(val);
-        option_size = s->opt[option].size / sizeof (SANE_Word);
-        s->dev->gamma_override_tables[GENESYS_RED].resize(option_size);
-        for (i = 0; i < option_size; i++) {
-            s->dev->gamma_override_tables[GENESYS_RED][i] = table[i];
+        case OPT_GAMMA_VECTOR_R: {
+            table = reinterpret_cast<SANE_Word*>(val);
+            option_size = s->opt[option].size / sizeof (SANE_Word);
+            dev->gamma_override_tables[GENESYS_RED].resize(option_size);
+            for (i = 0; i < option_size; i++) {
+                dev->gamma_override_tables[GENESYS_RED][i] = table[i];
+            }
+            break;
         }
-      break;
-    case OPT_GAMMA_VECTOR_G:
-        table = reinterpret_cast<SANE_Word*>(val);
-        option_size = s->opt[option].size / sizeof (SANE_Word);
-        s->dev->gamma_override_tables[GENESYS_GREEN].resize(option_size);
-        for (i = 0; i < option_size; i++) {
-            s->dev->gamma_override_tables[GENESYS_GREEN][i] = table[i];
+        case OPT_GAMMA_VECTOR_G: {
+            table = reinterpret_cast<SANE_Word*>(val);
+            option_size = s->opt[option].size / sizeof (SANE_Word);
+            dev->gamma_override_tables[GENESYS_GREEN].resize(option_size);
+            for (i = 0; i < option_size; i++) {
+                dev->gamma_override_tables[GENESYS_GREEN][i] = table[i];
+            }
+            break;
         }
-      break;
-    case OPT_GAMMA_VECTOR_B:
-        table = reinterpret_cast<SANE_Word*>(val);
-        option_size = s->opt[option].size / sizeof (SANE_Word);
-        s->dev->gamma_override_tables[GENESYS_BLUE].resize(option_size);
-        for (i = 0; i < option_size; i++) {
-            s->dev->gamma_override_tables[GENESYS_BLUE][i] = table[i];
+        case OPT_GAMMA_VECTOR_B: {
+            table = reinterpret_cast<SANE_Word*>(val);
+            option_size = s->opt[option].size / sizeof (SANE_Word);
+            dev->gamma_override_tables[GENESYS_BLUE].resize(option_size);
+            for (i = 0; i < option_size; i++) {
+                dev->gamma_override_tables[GENESYS_BLUE][i] = table[i];
+            }
+            break;
         }
-      break;
         case OPT_CALIBRATE: {
-            auto& sensor = sanei_genesys_find_sensor_for_write(s->dev, s->dev->settings.xres,
-                                                               s->dev->settings.get_channels(),
-                                                               s->dev->settings.scan_method);
+            auto& sensor = sanei_genesys_find_sensor_for_write(dev, dev->settings.xres,
+                                                               dev->settings.get_channels(),
+                                                               dev->settings.scan_method);
             catch_all_exceptions(__func__, [&]()
             {
-                s->dev->cmd_set->save_power(s->dev, false);
-                genesys_scanner_calibration(s->dev, sensor);
+            dev->cmd_set->save_power(dev, false);
+            genesys_scanner_calibration(dev, sensor);
             });
             catch_all_exceptions(__func__, [&]()
             {
-                s->dev->cmd_set->save_power(s->dev, true);
+            dev->cmd_set->save_power(dev, true);
             });
             *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
             break;
         }
-    case OPT_CLEAR_CALIBRATION:
-      s->dev->calibration_cache.clear();
+        case OPT_CLEAR_CALIBRATION: {
+            dev->calibration_cache.clear();
 
-      /* remove file */
-      unlink(s->dev->calib_file.c_str());
-      /* signals that sensors will have to be read again */
-      *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
-      break;
-    case OPT_FORCE_CALIBRATION:
-      s->dev->force_calibration = 1;
-      s->dev->calibration_cache.clear();
-      s->dev->calib_file.clear();
-
-      /* signals that sensors will have to be read again */
-      *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
-      break;
-
-        case OPT_IGNORE_OFFSETS: {
-            s->dev->ignore_offsets = true;
+            // remove file
+            unlink(dev->calib_file.c_str());
+            // signals that sensors will have to be read again
+            *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
             break;
         }
-    default:
-      DBG(DBG_warn, "%s: can't set unknown option %d\n", __func__, option);
+        case OPT_FORCE_CALIBRATION: {
+            dev->force_calibration = 1;
+            dev->calibration_cache.clear();
+            dev->calib_file.clear();
+
+            // signals that sensors will have to be read again
+            *myinfo |= SANE_INFO_RELOAD_PARAMS | SANE_INFO_RELOAD_OPTIONS;
+            break;
+        }
+
+        case OPT_IGNORE_OFFSETS: {
+            dev->ignore_offsets = true;
+            break;
+        }
+        default: {
+            DBG(DBG_warn, "%s: can't set unknown option %d\n", __func__, option);
+        }
     }
 }
 
@@ -5509,13 +6233,13 @@ void sane_get_parameters_impl(SANE_Handle handle, SANE_Parameters* params)
 {
     DBG_HELPER(dbg);
     Genesys_Scanner* s = reinterpret_cast<Genesys_Scanner*>(handle);
+    auto* dev = s->dev;
 
   /* don't recompute parameters once data reading is active, ie during scan */
-    if (!s->dev->read_active) {
+    if (!dev->read_active) {
         calc_parameters(s);
     }
-  if (params)
-    {
+    if (params) {
       *params = s->params;
 
       /* in the case of a sheetfed scanner, when full height is specified
@@ -5523,11 +6247,11 @@ void sane_get_parameters_impl(SANE_Handle handle, SANE_Parameters* params)
        * don't know the real document height.
        * We don't do that doing buffering image for digital processing
        */
-        if (s->dev->model->is_sheetfed && !s->dev->buffer_image &&
+        if (dev->model->is_sheetfed &&
             s->pos_bottom_right_y == s->opt[OPT_BR_Y].constraint.range->max)
         {
-	  params->lines = -1;
-	}
+            params->lines = -1;
+        }
     }
     debug_dump(DBG_proc, *params);
 }
@@ -5545,6 +6269,7 @@ void sane_start_impl(SANE_Handle handle)
 {
     DBG_HELPER(dbg);
     Genesys_Scanner* s = reinterpret_cast<Genesys_Scanner*>(handle);
+    auto* dev = s->dev;
 
     if (s->pos_top_left_x >= s->pos_bottom_right_x) {
         throw SaneException("top left x >= bottom right x");
@@ -5553,67 +6278,27 @@ void sane_start_impl(SANE_Handle handle)
         throw SaneException("top left y >= bottom right y");
     }
 
-  /* First make sure we have a current parameter set.  Some of the
-     parameters will be overwritten below, but that's OK.  */
+    // fetch stored calibration
+    if (dev->force_calibration == 0) {
+        auto path = calibration_filename(dev);
+        s->calibration_file = path;
+        dev->calib_file = path;
+        DBG(DBG_info, "%s: Calibration filename set to:\n", __func__);
+        DBG(DBG_info, "%s: >%s<\n", __func__, dev->calib_file.c_str());
+
+        catch_all_exceptions(__func__, [&]()
+        {
+            sanei_genesys_read_calibration(dev->calibration_cache, dev->calib_file);
+        });
+    }
+
+    // First make sure we have a current parameter set.  Some of the
+    // parameters will be overwritten below, but that's OK.
 
     calc_parameters(s);
-    genesys_start_scan(s->dev, s->lamp_off);
+    genesys_start_scan(dev, s->lamp_off);
 
     s->scanning = true;
-
-  /* allocate intermediate buffer when doing dynamic lineart */
-    if (s->dev->settings.scan_mode == ScanColorMode::LINEART) {
-        s->dev->binarize_buffer.clear();
-        s->dev->binarize_buffer.alloc(s->dev->settings.pixels);
-        s->dev->local_buffer.clear();
-        s->dev->local_buffer.alloc(s->dev->binarize_buffer.size() * 8);
-    }
-
-  /* if one of the software enhancement option is selected,
-   * we do the scan internally, process picture then put it an internal
-   * buffer. Since cropping may change scan parameters, we recompute them
-   * at the end */
-  if (s->dev->buffer_image)
-    {
-        genesys_buffer_image(s);
-
-      /* check if we need to skip this page, sheetfed scanners
-       * can go to next doc while flatbed ones can't */
-        if (s->swskip > 0 && IS_ACTIVE(OPT_SWSKIP)) {
-            auto status = sanei_magic_isBlank(&s->params,
-                                              s->dev->img_buffer.data(),
-                                              fixed_to_float(s->swskip));
-
-            if (status == SANE_STATUS_NO_DOCS && s->dev->model->is_sheetfed) {
-                DBG(DBG_info, "%s: blank page, recurse\n", __func__);
-                sane_start(handle);
-                return;
-            }
-
-            if (status != SANE_STATUS_GOOD) {
-                throw SaneException(status);
-            }
-        }
-
-        if (s->swdeskew) {
-            const auto& sensor = sanei_genesys_find_sensor(s->dev, s->dev->settings.xres,
-                                                           s->dev->settings.get_channels(),
-                                                           s->dev->settings.scan_method);
-            catch_all_exceptions(__func__, [&](){ genesys_deskew(s, sensor); });
-        }
-
-        if (s->swdespeck) {
-            catch_all_exceptions(__func__, [&](){ genesys_despeck(s); });
-        }
-
-        if(s->swcrop) {
-            catch_all_exceptions(__func__, [&](){ genesys_crop(s); });
-        }
-
-        if(s->swderotate) {
-            catch_all_exceptions(__func__, [&](){ genesys_derotate(s); });
-        }
-    }
 }
 
 SANE_GENESYS_API_LINKAGE
@@ -5625,18 +6310,18 @@ SANE_Status sane_start(SANE_Handle handle)
     });
 }
 
-void sane_read_impl(SANE_Handle handle, SANE_Byte * buf, SANE_Int max_len, SANE_Int* len)
+// returns SANE_STATUS_GOOD if there are more data, SANE_STATUS_EOF otherwise
+SANE_Status sane_read_impl(SANE_Handle handle, SANE_Byte * buf, SANE_Int max_len, SANE_Int* len)
 {
     DBG_HELPER(dbg);
     Genesys_Scanner* s = reinterpret_cast<Genesys_Scanner*>(handle);
-  Genesys_Device *dev;
   size_t local_len;
 
     if (!s) {
         throw SaneException("handle is nullptr");
     }
 
-  dev=s->dev;
+    auto* dev = s->dev;
     if (!dev) {
         throw SaneException("dev is nullptr");
     }
@@ -5672,80 +6357,27 @@ void sane_read_impl(SANE_Handle handle, SANE_Byte * buf, SANE_Int max_len, SANE_
             dev->cmd_set->move_back_home(dev, false);
             dev->parking = true;
         }
-        throw SaneException(SANE_STATUS_EOF);
+        return SANE_STATUS_EOF;
     }
 
   local_len = max_len;
 
-  /* in case of image processing, all data has been stored in
-   * buffer_image. So read data from it if it exists, else from scanner */
-  if(!dev->buffer_image)
-    {
-      /* dynamic lineart is another kind of digital processing that needs
-       * another layer of buffering on top of genesys_read_ordered_data */
-        if (dev->settings.scan_mode == ScanColorMode::LINEART) {
-          /* if buffer is empty, fill it with genesys_read_ordered_data */
-          if(dev->binarize_buffer.avail() == 0)
-            {
-              /* store gray data */
-              local_len=dev->local_buffer.size();
-              dev->local_buffer.reset();
-                genesys_read_ordered_data(dev, dev->local_buffer.get_write_pos(local_len),
-                                          &local_len);
-              dev->local_buffer.produce(local_len);
-
-                dev->binarize_buffer.reset();
-                if (!is_testing_mode()) {
-                    genesys_gray_lineart(dev, dev->local_buffer.get_read_pos(),
-                                         dev->binarize_buffer.get_write_pos(local_len / 8),
-                                         dev->settings.pixels,
-                                         local_len / dev->settings.pixels,
-                                         dev->settings.threshold);
-                }
-                dev->binarize_buffer.produce(local_len / 8);
-            }
-
-          /* return data from lineart buffer if any, up to the available amount */
-          local_len = max_len;
-          if (static_cast<std::size_t>(max_len) > dev->binarize_buffer.avail())
-            {
-              local_len=dev->binarize_buffer.avail();
-            }
-          if(local_len)
-            {
-              memcpy(buf, dev->binarize_buffer.get_read_pos(), local_len);
-              dev->binarize_buffer.consume(local_len);
-            }
-        }
-      else
-        {
-            // most usual case, direct read of data from scanner */
-            genesys_read_ordered_data(dev, buf, &local_len);
-        }
-    }
-  else /* read data from buffer */
-    {
-      if(dev->total_bytes_read+local_len>dev->total_bytes_to_read)
-        {
-          local_len=dev->total_bytes_to_read-dev->total_bytes_read;
-        }
-      memcpy(buf, dev->img_buffer.data() + dev->total_bytes_read, local_len);
-      dev->total_bytes_read+=local_len;
-    }
+    genesys_read_ordered_data(dev, buf, &local_len);
 
   *len = local_len;
     if (local_len > static_cast<std::size_t>(max_len)) {
-      fprintf (stderr, "[genesys] sane_read: returning incorrect length!!\n");
+        dbg.log(DBG_error, "error: returning incorrect length");
     }
   DBG(DBG_proc, "%s: %d bytes returned\n", __func__, *len);
+    return SANE_STATUS_GOOD;
 }
 
 SANE_GENESYS_API_LINKAGE
 SANE_Status sane_read(SANE_Handle handle, SANE_Byte * buf, SANE_Int max_len, SANE_Int* len)
 {
-    return wrap_exceptions_to_status_code(__func__, [=]()
+    return wrap_exceptions_to_status_code_return(__func__, [=]()
     {
-        sane_read_impl(handle, buf, max_len, len);
+        return sane_read_impl(handle, buf, max_len, len);
     });
 }
 
@@ -5753,36 +6385,31 @@ void sane_cancel_impl(SANE_Handle handle)
 {
     DBG_HELPER(dbg);
     Genesys_Scanner* s = reinterpret_cast<Genesys_Scanner*>(handle);
+    auto* dev = s->dev;
 
     s->scanning = false;
-    s->dev->read_active = false;
-  s->dev->img_buffer.clear();
+    dev->read_active = false;
 
-  /* no need to end scan if we are parking the head */
-    if (!s->dev->parking) {
-        s->dev->cmd_set->end_scan(s->dev, &s->dev->reg, true);
+    // no need to end scan if we are parking the head
+    if (!dev->parking) {
+        dev->cmd_set->end_scan(dev, &dev->reg, true);
     }
 
-  /* park head if flatbed scanner */
-    if (!s->dev->model->is_sheetfed) {
-        if (!s->dev->parking) {
-            s->dev->cmd_set->move_back_home (s->dev, has_flag(s->dev->model->flags,
-                                                              ModelFlag::MUST_WAIT));
-
-            s->dev->parking = !has_flag(s->dev->model->flags, ModelFlag::MUST_WAIT);
+    // park head if flatbed scanner
+    if (!dev->model->is_sheetfed) {
+        if (!dev->parking) {
+            dev->cmd_set->move_back_home(dev, has_flag(dev->model->flags, ModelFlag::MUST_WAIT));
+            dev->parking = !has_flag(dev->model->flags, ModelFlag::MUST_WAIT);
         }
-    }
-  else
-    {				/* in case of sheetfed scanners, we have to eject the document if still present */
-        s->dev->cmd_set->eject_document(s->dev);
-    }
-
-  /* enable power saving mode unless we are parking .... */
-    if (!s->dev->parking) {
-        s->dev->cmd_set->save_power(s->dev, true);
+    } else {
+        // in case of sheetfed scanners, we have to eject the document if still present
+        dev->cmd_set->eject_document(dev);
     }
 
-  return;
+    // enable power saving mode unless we are parking ....
+    if (!dev->parking) {
+        dev->cmd_set->save_power(dev, true);
+    }
 }
 
 SANE_GENESYS_API_LINKAGE
