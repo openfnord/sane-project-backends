@@ -435,14 +435,18 @@ is_scanning_from_adf (pixma_t * s)
 }
 
 static int
-is_scanning_from_adfdup (pixma_t * s)
+is_scanning_from_adfdup (const pixma_t * s)
 {
   return (s->param->source == PIXMA_SOURCE_ADFDUP);
 }
 
 static int
-is_scanning_jpeg (pixma_t *s)
+is_scanning_jpeg (const pixma_t *s)
 {
+  if (!s || !s->param)
+    {
+      return 0;
+    }
   return s->param->mode_jpeg;
 }
 
@@ -611,23 +615,26 @@ send_gamma_table (pixma_t * s)
 }
 
 static unsigned
-calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param)
+calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param, int is_req)
 {
   mp150_t *mp = (mp150_t *) s->subdriver;
   unsigned raw_width;
-  /* NOTE: Actually, we can send arbitary width to MP150. Lines returned
-     are always padded to multiple of 4 or 12 pixels. Is this valid for
-     other models, too? */
+
   if (mp->generation >= 2)
     {
-#if 1
-      raw_width = ALIGN_SUP ((param->w * mp->scale) + param->xs, 32);
-#else
-      raw_width = MIN(ALIGN_SUP ((param->w * mp->scale) + param->xs, 32),
-                      s->cfg->width * param->xdpi / 75 * mp->scale);
-#endif
-      PDBG (pixma_dbg (0, "*calc_raw_width***** width %i extended by %i and rounded to %i *****\n", param->w, param->xs, raw_width));
-      PDBG (pixma_dbg (0, "*calc_raw_width***** width @ 75dpi: %i; selected dpi: %i; scale = %i *****\n", s->cfg->width, param->xdpi, mp->scale));
+      /*
+       * For JPEG scanning (that is, the scanner sends us JPEG rather than scan lines),
+       * we send the exact width rather than the rounded up width.
+       *
+       */
+      if (is_req && is_scanning_jpeg(s))
+        {
+          raw_width = (param->w * mp->scale);
+        }
+      else
+        {
+          raw_width = ALIGN_SUP ((param->w * mp->scale) + param->xs, 32);
+        }
     }
   else if (param->channels == 1)
     {
@@ -662,7 +669,7 @@ send_scan_param (pixma_t * s)
   unsigned x = s->param->x * mp->scale;
   unsigned xs = s->param->xs;
   unsigned y = s->param->y * mp->scale;
-  unsigned wx = calc_raw_width (s, s->param);
+  unsigned wx = calc_raw_width (s, s->param, 1);
   unsigned h = MIN (s->param->h, s->cfg->height * s->param->ydpi / 75) * mp->scale;
 
   if (mp->generation <= 2)
@@ -1254,18 +1261,17 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
       sp->channels = 1;
     }
 
-  /* for software lineart w must be a multiple of 8 */
-  if (sp->software_lineart == 1 && sp->w % 8)
+  /*
+   * For software lineart, w must be a multiple of 8.
+   *
+   * Note, that we must simultaneously round down x to make sure that the width does not
+   * become illegal.
+   *
+   */
+  if (sp->software_lineart == 1)
     {
-      unsigned w_max;
-
-      sp->w += 8 - (sp->w % 8);
-
-      /* do not exceed the scanner capability */
-      w_max = s->cfg->width * s->cfg->xdpi / 75;
-      w_max -= w_max % 8;
-      if (sp->w > w_max)
-        sp->w = w_max;
+      sp->w = ALIGN_SUP(sp->w, 8);
+      sp->x &= ~0x7;
     }
 
   if (mp->generation >= 2)
@@ -1277,7 +1283,7 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
   else
       sp->xs = 0;
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** Selected origin, origin shift: %i, %i *****\n", sp->x, sp->xs));*/
-  sp->wx = calc_raw_width (s, sp);
+  sp->wx = calc_raw_width (s, sp, 0);
   sp->line_size = sp->w * sp->channels * (((sp->software_lineart) ? 8 : sp->depth) / 8);              /* bytes per line per color after cropping */
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** Final scan width and line-size: %i, %li *****\n", sp->wx, sp->line_size));*/
 
@@ -1756,7 +1762,7 @@ const pixma_config_t pixma_mp150_devices[] = {
   DEVICE ("Canon PIXMA E460 Series",  "E460",  E460_PID, 0,  600, 0, 0, 638, 877, PIXMA_CAP_CIS),
 
   /* Latest devices (2015) Generation 5 CIS */
-  DEVICE ("Canon PIXMA MX490 Series", "MX490", MX490_PID, 0, 600, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADF | PIXMA_CAP_ADF_JPEG),
+  DEVICE ("Canon PIXMA MX490 Series", "MX490", MX490_PID, 0, 600, 0, 0, 638, 877, PIXMA_CAP_CIS | PIXMA_CAP_ADF | PIXMA_CAP_ADF_JPEG),
   DEVICE ("Canon PIXMA E480 Series",  "E480",  E480_PID, 0, 600, 0, 0, 638, 1050, PIXMA_CAP_CIS | PIXMA_CAP_ADF),
   DEVICE ("Canon PIXMA MG3600 Series", "MG3600", MG3600_PID, 0, 1200, 0, 0, 638, 877, PIXMA_CAP_CIS),
   DEVICE ("Canon PIXMA MG7700 Series", "MG7700", MG7700_PID, 0, 2400, 0, 0, 638, 877, PIXMA_CAP_CIS),
