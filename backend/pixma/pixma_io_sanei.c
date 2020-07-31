@@ -178,10 +178,7 @@ attach_net (SANE_String_Const devname,  SANE_String_Const makemodel,
   if (!si->devname)
     return SANE_STATUS_NO_MEM;
   if ((cfg = lookup_scanner(makemodel, pixma_devices)) == (struct pixma_config_t *)NULL)
-    {
-      pixma_dbg (0, "attach_net: Scanner %s is not supported, model is unknown! Please report upstream\n", makemodel);
-      error = SANE_STATUS_INVAL;
-    }
+    error = SANE_STATUS_INVAL;
   else
     {
       si->cfg = cfg;

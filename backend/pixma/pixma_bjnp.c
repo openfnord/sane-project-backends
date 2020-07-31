@@ -1845,6 +1845,9 @@ static void add_scanner(SANE_Int *dev_no,
                  PDBG (bjnp_dbg (LOG_NOTICE, "add_scanner: New scanner added: %s, serial %s, mac address: %s.\n",
 	                         uri, serial, device[*dev_no].mac_address));
                  break;
+               case SANE_STATUS_INVAL:
+                 PDBG (bjnp_dbg (LOG_CRIT, "add_scanner: Scanner %s is not supported, model is unknown! Please report upstream\n", makemodel));
+                 break;
                default:
                  PDBG (bjnp_dbg (LOG_CRIT, "add_scanner: unexpected error (out of memory?), adding %s\n", makemodel));
             }

@@ -491,7 +491,16 @@ add_scanner(int udp_socket, const char *uri,
       if (status == 1)
         snprintf(serial, sizeof(serial), "%s BUSY %s", inet_ntoa(addr.sin_addr), user);
       device[axis_no_devices++].addr = addr.sin_addr;
-      attach_axis(uri, devname, serial, pixma_devices);
+      switch (attach_axis(uri, devname, serial, pixma_devices))
+        {
+        case SANE_STATUS_GOOD:
+          break;
+        case SANE_STATUS_INVAL:
+          DBG(LOG_CRIT, "add_scanner: Scanner %s is not supported, model is unknown! Please report upstream\n", devname);
+          break;
+        default:
+          DBG(LOG_CRIT, "add_scanner: unexpected error (out of memory?)\n");
+        }
     }
 
   return 0;
