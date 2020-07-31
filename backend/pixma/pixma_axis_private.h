@@ -10,6 +10,7 @@
 
 #define AXIS_WIMP_PORT 		10260	/* UDP port for discovery */
 
+#define WIMP_HEADER_MAGIC	0x03
 #define WIMP_SERVER_INFO	0x24
 #define WIMP_SERVER_STATUS	0x30
 #define WIMP_REPLY		(1 << 0)
@@ -19,6 +20,7 @@ struct axis_wimp_header {
 	uint8_t zero;
 } __attribute__((__packed__));
 
+#define WIMP_GET_MAGIC		0x02
 #define WIMP_GET_NAME		0x02
 #define WIMP_GET_STATUS		0x03
 struct axis_wimp_get {

@@ -135,7 +135,7 @@ static ssize_t axis_send_wimp(int udp_socket, struct sockaddr_in *addr, uint8_t 
   ssize_t ret;
 
   header->type = cmd;
-  header->magic = 0x03;
+  header->magic = WIMP_HEADER_MAGIC;
   header->zero = 0x00;
   memcpy(packet + sizeof(struct axis_wimp_header), data, len);
   ret = sendto(udp_socket, packet, sizeof(struct axis_wimp_header) + len, 0, addr, sizeof(struct sockaddr_in));
@@ -154,11 +154,11 @@ static ssize_t axis_wimp_get(int udp_socket, struct sockaddr_in *addr, uint8_t c
   struct axis_wimp_header *reply = (void *)data_out;
   struct axis_wimp_get_reply *str = (void *)(data_out + sizeof(struct axis_wimp_header));
 
-  wimp_get.port = htole16(ntohs(addr->sin_port)),	/* network order -> LE */
-  wimp_get.magic = 0x02,
+  wimp_get.port = htole16(ntohs(addr->sin_port));	/* network order -> LE */
+  wimp_get.magic = WIMP_GET_MAGIC;
   wimp_get.zero = 0;
-  wimp_get.cmd = cmd,
-  wimp_get.idx = idx,
+  wimp_get.cmd = cmd;
+  wimp_get.idx = idx;
   ret = axis_send_wimp(udp_socket, addr, WIMP_SERVER_STATUS, &wimp_get, sizeof(wimp_get));
   if (ret)
     return ret;
