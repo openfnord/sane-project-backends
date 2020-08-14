@@ -163,7 +163,6 @@ typedef uint32_t uint32_t;
                                              * only generation 1 scanners
                                              * usually gamma table has 1024 16-bit values
                                              */
-#define PIXMA_CAP_JPEG         (1 << 15)    /* scanner always returns image as jpeg */
 #define PIXMA_CAP_EXPERIMENT   (1 << 31)
 /**@}*/
 
