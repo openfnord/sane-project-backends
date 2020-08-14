@@ -11,7 +11,7 @@
 ; See doc/descriptions.txt for details.
 
 :backend "pixma"                  ; name of backend
-:version "0.28.1"                 ; version of backend (or "unmaintained")
+:version "0.28.4"                 ; version of backend (or "unmaintained")
 :manpage "sane-pixma"             ; name of manpage (if it exists)
 ;:comment "Devices marked as experimantal are disabled by default. See the manual page for how to enable them."
 
@@ -133,8 +133,8 @@
 :model "PIXMA G4000 Series"
 :interface "USB WiFi"
 :usbid "0x04a9" "0x181d"
-:status :untested
-:comment "Testers needed!"
+:status :complete
+:comment "All resolutions supported (up to 600DPI)."
 
 :model "PIXMA G4010 Series"
 :interface "USB WiFi"
@@ -866,8 +866,8 @@
 :model "PIXMA TR4500 Series"
 :interface "USB WiFi"
 :usbid "0x04a9" "0x1854"
-:status :untested
-:comment "Testers needed!"
+:status :complete
+:comment "Flatbed and ADF scan. All resolutions supported (up to 600DPI)"
 
 :model "PIXMA TR7500 Series"
 :interface "USB WiFi"
@@ -926,8 +926,8 @@
 :model "PIXMA TS5100 Series"
 :interface "USB WiFi"
 :usbid "0x04a9" "0x1825"
-:status :untested
-:comment "Testers needed!"
+:status :good
+:comment "All resolutions supported (up to 1200DPI). WiFi not working."
 
 :model "PIXMA TS5300 Series"
 :interface "USB WiFi"
@@ -1430,8 +1430,8 @@
 :model "i-SENSYS MF4700 Series"
 :interface "USB Ethernet"
 :usbid "0x04a9" "0x2774"
-:status :good
-:comment "Flatbed scan. All resolutions supported (up to 600DPI)."
+:status :complete
+:comment "Flatbed and ADF scan. All resolutions supported (up to 600DPI)."
 
 :model "i-SENSYS MF4800 Series"
 :interface "USB Ethernet"

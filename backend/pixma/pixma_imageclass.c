@@ -919,7 +919,7 @@ static const pixma_scan_ops_t pixma_iclass_ops = {
             0x04a9, pid,              /* vid pid */	\
             1,                        /* iface */		\
             &pixma_iclass_ops,        /* ops */		\
-            0,                        /* min_xdpi not used in this subdriver */ \
+            0, 0,                     /* min_xdpi & min_xdpi_16 not used in this subdriver */ \
             dpi, dpi,                 /* xdpi, ydpi */	\
             0,                        /* adftpu_min_dpi not used in this subdriver */ \
             adftpu_max_dpi,           /* adftpu_max_dpi */ \
@@ -981,7 +981,7 @@ const pixma_config_t pixma_iclass_devices[] = {
   DEV ("Canon i-SENSYS MF110/910 Series Series", "MF110", MF110_PID, 600, 0, 640, 1050, PIXMA_CAP_JPEG),
   DEV ("Canon i-SENSYS MF520 Series", "MF520", MF520_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF420 Series", "MF420", MF420_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
-  DEV ("Canon i-SENSYS MF260 Series", "MF260", MF260_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
+  DEV ("Canon i-SENSYS MF260 Series", "MF260", MF260_PID, 600, 0, 640, 1050, PIXMA_CAP_JPEG | PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF740 Series", "MF740", MF740_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF741C/743C", "MF741C/743C", MF743_PID, 600, 300, 640, 1050, PIXMA_CAP_ADFDUP),       /* ADFDUP restricted to 300dpi */
   DEV ("Canon i-SENSYS MF640 Series", "MF642C/643C/644C", MF640_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
