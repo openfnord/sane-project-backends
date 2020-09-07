@@ -1119,12 +1119,12 @@ pixma_check_scan_param (pixma_t * s, pixma_scan_param_t * sp)
     return PIXMA_EINVAL;
 
   if (sp->line_size == 0)
-    sp->line_size = sp->depth / 8 * sp->channels * sp->w;
+    sp->line_size = (sp->depth * sp->channels * sp->w) / 8;
+
   sp->image_size = sp->line_size * sp->h;
 
-  /* image_size for software lineart is counted in bits */
-  if (sp->software_lineart == 1)
-    sp->image_size /= 8;
+//  if (sp->software_lineart == 1)
+//    sp->image_size /= 8;
   return 0;
 }
 

@@ -285,6 +285,8 @@ struct pixma_scan_param_t
 
     /** Size in bytes of the whole image.
      *  image_size = line_size * h <br>
+     *  This field relates to our interactions with the scanner and NOT with the frontend.
+     *  Particularly, for software lineart, this will be different.
      *  This field will be set by pixma_check_scan_param(). */
   uint64_t image_size;
 

@@ -1412,10 +1412,12 @@ pixma_jpeg_read(pixma_sane_t *ss, SANE_Byte *data,
         }
     }
 
-  /* Maybe pack into lineary binary image */
+  /* Maybe pack into lineary binary image
+   * Make sure that we cope with non-rounded width when computing the number of bytes in 'length' */
+  PDBG (pixma_dbg (1, "JPEG READ: raw width=%d max width=%d\n",*length, max_length));
   if (ss->sp.depth == 1)
     {
-      *length /= 8;
+      *length = ((*length) + 7) / 8;
       unsigned int i;
       unsigned char *d = (unsigned char *)src->linebuffer;
       unsigned char *s = (unsigned char *)src->linebuffer;
@@ -1424,10 +1426,24 @@ pixma_jpeg_read(pixma_sane_t *ss, SANE_Byte *data,
         {
           if (*(s++) > 127)
             b = (b << 1) | 0;
-         else
+          else
             b = (b << 1) | 1;
+
           if ((i % 8) == 0)
-            *(d++) = b;
+            {
+              *(d++) = b;
+              b = 0;
+            }
+        }
+
+      /*
+       * Handle partial byte.
+       * Shift in the remaining bits then shift it up to the correct position.
+       *
+       */
+      if ((i % 8) != 0)
+        {
+          *(d++) = b << (8 - (i % 8));
         }
     }
 
@@ -1437,8 +1453,10 @@ pixma_jpeg_read(pixma_sane_t *ss, SANE_Byte *data,
   if (*length > max_length)
     *length = max_length;
 
-  memcpy(data, src->linebuffer + src->linebuffer_index, *length);
-        src->linebuffer_index += *length;
+  memcpy (data, src->linebuffer + src->linebuffer_index, *length);
+  src->linebuffer_index += *length;
+  PDBG (pixma_dbg (1, "JPEG READ: generated len: %d (think width is %u\n",
+                *length, ss->sp.w));
 }
 
 
@@ -1789,7 +1807,7 @@ sane_get_parameters (SANE_Handle h, SANE_Parameters * p)
   p->depth = sp->depth;
   p->pixels_per_line = sp->w;
   /* p->bytes_per_line = sp->line_size; NOTE: It should work this way, but it doesn't. No SANE frontend can cope with this. */
-  p->bytes_per_line = (sp->w * sp->channels * sp->depth) / 8;
+  p->bytes_per_line = ((sp->w * sp->channels * sp->depth) + 7) / 8;
   return SANE_STATUS_GOOD;
 }
 
@@ -1837,7 +1855,7 @@ sane_start (SANE_Handle h)
   error = start_reader_task (ss);
   if (error >= 0)
     {
-      ss->output_line_size = (ss->sp.w * ss->sp.channels * ss->sp.depth) / 8;
+      ss->output_line_size = ((ss->sp.w * ss->sp.channels * ss->sp.depth) + 7) / 8;
       ss->byte_pos_in_line = 0;
       ss->last_read_status = SANE_STATUS_GOOD;
       ss->scanning = SANE_TRUE;
@@ -1888,7 +1906,8 @@ sane_read (SANE_Handle h, SANE_Byte * buf, SANE_Int maxlen, SANE_Int * len)
   status = SANE_STATUS_GOOD;
   /* CCD scanners use software lineart
    * the scanner must scan 24 bit color or 8 bit grayscale for one bit lineart */
-  if ((ss->sp.line_size - ((ss->sp.software_lineart == 1) ? (ss->output_line_size * 8) : ss->output_line_size)) == 0)
+//  if ((ss->sp.line_size - ((ss->sp.software_lineart == 1) ? (ss->output_line_size * 8) : ss->output_line_size)) == 0)
+  if ((ss->sp.line_size - ss->output_line_size) == 0)
     {
       status = read_image (ss, buf, maxlen, &sum);
     }

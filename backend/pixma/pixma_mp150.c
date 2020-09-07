@@ -441,13 +441,13 @@ is_scanning_from_adfdup (const pixma_t * s)
 }
 
 static int
-is_scanning_jpeg (const pixma_t *s)
+is_scanning_jpeg (const pixma_scan_param_t *p)
 {
-  if (!s || !s->param)
+  if (!p)
     {
       return 0;
     }
-  return s->param->mode_jpeg;
+  return p->mode_jpeg;
 }
 
 static int
@@ -615,7 +615,7 @@ send_gamma_table (pixma_t * s)
 }
 
 static unsigned
-calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param, int is_req)
+calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param)
 {
   mp150_t *mp = (mp150_t *) s->subdriver;
   unsigned raw_width;
@@ -627,7 +627,7 @@ calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param, int is_req)
        * we send the exact width rather than the rounded up width.
        *
        */
-      if (is_req && is_scanning_jpeg(s))
+      if (is_scanning_jpeg(param))
         {
           raw_width = (param->w * mp->scale);
         }
@@ -669,7 +669,7 @@ send_scan_param (pixma_t * s)
   unsigned x = s->param->x * mp->scale;
   unsigned xs = s->param->xs;
   unsigned y = s->param->y * mp->scale;
-  unsigned wx = calc_raw_width (s, s->param, 1);
+  unsigned wx = calc_raw_width (s, s->param);
   unsigned h = MIN (s->param->h, s->cfg->height * s->param->ydpi / 75) * mp->scale;
 
   if (mp->generation <= 2)
@@ -707,7 +707,7 @@ send_scan_param (pixma_t * s)
           data[0x02] = 0x03;
           data[0x03] = 0x03;
         }
-      if (is_scanning_jpeg (s))
+      if (is_scanning_jpeg (s->param))
         {
           data[0x03] = 0x01;
         }
@@ -728,7 +728,7 @@ send_scan_param (pixma_t * s)
 
       data[0x1f] = 0x01;        /* This one also seen at 0. Don't know yet what's used for */
       data[0x20] = 0xff;
-      if (is_scanning_jpeg (s))
+      if (is_scanning_jpeg (s->param))
         {
           data[0x21] = 0x83;
         }
@@ -1261,20 +1261,11 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
       sp->channels = 1;
     }
 
-  /*
-   * For software lineart, w must be a multiple of 8.
-   *
-   * Note, that we must simultaneously round down x to make sure that the width does not
-   * become illegal.
-   *
-   */
-  if (sp->software_lineart == 1)
-    {
-      sp->w = ALIGN_SUP(sp->w, 8);
-      sp->x &= ~0x7;
-    }
+  sp->mode_jpeg = (s->cfg->cap & PIXMA_CAP_ADF_JPEG) &&
+                      (sp->source == PIXMA_SOURCE_ADF ||
+                       sp->source == PIXMA_SOURCE_ADFDUP);
 
-  if (mp->generation >= 2)
+  if ((mp->generation >= 2) && !sp->mode_jpeg)
     {
       /* mod 32 and expansion of the X scan limits */
       /*PDBG (pixma_dbg (4, "*mp150_check_param***** ----- Initially: x=%i, y=%i, w=%i, h=%i *****\n", sp->x, sp->y, sp->w, sp->h));*/
@@ -1282,10 +1273,12 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
     }
   else
       sp->xs = 0;
+
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** Selected origin, origin shift: %i, %i *****\n", sp->x, sp->xs));*/
-  sp->wx = calc_raw_width (s, sp, 0);
-  sp->line_size = sp->w * sp->channels * (((sp->software_lineart) ? 8 : sp->depth) / 8);              /* bytes per line per color after cropping */
-  /*PDBG (pixma_dbg (4, "*mp150_check_param***** Final scan width and line-size: %i, %li *****\n", sp->wx, sp->line_size));*/
+  sp->wx = calc_raw_width (s, sp);
+//  sp->line_size = sp->w * sp->channels * (((sp->software_lineart) ? 8 : sp->depth) / 8);              /* bytes per line per color after cropping */
+  sp->line_size = ((sp->w * sp->channels * sp->depth) + 7)/ 8;              /* bytes per line per color after cropping */
+  PDBG (pixma_dbg (4, "*mp150_check_param***** Final scan width and line-size: %i, %li *****\n", sp->wx, sp->line_size));
 
   /* Some exceptions here for particular devices */
   /* Those devices can scan up to legal 14" with ADF, but A4 11.7" in flatbed */
@@ -1310,10 +1303,6 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
       sp->ydpi = sp->xdpi;
     }
 
-  sp->mode_jpeg = (s->cfg->cap & PIXMA_CAP_ADF_JPEG) &&
-                      (sp->source == PIXMA_SOURCE_ADF ||
-                       sp->source == PIXMA_SOURCE_ADFDUP);
-
   mp->scale = 1;
   if (s->cfg->min_xdpi && sp->xdpi < s->cfg->min_xdpi)
   {
@@ -1322,8 +1311,8 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** xdpi=%u, min_xdpi=%u, scale=%u *****\n",
                    sp->xdpi, s->cfg->min_xdpi, mp->scale));*/
 
-  /*PDBG (pixma_dbg (4, "*mp150_check_param***** Finally: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
-                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx));*/
+  PDBG (pixma_dbg (4, "*mp150_check_param***** Finally: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
+                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx));
   return 0;
 }
 
@@ -1428,7 +1417,7 @@ mp150_scan (pixma_t * s)
         mp->state = state_warmup;
       if ((error >= 0) && (mp->generation <= 2))
         error = select_source (s);
-      if ((error >= 0) && !is_scanning_jpeg (s))
+      if ((error >= 0) && !is_scanning_jpeg (s->param))
         {
           int i;
 
