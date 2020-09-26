@@ -468,7 +468,21 @@ pixma_binarize_line(pixma_scan_param_t * sp, uint8_t * dst, uint8_t * src, unsig
             *dst |= mask;       /* black */
 
         if (offset == 7)
+          {
             dst++;
+            *dst = 0;
+          }
+      }
+
+    /*
+     * Account for any partially filled last byte.
+     * What we return must be the *next* byte (that we didn't write to).
+     * So that dst-src == output width.
+     *
+     */
+    if (width % 8)
+      {
+        dst++;
       }
 
   /* PDBG (pixma_dbg (4, " *pixma_binarize_line***** ready: src = %u, dst = %u *****\n", src, dst)); */
