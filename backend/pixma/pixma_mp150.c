@@ -576,7 +576,7 @@ send_gamma_table (pixma_t * s)
   if (mp->generation == 1)
     {
       data = pixma_newcmd (&mp->cb, cmd_gamma, 4096 + 8, 0);
-      data[0] = (s->param->channels == 3) ? 0x10 : 0x01;
+      data[0] = (s->param->be_channels == 3) ? 0x10 : 0x01;
       pixma_set_be16 (0x1004, data + 2);
       if (lut)
 	      memcpy (data + 4, lut, 4096);
@@ -636,7 +636,7 @@ calc_raw_width (const pixma_t * s, const pixma_scan_param_t * param)
           raw_width = ALIGN_SUP ((param->w * mp->scale) + param->xs, 32);
         }
     }
-  else if (param->channels == 1)
+  else if (param->be_channels == 1)
     {
       raw_width = ALIGN_SUP (param->w + param->xs, 12);
     }
@@ -655,8 +655,8 @@ get_cis_line_size (pixma_t * s)
   /*PDBG (pixma_dbg (4, "%s: line_size=%ld, w=%d, wx=%d, scale=%d\n",
                    __func__, s->param->line_size, s->param->w, s->param->wx, mp->scale));*/
 
-  return (s->param->wx ? s->param->line_size / s->param->w * s->param->wx
-                       : s->param->line_size) * mp->scale;
+  return (s->param->wx ? s->param->be_line_size / s->param->w * s->param->wx
+                       : s->param->be_line_size) * mp->scale;
 }
 
 static int
@@ -685,9 +685,8 @@ send_scan_param (pixma_t * s)
       pixma_set_be32 (y, data + 0x0c);
       pixma_set_be32 (wx, data + 0x10);
       pixma_set_be32 (h, data + 0x14);
-      data[0x18] = (s->param->channels != 1) ? 0x08 : 0x04;
-      data[0x19] = ((s->param->software_lineart) ? 8 : s->param->depth)
-                    * s->param->channels;   /* bits per pixel */
+      data[0x18] = (s->param->be_channels != 1) ? 0x08 : 0x04;
+      data[0x19] = s->param->be_depth * s->param->be_channels;   /* bits per pixel */
       data[0x1a] = 0;
       data[0x20] = 0xff;
       data[0x23] = 0x81;
@@ -721,10 +720,9 @@ send_scan_param (pixma_t * s)
       pixma_set_be32 (y, data + 0x10);
       pixma_set_be32 (wx, data + 0x14);
       pixma_set_be32 (h, data + 0x18);
-      data[0x1c] = (s->param->channels != 1) ? 0x08 : 0x04;
+      data[0x1c] = (s->param->be_channels != 1) ? 0x08 : 0x04;
 
-      data[0x1d] = ((s->param->software_lineart) ? 8 : s->param->depth)
-                    * s->param->channels;   /* bits per pixel */
+      data[0x1d] = s->param->be_depth * s->param->be_channels;   /* bits per pixel */
 
       data[0x1f] = 0x01;        /* This one also seen at 0. Don't know yet what's used for */
       data[0x20] = 0xff;
@@ -1087,11 +1085,11 @@ post_process_image_data (pixma_t * s, pixma_imagebuf_t * ib)
       return 0;    /* # of non processed bytes */
     }
 
-  /* process image sizes */
-  c = s->param->channels
-      * ((s->param->software_lineart) ? 8 : s->param->depth) / 8;   /* color channels count */
-  cw = c * s->param->w;                                             /* image width */
-  cx = c * s->param->xs;                                            /* x-offset */
+  /* process image sizes
+   * These are the parameters of the received data */
+  c = (s->param->be_channels * s->param->be_depth) / 8;   /* color channels count */
+  cw = c * s->param->w;                                   /* image width */
+  cx = c * s->param->xs;                                  /* x-offset */
 
   /* special image format parameters
    * n: no. of sub-images
@@ -1247,18 +1245,32 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
   /* PDBG (pixma_dbg (4, "*mp150_check_param***** Initially: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
                    sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx)); */
 
-  /* MP150 only supports 8 bit per channel in color and grayscale mode */
-  if (sp->depth != 1)
+  /*
+   * Determine fe_ and be_ valid values for depth and channels.
+   * Note: this is where we will compute the be_ values for the scanner.
+   *
+   * MP150 only supports 8 bit per channel in color and grayscale mode
+   * */
+  if (sp->fe_depth != 1)
     {
       sp->software_lineart = 0;
-      sp->depth = 8;
+      sp->fe_depth = 8;
+
+      sp->be_depth = sp->fe_depth;
+      sp->be_channels = sp->fe_channels;
     }
   else
     {
       /* software lineart */
       sp->software_lineart = 1;
-      sp->depth = 1;
-      sp->channels = 1;
+
+      /* front-end expects lineart */
+      sp->fe_depth = 1;
+      sp->fe_channels = 1;
+
+      /* scanner will scan grey however. */
+      sp->be_depth = 8;
+      sp->be_channels = sp->fe_channels;
     }
 
   sp->mode_jpeg = (s->cfg->cap & PIXMA_CAP_ADF_JPEG) &&
@@ -1277,8 +1289,12 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** Selected origin, origin shift: %i, %i *****\n", sp->x, sp->xs));*/
   sp->wx = calc_raw_width (s, sp);
 //  sp->line_size = sp->w * sp->channels * (((sp->software_lineart) ? 8 : sp->depth) / 8);              /* bytes per line per color after cropping */
-  sp->line_size = ((sp->w * sp->channels * sp->depth) + 7)/ 8;              /* bytes per line per color after cropping */
-  PDBG (pixma_dbg (4, "*mp150_check_param***** Final scan width and line-size: %i, %li *****\n", sp->wx, sp->line_size));
+
+
+  sp->fe_line_size = ((sp->w * sp->fe_channels * sp->fe_depth) + 7)/ 8;              /* bytes per line per color after cropping */
+  sp->be_line_size = ((sp->w * sp->be_channels * sp->be_depth) + 7)/ 8;              /* bytes per line per color after cropping */
+
+  PDBG (pixma_dbg (4, "*mp150_check_param***** Final scan width and line-size: %i, %li *****\n", sp->wx, sp->be_line_size));
 
   /* Some exceptions here for particular devices */
   /* Those devices can scan up to legal 14" with ADF, but A4 11.7" in flatbed */
@@ -1311,8 +1327,8 @@ mp150_check_param (pixma_t * s, pixma_scan_param_t * sp)
   /*PDBG (pixma_dbg (4, "*mp150_check_param***** xdpi=%u, min_xdpi=%u, scale=%u *****\n",
                    sp->xdpi, s->cfg->min_xdpi, mp->scale));*/
 
-  PDBG (pixma_dbg (4, "*mp150_check_param***** Finally: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
-                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx));
+  PDBG (pixma_dbg (4, "*mp150_check_param***** Finally: be_channels=%u, be_depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
+                   sp->be_channels, sp->be_depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx));
   return 0;
 }
 

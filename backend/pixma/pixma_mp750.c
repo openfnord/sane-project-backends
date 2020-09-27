@@ -222,15 +222,15 @@ has_ccd_sensor (pixma_t * s)
 static int
 is_ccd_grayscale (pixma_t * s)
 {
-  return (has_ccd_sensor (s) && (s->param->channels == 1));
+  return (has_ccd_sensor (s) && (s->param->be_channels == 1));
 }
 
 /* CCD sensors don't have a Grayscale mode, but use color mode instead */
 static unsigned
 get_cis_ccd_line_size (pixma_t * s)
 {
-  return (s->param->wx ? s->param->line_size / s->param->w * s->param->wx
-	  : s->param->line_size) * ((is_ccd_grayscale (s)) ? 3 : 1);
+  return (s->param->wx ? s->param->be_line_size / s->param->w * s->param->wx
+	  : s->param->be_line_size) * ((is_ccd_grayscale (s)) ? 3 : 1);
 }
 
 static int
@@ -248,7 +248,7 @@ send_scan_param (pixma_t * s)
   pixma_set_be32 (mp->raw_height, data + 0x14);
   data[0x18] = 8;		/* 8 = color, 4 = grayscale(?) */
   /* GH: No, there is no grayscale for CCD devices, Windows shows same  */
-  data[0x19] = s->param->depth * ((is_ccd_grayscale (s)) ? 3 : s->param->channels);	/* bits per pixel */
+  data[0x19] = s->param->be_depth * ((is_ccd_grayscale (s)) ? 3 : s->param->be_channels);	/* bits per pixel */
   data[0x20] = 0xff;
   data[0x23] = 0x81;
   data[0x26] = 0x02;
@@ -601,7 +601,8 @@ mp750_check_param (pixma_t * s, pixma_scan_param_t * sp)
 
   UNUSED (s);
 
-  sp->depth = 8;		/* FIXME: Does MP750 supports other depth? */
+  sp->fe_depth = 8;		/* FIXME: Does MP750 supports other depth? */
+  sp->be_depth = 8;
 
   /* GH: my implementation */
   /*   if ((sp->channels == 3) || (is_ccd_grayscale (s)))
@@ -613,7 +614,8 @@ mp750_check_param (pixma_t * s, pixma_scan_param_t * sp)
   raw_width = ALIGN_SUP (sp->w, 4);
 
   /*sp->line_size = raw_width * sp->channels;*/
-  sp->line_size = raw_width * sp->channels * (sp->depth / 8);  /* no cropping? */
+  sp->fe_line_size = raw_width * sp->fe_channels * (sp->fe_depth / 8);  /* no cropping? */
+  sp->be_line_size = raw_width * sp->be_channels * (sp->be_depth / 8);  /* no cropping? */
   return 0;
 }
 
@@ -643,7 +645,7 @@ mp750_scan (pixma_t * s)
     mp->raw_width = ALIGN_SUP (s->param->w, 4);*/
 
   /* change to use CCD grayscale mode --- why does this give segmentation error at runtime in mp750_check_param? */
-  if ((s->param->channels == 3) || (is_ccd_grayscale (s)))
+  if ((s->param->be_channels == 3) || (is_ccd_grayscale (s)))
     mp->raw_width = ALIGN_SUP (s->param->w, 4);
   else
     mp->raw_width = ALIGN_SUP (s->param->w, 12);
@@ -701,7 +703,7 @@ mp750_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
   int shift[3], base_shift;
   int c;
 
-  c = ((is_ccd_grayscale (s)) ? 3 : s->param->channels) * s->param->depth / 8; /* single-byte or double-byte data */
+  c = ((is_ccd_grayscale (s)) ? 3 : s->param->be_channels) * s->param->fe_depth / 8; /* single-byte or double-byte data */
 
   if (mp->state == state_warmup)
     {

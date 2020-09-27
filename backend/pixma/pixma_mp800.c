@@ -441,7 +441,7 @@ static int send_gamma_table (pixma_t * s)
   if (mp->generation == 1)
   {
     data = pixma_newcmd (&mp->cb, cmd_gamma, 4096 + 8, 0);
-    data[0] = (s->param->channels == 3) ? 0x10 : 0x01;
+    data[0] = (s->param->be_channels == 3) ? 0x10 : 0x01;
     pixma_set_be16 (0x1004, data + 2);
     if (lut)
       memcpy (data + 4, lut, 4096);
@@ -491,7 +491,7 @@ static unsigned calc_raw_width (const mp810_t * mp,
     raw_width = ALIGN_SUP (param->w + param->xs, 32);
     /* PDBG (pixma_dbg (4, "*calc_raw_width***** width %u extended by %u and rounded to %u *****\n", param->w, param->xs, raw_width)); */
   }
-  else if (param->channels == 1)
+  else if (param->be_channels == 1)
   {
     raw_width = ALIGN_SUP (param->w + param->xs, 12);
   }
@@ -564,8 +564,8 @@ static int is_tpuir (pixma_t * s)
 static unsigned get_cis_ccd_line_size (pixma_t * s)
 {
   return ((
-      s->param->wx ? s->param->line_size / s->param->w * s->param->wx
-                   : s->param->line_size)
+      s->param->wx ? s->param->be_line_size / s->param->w * s->param->wx
+                   : s->param->be_line_size)
       * ((is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 3 : 1));
 }
 
@@ -831,10 +831,10 @@ static int send_scan_param (pixma_t * s)
     pixma_set_be32 (raw_width, data + 0x10);
     pixma_set_be32 (h, data + 0x14);
     data[0x18] =
-        ((s->param->channels != 1) || is_gray_all (s) || is_lineart (s)) ?
+        ((s->param->be_channels != 1) || is_gray_all (s) || is_lineart (s)) ?
             0x08 : 0x04;
-    data[0x19] = ((s->param->software_lineart) ? 8 : s->param->depth)
-                  * ((is_gray_all (s) || is_lineart (s)) ? 3 : s->param->channels); /* bits per pixel */
+    data[0x19] = ((s->param->software_lineart) ? 8 : s->param->be_depth)
+                  * ((is_gray_all (s) || is_lineart (s)) ? 3 : s->param->be_channels); /* bits per pixel */
     data[0x1a] = (is_scanning_from_tpu (s) ? 1 : 0);
     data[0x20] = 0xff;
     data[0x23] = 0x81;
@@ -941,14 +941,14 @@ static int send_scan_param (pixma_t * s)
     pixma_set_be32 (s->param->y, data + 0x10);
     pixma_set_be32 (raw_width, data + 0x14);
     pixma_set_be32 (h, data + 0x18);
-    data[0x1c] = ((s->param->channels != 1) || is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 0x08 : 0x04;
+    data[0x1c] = ((s->param->be_channels != 1) || is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 0x08 : 0x04;
 
 #ifdef DEBUG_TPU_48
     data[0x1d] = 24;
 #else
     data[0x1d] = (is_scanning_from_tpu (s)) ? 48
-                                            : (((s->param->software_lineart) ? 8 : s->param->depth)
-                                               * ((is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 3 : s->param->channels)); /* bits per pixel */
+                                            : ((s->param->be_depth)
+                                               * ((is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 3 : s->param->be_channels)); /* bits per pixel */
 #endif
 
     data[0x1f] = 0x01; /* for 9000F this appears to be 0x00, not sure if that is because of positives */
@@ -1590,8 +1590,8 @@ static unsigned post_process_image_data (pixma_t * s, pixma_imagebuf_t * ib)
   test = 0;
   jumplines = 0;
 
-  c = ((is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 3 : s->param->channels)
-      * ((s->param->software_lineart) ? 8 : s->param->depth) / 8;
+  c = ((is_tpuir (s) || is_gray_all (s) || is_lineart (s)) ? 3 : s->param->be_channels)
+      * (s->param->be_depth) / 8;
   cw = c * s->param->w;
   cx = c * s->param->xs;
 
@@ -1869,12 +1869,12 @@ static void mp810_close (pixma_t * s)
 static int mp810_check_param (pixma_t * s, pixma_scan_param_t * sp)
 {
   mp810_t *mp = (mp810_t *) s->subdriver;
-  unsigned w_max;
 
   /* PDBG (pixma_dbg (4, "*mp810_check_param***** Initially: channels=%u, depth=%u, x=%u, y=%u, w=%u, h=%u, xs=%u, wx=%u *****\n",
                    sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->h, sp->xs, sp->wx)); */
 
-  sp->channels = 3;
+  sp->fe_channels = 3;
+  sp->be_channels = 3;
   sp->software_lineart = 0;
   switch (sp->mode)
   {
@@ -1884,48 +1884,46 @@ static int mp810_check_param (pixma_t * s, pixma_scan_param_t * sp)
     case PIXMA_SCAN_MODE_GRAY:
     case PIXMA_SCAN_MODE_NEGATIVE_GRAY:
     case PIXMA_SCAN_MODE_TPUIR:
-      sp->channels = 1;
+      sp->fe_channels = 1;
+      sp->be_channels = 1;
       /* fall through */
     case PIXMA_SCAN_MODE_COLOR:
     case PIXMA_SCAN_MODE_NEGATIVE_COLOR:
-      sp->depth = 8;
+      sp->fe_depth = 8;
+      sp->be_depth = 8;
 #ifdef TPU_48
 #ifndef DEBUG_TPU_48
       if (sp->source == PIXMA_SOURCE_TPU)
+        {
 #endif
-        sp->depth = 16; /* TPU in 16 bits mode */
+          sp->fe_depth = 16; /* TPU in 16 bits mode */
+          sp->be_depth = 16; /* TPU in 16 bits mode */
+        }
 #endif
       break;
       /* extended scan modes for 48 bit flatbed scanners
        * 16 bit per channel in color and grayscale mode */
     case PIXMA_SCAN_MODE_GRAY_16:
-      sp->channels = 1;
-      sp->depth = 16;
+      sp->fe_channels = 1;
+      sp->be_channels = 1;
+      sp->fe_depth = 16;
+      sp->be_depth = 16;
       break;
     case PIXMA_SCAN_MODE_COLOR_48:
-      sp->channels = 3;
-      sp->depth = 16;
+      sp->fe_channels = 3;
+      sp->be_channels = 3;
+      sp->fe_depth = 16;
+      sp->be_depth = 16;
       break;
       /* software lineart
        * 1 bit per channel */
     case PIXMA_SCAN_MODE_LINEART:
       sp->software_lineart = 1;
-      sp->channels = 1;
-      sp->depth = 1;
+      sp->fe_channels = 1;
+      sp->be_channels = 1;
+      sp->fe_depth = 1;
+      sp->be_depth = 8;
       break;
-  }
-
-  /* for software lineart w must be a multiple of 8
-   * I don't know why is_lineart(s) doesn't work here */
-  if (sp->software_lineart == 1 && sp->w % 8)
-  {
-    sp->w += 8 - (sp->w % 8);
-
-    /* do not exceed the scanner capability */
-    w_max = s->cfg->width * s->cfg->xdpi / 75;
-    w_max -= w_max % 8;
-    if (sp->w > w_max)
-      sp->w = w_max;
   }
 
   if (sp->source == PIXMA_SOURCE_TPU && !sp->tpu_offset_added)
@@ -2021,7 +2019,8 @@ static int mp810_check_param (pixma_t * s, pixma_scan_param_t * sp)
     /* PDBG (pixma_dbg (4, "*mp810_check_param***** (else) xs=0 Selected origin, origin shift: %u, %u *****\n", sp->x, sp->xs)); */
   }
   sp->wx = calc_raw_width (mp, sp);
-  sp->line_size = sp->w * sp->channels * (((sp->software_lineart) ? 8 : sp->depth) / 8); /* bytes per line per color after cropping */
+  sp->fe_line_size = sp->w * sp->fe_channels * (sp->fe_depth / 8); /* bytes per line per color after cropping */
+  sp->be_line_size = sp->w * sp->be_channels * (sp->be_depth / 8); /* bytes per line per color after cropping */
   /* PDBG (pixma_dbg (4, "*mp810_check_param***** (else) Final scan width and line-size: %u, %"PRIu64" *****\n", sp->wx, sp->line_size)); */
 
   /* highest res is 600, 2400, 4800 or 9600 dpi */

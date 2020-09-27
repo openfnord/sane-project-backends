@@ -278,20 +278,23 @@ struct pixma_device_status_t
 /** Scan parameters. */
 struct pixma_scan_param_t
 {
-    /** Size in bytes of one image line (row).
-     *  line_size >= depth / 8 * channels * w <br>
-     *  This field will be set by pixma_check_scan_param(). */
-  uint64_t line_size;
+  /** Size in bytes of one image line (row).
+   *  line_size >= depth / 8 * channels * w <br>
+   *  This field will be set by pixma_check_scan_param(). */
+  uint64_t fe_line_size;
+  uint64_t be_line_size;
 
     /** Size in bytes of the whole image.
      *  image_size = line_size * h <br>
      *  This field relates to our interactions with the scanner and NOT with the frontend.
      *  Particularly, for software lineart, this will be different.
      *  This field will be set by pixma_check_scan_param(). */
-  uint64_t image_size;
+  uint64_t fe_image_size;
+  uint64_t be_image_size;
 
     /** Channels per pixel. 1 = grayscale and lineart, 3 = color */
-  unsigned channels;
+  unsigned fe_channels;
+  unsigned be_channels;
 
     /** Bits per channels.
      *   1 =  1 bit B/W lineart (flatbed)
@@ -299,7 +302,8 @@ struct pixma_scan_param_t
      *       24 bit color (both flatbed)
      *  16 = 16 bit grayscale (TPU, flatbed not implemeted),
      *       48 bit color (TPU, flatbed not implemented) */
-  unsigned depth;
+  unsigned fe_depth;
+  unsigned be_depth;
 
   /*@{ */
     /** Resolution. Valid values are 75,150,300,600,1200... */

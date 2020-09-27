@@ -297,8 +297,8 @@ send_scan_param (pixma_t * s)
   pixma_set_be32 (s->param->y, data + 0x0c);
   pixma_set_be32 (mf->raw_width, data + 0x10);
   pixma_set_be32 (s->param->h, data + 0x14);
-  data[0x18] = (s->param->channels == 1) ? 0x04 : 0x08;
-  data[0x19] = s->param->channels * ((s->param->depth == 1) ? 8 : s->param->depth);	/* bits per pixel */
+  data[0x18] = (s->param->be_channels == 1) ? 0x04 : 0x08;
+  data[0x19] = s->param->be_channels * ((s->param->be_depth == 1) ? 8 : s->param->be_depth);	/* bits per pixel */
   data[0x1f] = 0x7f;
   data[0x20] = 0xff;
   data[0x23] = 0x81;
@@ -590,31 +590,42 @@ iclass_check_param (pixma_t * s, pixma_scan_param_t * sp)
   /* PDBG (pixma_dbg (4, "*iclass_check_param***** Initially: channels=%u, depth=%u, x=%u, y=%u, w=%u, line_size=%" PRIu64 " , h=%u*****\n",
                    sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->line_size, sp->h)); */
 
-  sp->depth = 8;
+  sp->fe_depth = 8;
+  sp->be_depth = 8;
   sp->software_lineart = 0;
+
+  /*
+   * For lineart, the scanner will be doing a gray scan and we
+   * will convert it. No native lineart mode.
+   *
+   */
   if (sp->mode == PIXMA_SCAN_MODE_LINEART)
   {
     sp->software_lineart = 1;
-    sp->channels = 1;
-    sp->depth = 1;
-  }
+    sp->fe_channels = 1;
+    sp->fe_depth = 1;
+
+    sp->be_channels = 1;
+    sp->be_depth = 8;
+}
 
   if (sp->software_lineart == 1)
-  {
-    unsigned w_max;
-
-    /* for software lineart line_size and w must be a multiple of 8 */
-    sp->line_size = ALIGN_SUP (sp->w, 8) * sp->channels;
-    sp->w = ALIGN_SUP (sp->w, 8);
-
-    /* do not exceed the scanner capability */
-    w_max = s->cfg->width * s->cfg->xdpi / 75;
-    w_max -= w_max % 32;
-    if (sp->w > w_max)
-      sp->w = w_max;
-  }
+    {
+      /*
+       * TODO: mp150 no longer enforces the 8-bit alignment restriction.
+       * I don't think that imageclass needs to do it either.
+       * Enforcing alignment causes more problems than it solves, esp. ensuring
+       * that we don't exceed the right margin of the scanner. [RL]
+       *
+       */
+      sp->fe_line_size = ALIGN_SUP (sp->w, 32) * sp->fe_channels;
+      sp->be_line_size = ALIGN_SUP (sp->w, 32) * sp->be_channels;
+    }
   else
-    sp->line_size = ALIGN_SUP (sp->w, 32) * sp->channels;
+    {
+      sp->fe_line_size = ALIGN_SUP (sp->w, 32) * sp->fe_channels;
+      sp->be_line_size = sp->fe_line_size;
+    }
 
   /* Some exceptions here for particular devices */
   /* Those devices can scan up to Legal 14" with ADF, but A4 11.7" in flatbed */
@@ -644,11 +655,12 @@ iclass_scan (pixma_t * s)
     {
     }
 
+  // TODO: Perhaps this is really now the same as be_line_size? [RL]
   mf->raw_width = ALIGN_SUP (s->param->w, 32);
   PDBG (pixma_dbg (3, "raw_width = %u\n", mf->raw_width));
 
-  n = IMAGE_BLOCK_SIZE / s->param->line_size + 1;
-  buf_len = (n + 1) * s->param->line_size + IMAGE_BLOCK_SIZE;
+  n = IMAGE_BLOCK_SIZE / s->param->be_line_size + 1;
+  buf_len = (n + 1) * s->param->be_line_size + IMAGE_BLOCK_SIZE;
   if (buf_len > mf->buf_len)
     {
       buf = (uint8_t *) realloc (mf->buf, buf_len);
@@ -658,7 +670,7 @@ iclass_scan (pixma_t * s)
       mf->buf_len = buf_len;
     }
   mf->lineptr = mf->buf;
-  mf->blkptr = mf->buf + n * s->param->line_size;
+  mf->blkptr = mf->buf + n * s->param->be_line_size;
   mf->blk_len = 0;
 
   error = step1 (s);
@@ -760,7 +772,7 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
       /* add current block to remainder of previous */
       mf->blk_len += block_size;
       /* n = number of full lines (rows) we have in the buffer. */
-      n = mf->blk_len / ((s->param->mode == PIXMA_SCAN_MODE_LINEART) ? mf->raw_width : s->param->line_size);
+      n = mf->blk_len / s->param->be_line_size;
       if (n != 0)
         {
           /* PDBG (pixma_dbg (4, "*iclass_fill_buffer***** Processing with n=%d, w=%i, line_size=%" PRIu64 ", raw_width=%u ***** \n",
@@ -772,21 +784,22 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
            * mf->lineptr         : image line
            * mf->blkptr          : scanned image block as grayscale
            * s->param->w         : image width
-           * s->param->line_size : scanned image width */
+           * s->param->be_line_size : scanned image width */
           if (s->param->mode == PIXMA_SCAN_MODE_LINEART)
-          {
-            int i;
-            uint8_t *sptr, *dptr;
+            {
+              int i;
+              uint8_t *sptr, *dptr;
 
-            /* PDBG (pixma_dbg (4, "*iclass_fill_buffer***** Processing lineart *****\n")); */
+              /* PDBG (pixma_dbg (4, "*iclass_fill_buffer***** Processing lineart *****\n")); */
 
-            /* process ALL lines */
-            sptr = mf->blkptr;
-            dptr = mf->lineptr;
-            for (i = 0; i < n; i++, sptr += mf->raw_width)
-              dptr = pixma_binarize_line (s->param, dptr, sptr, s->param->line_size, 1);
-          }
-          else if (s->param->channels != 1 &&
+              /* process ALL lines */
+              sptr = mf->blkptr;
+              dptr = mf->lineptr;
+              for (i = 0; i < n; i++, sptr += mf->raw_width)
+                dptr = pixma_binarize_line (s->param, dptr, sptr,
+                                            s->param->be_line_size, 1);
+            }
+          else if (s->param->be_channels != 1 &&
                   mf->generation == 1 &&
 	          s->cfg->pid != MF4600_PID &&
 	          s->cfg->pid != MF6500_PID &&
@@ -798,11 +811,11 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
           else
             {
               /* grayscale */
-              memcpy (mf->lineptr, mf->blkptr, n * s->param->line_size);
+              memcpy (mf->lineptr, mf->blkptr, n * s->param->be_line_size);
             }
           /* cull remainder and shift left */
-          lineart_lines_size = n * s->param->line_size / 8;
-          lines_size = n * ((s->param->mode == PIXMA_SCAN_MODE_LINEART) ? mf->raw_width : s->param->line_size);
+          lineart_lines_size = n * s->param->be_line_size;
+          lines_size = n * s->param->fe_line_size;
           mf->blk_len -= lines_size;
           memcpy (mf->blkptr, mf->blkptr + lines_size, mf->blk_len);
         }

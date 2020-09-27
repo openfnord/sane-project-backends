@@ -856,8 +856,10 @@ pixma_scan (pixma_t * s, pixma_scan_param_t * sp)
 #ifndef NDEBUG
   pixma_dbg (3, "\n");
   pixma_dbg (3, "pixma_scan(): start\n");
-  pixma_dbg (3, "  line_size=%"PRIu64" image_size=%"PRIu64" channels=%u depth=%u\n",
-	     sp->line_size, sp->image_size, sp->channels, sp->depth);
+  pixma_dbg (3, "  fe_line_size=%"PRIu64" fe_image_size=%"PRIu64" fe_channels=%u fe_depth=%u\n",
+	     sp->fe_line_size, sp->fe_image_size, sp->fe_channels, sp->fe_depth);
+  pixma_dbg (3, "  be_line_size=%"PRIu64" be_image_size=%"PRIu64" be_channels=%u be_depth=%u\n",
+	     sp->be_line_size, sp->be_image_size, sp->be_channels, sp->be_depth);
   pixma_dbg (3, "  dpi=%ux%u offset=(%u,%u) dimension=%ux%u\n",
 	     sp->xdpi, sp->ydpi, sp->x, sp->y, sp->w, sp->h);
   pixma_dbg (3, "  gamma_table=%p source=%d\n", sp->gamma_table, sp->source);
@@ -891,9 +893,9 @@ pixma_scan (pixma_t * s, pixma_scan_param_t * sp)
 static uint8_t *
 fill_pixels (pixma_t * s, uint8_t * ptr, uint8_t * end, uint8_t value)
 {
-  if (s->cur_image_size < s->param->image_size)
+  if (s->cur_image_size < s->param->be_image_size)
     {
-      long n = s->param->image_size - s->cur_image_size;
+      long n = s->param->be_image_size - s->cur_image_size;
       if (n > (end - ptr))
 	n = end - ptr;
       memset (ptr, value, n);
@@ -923,7 +925,7 @@ pixma_read_image (pixma_t * s, void *buf, unsigned len)
 
   if (s->underrun)
     {
-      if (s->cur_image_size < s->param->image_size)
+      if (s->cur_image_size < s->param->fe_image_size)
         {
           ib.wptr = fill_pixels (s, ib.wptr, ib.wend, 0xff);
         }
@@ -947,21 +949,21 @@ pixma_read_image (pixma_t * s, void *buf, unsigned len)
           if (result == 0)
             {			/* end of image? */
               s->ops->finish_scan (s);
-              if ((s->cur_image_size != s->param->image_size) && !s->param->mode_jpeg)
+              if ((s->cur_image_size != s->param->fe_image_size) && !s->param->mode_jpeg)
                 {
                   pixma_dbg (1, "WARNING:image size mismatches\n");
                   pixma_dbg (1,
                        "    %"PRIu64" expected (%d lines) but %"PRIu64" received (%"PRIu64" lines)\n",
-                       s->param->image_size, s->param->h,
+                       s->param->fe_image_size, s->param->h,
                        s->cur_image_size,
-                       s->cur_image_size / s->param->line_size);
-                  if ((s->cur_image_size % s->param->line_size) != 0)
+                       s->cur_image_size / s->param->fe_line_size);
+                  if ((s->cur_image_size % s->param->fe_line_size) != 0)
                     {
                       pixma_dbg (1,
                      "BUG:received data not multiple of line_size\n");
                     }
                 }
-              if ((s->cur_image_size < s->param->image_size) && !s->param->mode_jpeg)
+              if ((s->cur_image_size < s->param->fe_image_size) && !s->param->mode_jpeg)
                 {
                   s->underrun = 1;
                   ib.wptr = fill_pixels (s, ib.wptr, ib.wend, 0xff);
@@ -975,10 +977,11 @@ pixma_read_image (pixma_t * s, void *buf, unsigned len)
             }
           s->cur_image_size += result;
 
-          PASSERT (s->cur_image_size <= s->param->image_size);
+          PASSERT (s->cur_image_size <= s->param->fe_image_size);
         }
       if (ib.rptr)
         {
+	  // TODO: Is unsigned the best type here? [RL]
           unsigned count = MIN (ib.rend - ib.rptr, ib.wend - ib.wptr);
           memcpy (ib.wptr, ib.rptr, count);
           ib.rptr += count;
@@ -1052,8 +1055,8 @@ pixma_check_scan_param (pixma_t * s, pixma_scan_param_t * sp)
 {
   unsigned cfg_xdpi;
 
-  if (!(sp->channels == 3 ||
-	(sp->channels == 1 && (s->cfg->cap & PIXMA_CAP_GRAY) != 0)))
+  if (!(sp->fe_channels == 3 ||
+	(sp->fe_channels == 1 && (s->cfg->cap & PIXMA_CAP_GRAY) != 0)))
     return PIXMA_EINVAL;
 
   /* flatbed: use s->cfg->xdpi
@@ -1122,23 +1125,31 @@ pixma_check_scan_param (pixma_t * s, pixma_scan_param_t * sp)
       break;
     }
 
-  if (sp->depth == 0)
-    sp->depth = 8;
-  if ((sp->depth % 8) != 0 && sp->depth != 1)
-    return PIXMA_EINVAL;
-
-  sp->line_size = 0;
-
+  /*
+   * Sort out sensible default values for depth.
+   *
+   */
   if (s->ops->check_param (s, sp) < 0)
     return PIXMA_EINVAL;
 
-  if (sp->line_size == 0)
-    sp->line_size = (sp->depth * sp->channels * sp->w) / 8;
+  /*
+   * Organize defaults for fe_/be_line_size and fe_/be_image_size
+   * if check_param() does not deign to set them.
+   *
+   */
+  if (sp->fe_line_size == 0)
+    {
+      sp->fe_line_size = (sp->fe_depth * sp->fe_channels * sp->w) / 8;
+    }
 
-  sp->image_size = sp->line_size * sp->h;
+  if (sp->be_line_size == 0)
+    {
+      sp->be_line_size = (sp->be_depth * sp->be_channels * sp->w) / 8;
+    }
 
-//  if (sp->software_lineart == 1)
-//    sp->image_size /= 8;
+  sp->fe_image_size = sp->fe_line_size * sp->h;
+  sp->be_image_size = sp->be_line_size * sp->h;
+
   return 0;
 }
 

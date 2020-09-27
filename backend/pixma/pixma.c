@@ -822,8 +822,10 @@ static void
 print_scan_param (int level, const pixma_scan_param_t * sp)
 {
   pixma_dbg (level, "Scan parameters\n");
-  pixma_dbg (level, "  line_size=%"PRIu64" image_size=%"PRIu64" channels=%u depth=%u\n",
-	     sp->line_size, sp->image_size, sp->channels, sp->depth);
+  pixma_dbg (level, "  fe_line_size=%"PRIu64" fe_image_size=%"PRIu64" fe_channels=%u fe_depth=%u\n",
+	     sp->fe_line_size, sp->fe_image_size, sp->fe_channels, sp->fe_depth);
+  pixma_dbg (level, "  be_line_size=%"PRIu64" be_image_size=%"PRIu64" be_channels=%u be_depth=%u\n",
+	     sp->be_line_size, sp->be_image_size, sp->be_channels, sp->be_depth);
   pixma_dbg (level, "  dpi=%ux%u offset=(%u,%u) dimension=%ux%u\n",
 	     sp->xdpi, sp->ydpi, sp->x, sp->y, sp->w, sp->h);
   pixma_dbg (level, "  gamma_table=%p source=%d\n", sp->gamma_table,
@@ -840,8 +842,8 @@ calc_scan_param (pixma_sane_t * ss, pixma_scan_param_t * sp)
 
   memset (sp, 0, sizeof (*sp));
 
-  sp->channels = (OVAL (opt_mode).w == 0) ? 3 : 1;
-  sp->depth = (OVAL (opt_mode).w == 2) ? 1 : 8;
+  sp->fe_channels = (OVAL (opt_mode).w == 0) ? 3 : 1;
+  sp->fe_depth = (OVAL (opt_mode).w == 2) ? 1 : 8;
   sp->xdpi = sp->ydpi = OVAL (opt_resolution).w;
 
 #define PIXEL(x,dpi) (int)((SANE_UNFIX(x) / 25.4 * (dpi)) + 0.5)
@@ -998,7 +1000,7 @@ reader_loop (pixma_sane_t * ss)
 
   PDBG (pixma_dbg (3, "Reader task started\n"));
   /*bufsize = ss->sp.line_size + 1;*/	/* XXX: "odd" bufsize for testing pixma_read_image() */
-  bufsize = ss->sp.line_size;   /* bufsize EVEN needed by Xsane for 48 bits depth */
+  bufsize = ss->sp.be_line_size;   /* bufsize EVEN needed by Xsane for 48 bits depth */
   buf = malloc (bufsize);
   if (!buf)
     {
@@ -1395,9 +1397,9 @@ pixma_jpeg_read(pixma_sane_t *ss, SANE_Byte *data,
 
   (*ss->jdst->put_pixel_rows)(cinfo, ss->jdst, 1, (char *)src->linebuffer);
 
-  *length = ss->sp.w * ss->sp.channels;
+  *length = ss->sp.w * ss->sp.fe_channels;
   /* Convert RGB into grayscale */
-  if (ss->sp.channels == 1)
+  if (ss->sp.fe_channels == 1)
     {
       unsigned int i;
       unsigned char *d = (unsigned char *)src->linebuffer;
@@ -1415,7 +1417,7 @@ pixma_jpeg_read(pixma_sane_t *ss, SANE_Byte *data,
   /* Maybe pack into lineary binary image
    * Make sure that we cope with non-rounded width when computing the number of bytes in 'length' */
   PDBG (pixma_dbg (1, "JPEG READ: raw width=%d max width=%d\n",*length, max_length));
-  if (ss->sp.depth == 1)
+  if (ss->sp.fe_depth == 1)
     {
       *length = ((*length) + 7) / 8;
       unsigned int i;
@@ -1468,7 +1470,7 @@ read_image (pixma_sane_t * ss, void *buf, unsigned size, int *readlen)
 
   if (readlen)
     *readlen = 0;
-  if (ss->image_bytes_read >= ss->sp.image_size)
+  if (ss->image_bytes_read >= ss->sp.fe_image_size)
     return SANE_STATUS_EOF;
 
   do
@@ -1527,11 +1529,11 @@ read_image (pixma_sane_t * ss, void *buf, unsigned size, int *readlen)
 
   /* here count >= 0 */
   ss->image_bytes_read += count;
-  if (ss->image_bytes_read > ss->sp.image_size)
+  if (ss->image_bytes_read > ss->sp.fe_image_size)
     {
       PDBG (pixma_dbg (1, "BUG:ss->image_bytes_read > ss->sp.image_size\n"));
     }
-  if (ss->image_bytes_read >= ss->sp.image_size)
+  if (ss->image_bytes_read >= ss->sp.fe_image_size)
     {
       close (ss->rpipe);
       ss->rpipe = -1;
@@ -1543,7 +1545,7 @@ read_image (pixma_sane_t * ss, void *buf, unsigned size, int *readlen)
     {
       PDBG (pixma_dbg (3, "read_image():reader task closed the pipe:%"
 		       PRIu64" bytes received, %"PRIu64" bytes expected\n",
-		       ss->image_bytes_read, ss->sp.image_size));
+		       ss->image_bytes_read, ss->sp.fe_image_size));
       close (ss->rpipe);
       if (ss->sp.mode_jpeg)
         pixma_jpeg_finish(ss);
@@ -1801,13 +1803,12 @@ sane_get_parameters (SANE_Handle h, SANE_Parameters * p)
       calc_scan_param (ss, &temp);
       sp = &temp;
     }
-  p->format = (sp->channels == 3) ? SANE_FRAME_RGB : SANE_FRAME_GRAY;
+  p->format = (sp->fe_channels == 3) ? SANE_FRAME_RGB : SANE_FRAME_GRAY;
   p->last_frame = SANE_TRUE;
   p->lines = sp->h;
-  p->depth = sp->depth;
+  p->depth = sp->fe_depth;
   p->pixels_per_line = sp->w;
-  /* p->bytes_per_line = sp->line_size; NOTE: It should work this way, but it doesn't. No SANE frontend can cope with this. */
-  p->bytes_per_line = ((sp->w * sp->channels * sp->depth) + 7) / 8;
+  p->bytes_per_line = sp->fe_line_size;
   return SANE_STATUS_GOOD;
 }
 
@@ -1855,7 +1856,7 @@ sane_start (SANE_Handle h)
   error = start_reader_task (ss);
   if (error >= 0)
     {
-      ss->output_line_size = ((ss->sp.w * ss->sp.channels * ss->sp.depth) + 7) / 8;
+      ss->output_line_size = ((ss->sp.w * ss->sp.fe_channels * ss->sp.fe_depth) + 7) / 8;
       ss->byte_pos_in_line = 0;
       ss->last_read_status = SANE_STATUS_GOOD;
       ss->scanning = SANE_TRUE;
@@ -1907,7 +1908,7 @@ sane_read (SANE_Handle h, SANE_Byte * buf, SANE_Int maxlen, SANE_Int * len)
   /* CCD scanners use software lineart
    * the scanner must scan 24 bit color or 8 bit grayscale for one bit lineart */
 //  if ((ss->sp.line_size - ((ss->sp.software_lineart == 1) ? (ss->output_line_size * 8) : ss->output_line_size)) == 0)
-  if ((ss->sp.line_size - ss->output_line_size) == 0)
+  if ((ss->sp.fe_line_size - ss->output_line_size) == 0)
     {
       status = read_image (ss, buf, maxlen, &sum);
     }
@@ -1934,7 +1935,7 @@ sane_read (SANE_Handle h, SANE_Byte * buf, SANE_Int maxlen, SANE_Int * len)
           else
             {
               /* skip padding */
-              n = ss->sp.line_size - ss->byte_pos_in_line;
+              n = ss->sp.fe_line_size - ss->byte_pos_in_line;
               if (n > (int) sizeof (temp))
                 {
                   PDBG (pixma_dbg (3, "Inefficient skip buffer. Should be %d\n", n));
@@ -1944,7 +1945,7 @@ sane_read (SANE_Handle h, SANE_Byte * buf, SANE_Int maxlen, SANE_Int * len)
               if (n == 0)
                 break;
               ss->byte_pos_in_line += n;
-              if (ss->byte_pos_in_line == ss->sp.line_size)
+              if (ss->byte_pos_in_line == ss->sp.fe_line_size)
                 ss->byte_pos_in_line = 0;
              }
         }

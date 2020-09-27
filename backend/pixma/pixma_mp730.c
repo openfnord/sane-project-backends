@@ -219,9 +219,9 @@ send_scan_param (pixma_t * s)
   pixma_set_be32 (mp->raw_width, data + 0x10);
   pixma_set_be32 (s->param->h, data + 0x14);
 
-  if (s->param->channels == 1)
+  if (s->param->be_channels == 1)
     {
-      if (s->param->depth == 1)
+      if (s->param->be_depth == 1)
         data[0x18] = 0x01;
       else
         data[0x18] = 0x04;
@@ -229,10 +229,10 @@ send_scan_param (pixma_t * s)
   else
     data[0x18] = 0x08;
 
-  data[0x19] = s->param->channels * s->param->depth;  /* bits per pixel, for lineart should be 0x01 */
-  data[0x1e] = (s->param->depth == 1) ? 0x80 : 0x00;  /* modify for lineart: 0x80 NEW */
-  data[0x1f] = (s->param->depth == 1) ? 0x80 : 0x7f;  /* modify for lineart: 0x80 */
-  data[0x20] = (s->param->depth == 1) ? 0x01 : 0xff;  /* modify for lineart: 0x01 */
+  data[0x19] = s->param->be_channels * s->param->be_depth;  /* bits per pixel, for lineart should be 0x01 */
+  data[0x1e] = (s->param->be_depth == 1) ? 0x80 : 0x00;  /* modify for lineart: 0x80 NEW */
+  data[0x1f] = (s->param->be_depth == 1) ? 0x80 : 0x7f;  /* modify for lineart: 0x80 */
+  data[0x20] = (s->param->be_depth == 1) ? 0x01 : 0xff;  /* modify for lineart: 0x01 */
   data[0x23] = 0x81;
 
   return pixma_exec (s, &mp->cb);
@@ -540,9 +540,9 @@ calc_raw_width (pixma_t * s, const pixma_scan_param_t * sp)
   unsigned raw_width;
   /* FIXME: Does MP730 need the alignment? */
   /*  TODO test: MP710/740 */
-  if (sp->channels == 1)
+  if (sp->be_channels == 1)
     {
-      if (sp->depth == 8)   /* grayscale  */
+      if (sp->be_depth == 8)   /* grayscale  */
         {
           if (s->cfg->pid == MP5_PID   ||
               s->cfg->pid == MP10_PID  ||
@@ -571,9 +571,10 @@ mp730_check_param (pixma_t * s, pixma_scan_param_t * sp)
   uint8_t k = 1;
 
   /* check if channels is 3, or if depth is 1 then channels also 1 else set depth to 8 */
-  if ((sp->channels==3) || !(sp->channels==1 && sp->depth==1))
+  if ((sp->fe_channels==3) || !(sp->fe_channels==1 && sp->fe_depth==1))
     {
-      sp->depth=8;
+      sp->fe_depth=8;
+      sp->be_depth=8;
     }
   /* for MP5, MP10, MP360/370, MP700/730 in grayscale & lineart modes, max scan res is 600 dpi */
   if (s->cfg->pid == MP5_PID   ||
@@ -585,7 +586,7 @@ mp730_check_param (pixma_t * s, pixma_scan_param_t * sp)
       s->cfg->pid == MP375R_PID ||
       s->cfg->pid == MP390_PID)
     {
-      if (sp->channels == 1)
+      if (sp->fe_channels == 1)
           k = sp->xdpi / MIN (sp->xdpi, 600);
     }
 
@@ -597,7 +598,8 @@ mp730_check_param (pixma_t * s, pixma_scan_param_t * sp)
 
   sp->w = calc_raw_width (s, sp);
   sp->w /= k;
-  sp->line_size = (calc_raw_width (s, sp) * sp->channels * sp->depth) / 8;
+  sp->fe_line_size = (calc_raw_width (s, sp) * sp->fe_channels * sp->fe_depth) / 8;
+  sp->be_line_size = sp->fe_line_size;
 
   return 0;
 }
@@ -620,13 +622,13 @@ mp730_scan (pixma_t * s)
   mp->raw_width = calc_raw_width (s, s->param);
   PDBG (pixma_dbg (3, "raw_width = %u\n", mp->raw_width));
 
-  n = IMAGE_BLOCK_SIZE / s->param->line_size + 1;
-  buf = (uint8_t *) malloc ((n + 1) * s->param->line_size + IMAGE_BLOCK_SIZE);
+  n = IMAGE_BLOCK_SIZE / s->param->be_line_size + 1;
+  buf = (uint8_t *) malloc ((n + 1) * s->param->be_line_size + IMAGE_BLOCK_SIZE);
   if (!buf)
     return PIXMA_ENOMEM;
   mp->buf = buf;
   mp->lbuf = buf;
-  mp->imgbuf = buf + n * s->param->line_size;
+  mp->imgbuf = buf + n * s->param->be_line_size;
   mp->imgbuf_len = 0;
 
   error = step1 (s);
@@ -693,11 +695,11 @@ mp730_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
 
       /* TODO: simplify! */
       mp->imgbuf_len += bytes_received;
-      n = mp->imgbuf_len / s->param->line_size;
+      n = mp->imgbuf_len / s->param->be_line_size;
       /* n = number of full lines (rows) we have in the buffer. */
       if (n != 0)
 	{
-	  if (s->param->channels != 1    &&
+	  if (s->param->be_channels != 1    &&
 	      s->cfg->pid != MF5730_PID  &&
 	      s->cfg->pid != MF5750_PID  &&
 	      s->cfg->pid != MF5770_PID  &&
@@ -709,9 +711,9 @@ mp730_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
 	    }
 	  else
              /* grayscale/lineart or MF57x0 or MF3110 */
-             memcpy (mp->lbuf, mp->imgbuf, n * s->param->line_size);
+             memcpy (mp->lbuf, mp->imgbuf, n * s->param->be_line_size);
 
-	  block_size = n * s->param->line_size;
+	  block_size = n * s->param->be_line_size;
 	  mp->imgbuf_len -= block_size;
 	  memcpy (mp->imgbuf, mp->imgbuf + block_size, mp->imgbuf_len);
 	}
