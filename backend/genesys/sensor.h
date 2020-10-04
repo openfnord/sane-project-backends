@@ -73,31 +73,30 @@ class StaggerConfig
 {
 public:
     StaggerConfig() = default;
-    StaggerConfig(unsigned min_resolution, unsigned lines_at_min) :
-        min_resolution_{min_resolution},
-        lines_at_min_{lines_at_min}
+    explicit StaggerConfig(std::initializer_list<std::size_t> shifts) :
+        shifts_{shifts}
     {
     }
 
-    unsigned stagger_at_resolution(unsigned xresolution, unsigned yresolution) const
+    std::size_t max_shift() const
     {
-        if (min_resolution_ == 0 || xresolution < min_resolution_)
+        if (shifts_.empty()) {
             return 0;
-        return yresolution / min_resolution_ * lines_at_min_;
+        }
+        return *std::max_element(shifts_.begin(), shifts_.end());
     }
 
-    unsigned min_resolution() const { return min_resolution_; }
-    unsigned lines_at_min() const { return lines_at_min_; }
+    bool empty() const { return shifts_.empty(); }
+    std::size_t size() const { return shifts_.size(); }
+    const std::vector<std::size_t>& shifts() const { return shifts_; }
 
     bool operator==(const StaggerConfig& other) const
     {
-        return min_resolution_ == other.min_resolution_ &&
-                lines_at_min_ == other.lines_at_min_;
+        return shifts_ == other.shifts_;
     }
 
 private:
-    unsigned min_resolution_ = 0;
-    unsigned lines_at_min_ = 0;
+    std::vector<std::size_t> shifts_;
 
     template<class Stream>
     friend void serialize(Stream& str, StaggerConfig& x);
@@ -106,8 +105,7 @@ private:
 template<class Stream>
 void serialize(Stream& str, StaggerConfig& x)
 {
-    serialize(str, x.min_resolution_);
-    serialize(str, x.lines_at_min_);
+    serialize(str, x.shifts_);
 }
 
 std::ostream& operator<<(std::ostream& out, const StaggerConfig& config);
@@ -121,7 +119,7 @@ enum class FrontendType : unsigned
     CANON_LIDE_80,
     WOLFSON_GL841, // old code path, likely wrong calculation
     WOLFSON_GL846, // old code path, likely wrong calculation
-    WOLFSON_GL847, // old code path, likely wrong calculation
+    ANALOG_DEVICES_GL847, // old code path, likely wrong calculation
     WOLFSON_GL124, // old code path, likely wrong calculation
 };
 
@@ -258,7 +256,12 @@ struct Genesys_Sensor {
 
     // sensor resolution in CCD pixels. Note that we may read more than one CCD pixel per logical
     // pixel, see ccd_pixels_per_system_pixel()
-    unsigned optical_res = 0;
+    unsigned full_resolution = 0;
+
+    // sensor resolution in pixel values that are read by the chip. Many scanners make low
+    // resolutions faster by configuring the timings in such a way that 1/2 or 1/4 of pixel values
+    // that are read. If zero, then it is equal to `full_resolution`.
+    unsigned optical_resolution = 0;
 
     // the resolution list that the sensor is usable at.
     ValueFilterAny<unsigned> resolutions = VALUE_FILTER_ANY;
@@ -277,24 +280,26 @@ struct Genesys_Sensor {
     // resolution. The value zero does not set the override.
     unsigned register_dpiset = 0;
 
-    // CCD may present itself as half or quarter-size CCD on certain resolutions
-    int ccd_size_divisor = 1;
-
     // The resolution to use for shading calibration
     unsigned shading_resolution = 0;
 
     // How many real pixels correspond to one shading pixel that is sent to the scanner
     unsigned shading_factor = 1;
 
+    // How many pixels the shading data is offset to the right from the acquired data. Calculated
+    // in shading resolution.
+    int shading_pixel_offset = 0;
+
     // This defines the ratio between logical pixel coordinates and the pixel coordinates sent to
     // the scanner.
     Ratio pixel_count_ratio = Ratio{1, 1};
 
+    // The offset in pixels in terms of scan resolution that needs to be applied to scan position.
+    int output_pixel_offset = 0;
+
     int black_pixels = 0;
     // value of the dummy register
     int dummy_pixel = 0;
-    // last pixel of CCD margin at optical resolution
-    int ccd_start_xoffset = 0;
     // TA CCD target code (reference gain)
     int fau_gain_white_ref = 0;
     // CCD target code (reference gain)
@@ -305,8 +310,7 @@ struct Genesys_Sensor {
 
     int exposure_lperiod = -1;
 
-    // the number of pixels in a single segment.
-    // only on gl843
+    // the number of pixels in a single segment. This is counted in output resolution.
     unsigned segment_size = 0;
 
     // the order of the segments, if any, for the sensor. If the sensor is not segmented or uses
@@ -314,25 +318,28 @@ struct Genesys_Sensor {
     // only on gl843
     std::vector<unsigned> segment_order;
 
-    // some CCDs use two arrays of pixels for double resolution. On such CCDs when scanning at
-    // high-enough resolution, every other pixel column is shifted
-    StaggerConfig stagger_config;
+    // some CCDs use multiple arrays of pixels for double or quadruple resolution. This can result
+    // in the following effects on the output:
+    //  - every n-th column may be shifted in a vertical direction.
+    //  - the columns themselves may be reordered in arbitrary order and may require shifting
+    //    in X direction.
+    StaggerConfig stagger_x;
+    StaggerConfig stagger_y;
 
     // True if calibration should be performed on host-side
     bool use_host_side_calib = false;
 
-    GenesysRegisterSettingSet custom_base_regs; // gl646-specific
     GenesysRegisterSettingSet custom_regs;
     GenesysRegisterSettingSet custom_fe_regs;
 
     // red, green and blue gamma coefficient for default gamma tables
     AssignableArray<float, 3> gamma;
 
-    std::function<unsigned(const Genesys_Sensor&, unsigned)> get_ccd_size_divisor_fun;
-
-    unsigned get_ccd_size_divisor_for_dpi(unsigned xres) const
+    unsigned get_optical_resolution() const
     {
-        return get_ccd_size_divisor_fun(*this, xres);
+        if (optical_resolution != 0)
+            return optical_resolution;
+        return full_resolution;
     }
 
     // how many CCD pixels are processed per system pixel time. This corresponds to CKSEL + 1
@@ -358,25 +365,26 @@ struct Genesys_Sensor {
     bool operator==(const Genesys_Sensor& other) const
     {
         return sensor_id == other.sensor_id &&
-            optical_res == other.optical_res &&
+            full_resolution == other.full_resolution &&
+            optical_resolution == other.optical_resolution &&
             resolutions == other.resolutions &&
             method == other.method &&
             shading_resolution == other.shading_resolution &&
-            ccd_size_divisor == other.ccd_size_divisor &&
             shading_factor == other.shading_factor &&
+            shading_pixel_offset == other.shading_pixel_offset &&
             pixel_count_ratio == other.pixel_count_ratio &&
+            output_pixel_offset == other.output_pixel_offset &&
             black_pixels == other.black_pixels &&
             dummy_pixel == other.dummy_pixel &&
-            ccd_start_xoffset == other.ccd_start_xoffset &&
             fau_gain_white_ref == other.fau_gain_white_ref &&
             gain_white_ref == other.gain_white_ref &&
             exposure == other.exposure &&
             exposure_lperiod == other.exposure_lperiod &&
             segment_size == other.segment_size &&
             segment_order == other.segment_order &&
-            stagger_config == other.stagger_config &&
+            stagger_x == other.stagger_x &&
+            stagger_y == other.stagger_y &&
             use_host_side_calib == other.use_host_side_calib &&
-            custom_base_regs == other.custom_base_regs &&
             custom_regs == other.custom_regs &&
             custom_fe_regs == other.custom_fe_regs &&
             gamma == other.gamma;
@@ -387,16 +395,16 @@ template<class Stream>
 void serialize(Stream& str, Genesys_Sensor& x)
 {
     serialize(str, x.sensor_id);
-    serialize(str, x.optical_res);
+    serialize(str, x.full_resolution);
     serialize(str, x.resolutions);
     serialize(str, x.method);
     serialize(str, x.shading_resolution);
-    serialize(str, x.ccd_size_divisor);
     serialize(str, x.shading_factor);
+    serialize(str, x.shading_pixel_offset);
+    serialize(str, x.output_pixel_offset);
     serialize(str, x.pixel_count_ratio);
     serialize(str, x.black_pixels);
     serialize(str, x.dummy_pixel);
-    serialize(str, x.ccd_start_xoffset);
     serialize(str, x.fau_gain_white_ref);
     serialize(str, x.gain_white_ref);
     serialize_newline(str);
@@ -409,11 +417,11 @@ void serialize(Stream& str, Genesys_Sensor& x)
     serialize_newline(str);
     serialize(str, x.segment_order);
     serialize_newline(str);
-    serialize(str, x.stagger_config);
+    serialize(str, x.stagger_x);
+    serialize_newline(str);
+    serialize(str, x.stagger_y);
     serialize_newline(str);
     serialize(str, x.use_host_side_calib);
-    serialize_newline(str);
-    serialize(str, x.custom_base_regs);
     serialize_newline(str);
     serialize(str, x.custom_regs);
     serialize_newline(str);

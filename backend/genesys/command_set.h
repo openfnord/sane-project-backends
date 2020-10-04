@@ -67,13 +67,10 @@ public:
     virtual void init(Genesys_Device* dev) const = 0;
 
     virtual void init_regs_for_warmup(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                                      Genesys_Register_Set* regs, int* channels,
-                                      int* total_size) const = 0;
+                                      Genesys_Register_Set* regs) const = 0;
 
     virtual void init_regs_for_shading(Genesys_Device* dev, const Genesys_Sensor& sensor,
                                        Genesys_Register_Set& regs) const = 0;
-    virtual void init_regs_for_scan(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                                    Genesys_Register_Set& regs) const = 0;
 
     /** Set up registers for a scan. Similar to init_regs_for_scan except that the session is
         already computed from the session
@@ -110,15 +107,10 @@ public:
     // Updates hardware sensor information in Genesys_Scanner.val[].
     virtual void update_hardware_sensors(struct Genesys_Scanner* s) const = 0;
 
-    /** Whether the scanner needs to call update_home_sensor_gpio before reading the status of the
-        home sensor. On some chipsets this is unreliable until update_home_sensor_gpio() is called.
+    /** Needed on some chipsets before reading the status of the home sensor as the sensor may be
+        controlled by additional GPIO registers.
     */
-    virtual bool needs_update_home_sensor_gpio() const { return false; }
-
-    /** Needed on some chipsets before reading the status of the home sensor to make this operation
-        reliable.
-    */
-    virtual void update_home_sensor_gpio(Genesys_Device& dev) const { (void) dev; }
+    virtual void update_home_sensor_gpio(Genesys_Device& dev) const = 0;
 
     // functions for sheetfed scanners
 
@@ -132,9 +124,6 @@ public:
 
     /// eject document from scanner
     virtual void eject_document(Genesys_Device* dev) const = 0;
-
-    /// move scanning head to transparency adapter
-    virtual void move_to_ta(Genesys_Device* dev) const = 0;
 
     /// write shading data calibration to ASIC
     virtual void send_shading_data(Genesys_Device* dev, const Genesys_Sensor& sensor,

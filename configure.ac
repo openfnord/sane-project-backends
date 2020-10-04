@@ -2,8 +2,6 @@ dnl Process this file with autoconf to produce a configure script.
 
 dnl ******************************************************************
 dnl  Set up autoconf and automake
-dnl  When preparing a release, modify the numeric version components
-dnl  and remove the git suffix.
 dnl ******************************************************************
 AC_INIT([sane-backends],m4_esyscmd_s([git describe --dirty]),
         [sane-devel@alioth-lists.debian.net])
@@ -13,10 +11,6 @@ AC_CONFIG_HEADERS([include/sane/config.h])
 
 AM_INIT_AUTOMAKE([1.15 subdir-objects -Wall])
 AM_SILENT_RULES
-dnl Turn off feature were automake will automatically run autoreconf.
-dnl This is because we used to check in generated files into CVS which
-dnl has known timestamp issues.
-AM_MAINTAINER_MODE
 
 dnl ******************************************************************
 dnl  Determine SANE version components and release status
@@ -42,6 +36,7 @@ dnl ******************************************************************
 AC_PROG_CC
 AC_PROG_CXX
 AM_PROG_CC_C_O
+AM_PATH_PYTHON(2.7)
 sane_save_CC=$CC
 AC_PROG_CC_C99                  dnl enables extensions to ISO C99 :-(
 AS_IF([test xno != "x$ac_cv_prog_cc_c99"],
@@ -72,7 +67,7 @@ dnl Checks for programs.
 dnl ***********************************************************************
 AC_PATH_PROG(SANE_CONFIG_PATH, sane-config, no)
 
-dnl Call explicitely before using PKG_*
+dnl Call explicitly before using PKG_*
 PKG_PROG_PKG_CONFIG
 
 AM_CONDITIONAL(CROSS_COMPILING, test x$cross_compiling = xyes)
@@ -105,7 +100,7 @@ AC_CHECK_LIB(m, sqrt, MATH_LIB="-lm")
 AC_SUBST(MATH_LIB)
 case ${host_os} in
   os2*)
-  AC_CHECK_LIB(syslog, sylog, SYSLOG_LIBS="-lsyslog")
+  AC_CHECK_LIB(syslog, syslog, SYSLOG_LIBS="-lsyslog")
   ;;
   beos*)
   AC_CHECK_LIB(be, syslog, SYSLOG_LIBS="-lbe")
@@ -129,7 +124,7 @@ AC_ARG_WITH(v4l,
              # as "$with_v4l" will be set to "no"])
 
 if test "$with_v4l" != "no" ; then
-  PKG_CHECK_MODULES(LIBV4L, libv4l1, have_libv4l1=yes, have_libv4l1=no)
+  PKG_CHECK_MODULES(LIBV4L, [libv4l1 >= 0.8.3], have_libv4l1=yes, have_libv4l1=no)
 fi
 
 AC_ARG_WITH(avahi,
@@ -589,7 +584,7 @@ AC_ARG_ENABLE(scsibuffersize,
   [set_scsibuffersize="$enableval"], [set_scsibuffersize=131072])
 AC_DEFINE_UNQUOTED(SCSIBUFFERSIZE, $set_scsibuffersize,
                    [SCSI command buffer size])
-dnl FIXME: Move tihs to configuration printout area but probably
+dnl FIXME: Move this to configuration printout area but probably
 dnl but probably needs to be wrapped by what ever uses it so its
 dnl only printed when used.
 echo "scsi buffersize: $set_scsibuffersize"
@@ -608,7 +603,7 @@ dnl ****
 dnl IPv6
 dnl ****
 
-dnl check for IPv6 (can be overriden by --enable-ipv6)
+dnl check for IPv6 (can be overridden by --enable-ipv6)
 if test "$ac_cv_func_getnameinfo" = "yes" \
   && test "$ac_cv_func_getaddrinfo" = "yes" ; then
   SANE_CHECK_IPV6
@@ -665,7 +660,7 @@ AC_ARG_ENABLE(local-backends,
                  [turn off compilation of all backends but net]))
 
 ALL_BACKENDS="abaton agfafocus apple artec artec_eplus48u as6e \
-        avision bh canon canon630u canon_dr canon_pp cardscan \
+        avision bh canon canon630u canon_dr canon_lide70 canon_pp cardscan \
         coolscan coolscan2 coolscan3 dc25 dc210 dc240 \
         dell1600n_net dmc epjitsu epson epson2 epsonds escl fujitsu \
         genesys gphoto2 gt68xx hp hp3500 hp3900 hp4200 hp5400 \
@@ -697,7 +692,10 @@ fi
 
 if test "${sane_cv_use_libjpeg}" = "yes"; then
   SANEI_SANEI_JPEG_LO="../sanei/sanei_jpeg.lo"
+  saved_LIBS="${LIBS}"
+  LIBS="${JPEG_LIBS}"
   AC_CHECK_FUNCS(jpeg_crop_scanline jpeg_skip_scanlines)
+  LIBS="${saved_LIBS}"
 fi
 AM_CONDITIONAL(HAVE_JPEG, test x$sane_cv_use_libjpeg = xyes)
 AC_SUBST(SANEI_SANEI_JPEG_LO)

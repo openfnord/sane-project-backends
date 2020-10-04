@@ -137,7 +137,6 @@ private:
     unsigned num_exceptions_on_enter_ = 0;
 };
 
-
 #if defined(__GNUC__) || defined(__clang__)
 #define GENESYS_CURRENT_FUNCTION __PRETTY_FUNCTION__
 #elif defined(__FUNCSIG__)
@@ -149,12 +148,35 @@ private:
 #define DBG_HELPER(var) DebugMessageHelper var(GENESYS_CURRENT_FUNCTION)
 #define DBG_HELPER_ARGS(var, ...) DebugMessageHelper var(GENESYS_CURRENT_FUNCTION, __VA_ARGS__)
 
+bool dbg_log_image_data();
+
 template<class F>
 SANE_Status wrap_exceptions_to_status_code(const char* func, F&& function)
 {
     try {
         function();
         return SANE_STATUS_GOOD;
+    } catch (const SaneException& exc) {
+        DBG(DBG_error, "%s: got error: %s\n", func, exc.what());
+        return exc.status();
+    } catch (const std::bad_alloc& exc) {
+        (void) exc;
+        DBG(DBG_error, "%s: failed to allocate memory\n", func);
+        return SANE_STATUS_NO_MEM;
+    } catch (const std::exception& exc) {
+        DBG(DBG_error, "%s: got uncaught exception: %s\n", func, exc.what());
+        return SANE_STATUS_INVAL;
+    } catch (...) {
+        DBG(DBG_error, "%s: got unknown uncaught exception\n", func);
+        return SANE_STATUS_INVAL;
+    }
+}
+
+template<class F>
+SANE_Status wrap_exceptions_to_status_code_return(const char* func, F&& function)
+{
+    try {
+        return function();
     } catch (const SaneException& exc) {
         DBG(DBG_error, "%s: got error: %s\n", func, exc.what());
         return exc.status();

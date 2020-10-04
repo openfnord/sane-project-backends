@@ -80,7 +80,7 @@
 /* timers */
 #define BJNP_BROADCAST_INTERVAL 10 	/* ms between broadcasts */
 #define BJNP_BC_RESPONSE_TIMEOUT 500  	/* waiting time for broadc. responses */
-#define BJNP_TIMEOUT_DEFAULT 10000	/* minimum tiemout value for network operations */
+#define BJNP_TIMEOUT_DEFAULT 10000	/* minimum timeout value for network operations */
 #define BJNP_TIMEOUT_TCP_CONNECT 2000   /* timeout for tcp connect attempts in ms */
 #define BJNP_USLEEP_MS 1000          	/* sleep for 1 msec */
 #define BJNP_TCP_CONNECT_INTERVAL 100   /* TCP retry interval in ms */
@@ -131,13 +131,14 @@ typedef struct
   int default_port;
   char * proto_string;
   char * method_string;
+  int single_tcp_session;
 } bjnp_protocol_defs_t;
 
 bjnp_protocol_defs_t bjnp_protocol_defs[] =
 {
-  {PROTOCOL_BJNP, BJNP_PORT_SCAN,"BJNP", "bjnp"},
-  {PROTOCOL_MFNP, MFNP_PORT_SCAN,"MFNP", "mfnp"},
-  {PROTOCOL_NONE, -1, NULL, NULL}
+  {PROTOCOL_BJNP, BJNP_PORT_SCAN,"BJNP", "bjnp", SANE_FALSE},
+  {PROTOCOL_MFNP, MFNP_PORT_SCAN,"MFNP", "mfnp", SANE_TRUE},
+  {PROTOCOL_NONE, -1, NULL, NULL, SANE_FALSE}
 };
 
 /* commands */
@@ -186,7 +187,7 @@ struct  __attribute__ ((__packed__)) BJNP_command
 
 struct  __attribute__ ((__packed__)) DISCOVER_RESPONSE
 {
-  struct BJNP_command response;	/* reponse header */
+  struct BJNP_command response;	/* response header */
   char unknown1[4];		/* 00 01 08 00 */
   char mac_len;			/* length of mac address */
   char addr_len;		/* length of address field */
@@ -346,13 +347,14 @@ typedef struct device_s
 {
   int open;			/* connection to scanner is opened */
 
-  /* protocol version */
+  /* protocol information */
   int protocol;
   char *protocol_string;
+  char single_tcp_session;
 
   /* sockets */
 
-  int tcp_socket;		/* open tcp socket for communcation to scannner */
+  int tcp_socket;		/* open tcp socket for communication to scannner */
   int16_t serial;		/* sequence number of command */
 
   /* communication state */

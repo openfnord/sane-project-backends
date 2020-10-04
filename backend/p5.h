@@ -140,8 +140,8 @@ typedef struct P5_Option
 } P5_Option;
 
 /**
- * Frontend session. This struct holds informations usefull for
- * the functions defined in SANE's standard. Informations closer
+ * Frontend session. This struct holds information useful for
+ * the functions defined in SANE's standard. Information closer
  * to the hardware are in the P5_Device structure. There is
  * as many session structure than frontends using the backend.
  */
@@ -169,7 +169,7 @@ typedef struct P5_Session
   SANE_Bool scanning;
 
   /** @brief non blocking flag
-   * SANE_TRUE if sane_read are non-blocking, ie returns immediatly if there
+   * SANE_TRUE if sane_read are non-blocking, ie returns immediately if there
    * is no data available from the scanning device. Modified by sane_set_io_mode()
    */
   SANE_Bool non_blocking;
@@ -195,7 +195,8 @@ typedef struct P5_Session
 
 static SANE_Status probe_p5_devices (void);
 static P5_Model *probe (const char *devicename);
-static SANE_Status config_attach (SANEI_Config * config, const char *devname);
+static SANE_Status config_attach (SANEI_Config * config, const char *devname,
+                                  void *data);
 static SANE_Status attach_p5 (const char *name, SANEI_Config * config);
 static SANE_Status init_options (struct P5_Session *session);
 static SANE_Status compute_parameters (struct P5_Session *session);

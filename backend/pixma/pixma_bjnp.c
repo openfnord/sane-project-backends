@@ -109,6 +109,13 @@
 #ifndef SSIZE_MAX
 # define SSIZE_MAX      LONG_MAX
 #endif
+#ifndef HOST_NAME_MAX
+# ifdef _POSIX_HOST_NAME_MAX
+#  define HOST_NAME_MAX _POSIX_HOST_NAME_MAX
+# else
+#  define HOST_NAME_MAX 255
+# endif
+#endif
 
 /* static data */
 static bjnp_device_t device[BJNP_NO_DEVICES];
@@ -454,69 +461,6 @@ determine_scanner_serial (const char *hostname, const char * mac_address, char *
 }
 
 static int
-bjnp_open_tcp (int devno)
-{
-  int sock;
-  int val;
-  bjnp_sockaddr_t *addr = device[devno].addr;
-  char host[BJNP_HOST_MAX];
-  int port;
-  int connect_timeout = BJNP_TIMEOUT_TCP_CONNECT;
-
-  get_address_info( addr, host, &port);
-  PDBG (bjnp_dbg (LOG_DEBUG, "bjnp_open_tcp: Setting up a TCP socket, dest: %s  port %d\n",
-		   host, port ) );
-
-  if ((sock = socket (get_protocol_family( addr ) , SOCK_STREAM, 0)) < 0)
-    {
-      PDBG (bjnp_dbg (LOG_CRIT, "bjnp_open_tcp: ERROR - Can not create socket: %s\n",
-		       strerror (errno)));
-      return -1;
-    }
-
-  val = 1;
-  setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof (val));
-
-#if 0
-  val = 1;
-  setsockopt (sock, SOL_SOCKET, SO_REUSEPORT, &val, sizeof (val));
-
-  val = 1;
-#endif
-
-  /*
-   * Using TCP_NODELAY improves responsiveness, especially on systems
-   * with a slow loopback interface...
-   */
-
-  val = 1;
-  setsockopt (sock, IPPROTO_TCP, TCP_NODELAY, &val, sizeof (val));
-
-/*
- * Close this socket when starting another process...
- */
-
-  fcntl (sock, F_SETFD, FD_CLOEXEC);
-
-  while (connect_timeout > 0)
-    {
-      if (connect
-          (sock, &(addr->addr), sa_size(device[devno].addr)) == 0)
-	    {
-              device[devno].tcp_socket = sock;
-              return 0;
-	    }
-      PDBG (bjnp_dbg( LOG_INFO, "bjnp_open_tcp: INFO - Can not yet connect over TCP to scanner: %s, retrying\n",
-                      strerror(errno)));
-      usleep(BJNP_TCP_CONNECT_INTERVAL * BJNP_USLEEP_MS);
-      connect_timeout = connect_timeout - BJNP_TCP_CONNECT_INTERVAL;
-    }
-  PDBG (bjnp_dbg
-        (LOG_CRIT, "bjnp_open_tcp: ERROR - Can not connect to scanner, giving up!"));
-  return -1;
-}
-
-static int
 split_uri (const char *devname, char *method, char *host, char *port,
 	   char *args)
 {
@@ -717,8 +661,8 @@ udp_command (const int dev_no, char *command, int cmd_len, char *response,
 	     int resp_len)
 {
   /*
-   * send udp command to given device and recieve the response`
-   * returns: the legth of the response or -1
+   * send udp command to given device and receive the response`
+   * returns: the length of the response or -1
    */
   int sockfd;
   struct timeval timeout;
@@ -1014,7 +958,7 @@ prepare_socket(const char *if_name, const bjnp_sockaddr_t *local_sa,
    * local_sa: local address to use
    * broadcast_sa: broadcast address to use, if NULL we use all hosts
    * dest_sa: (write) where to return destination address of broadcast
-   * retuns: open socket or -1
+   * returns: open socket or -1
    */
 
   int socket = -1;
@@ -1565,6 +1509,7 @@ bjnp_init_device_structure(int dn, bjnp_sockaddr_t *sa, bjnp_protocol_defs_t *pr
 #endif
   device[dn].protocol = protocol_defs->protocol_version;
   device[dn].protocol_string = protocol_defs->proto_string;
+  device[dn].single_tcp_session = protocol_defs->single_tcp_session;
   device[dn].tcp_socket = -1;
 
   device[dn].addr = (bjnp_sockaddr_t *) malloc(sizeof ( bjnp_sockaddr_t) );
@@ -1694,6 +1639,98 @@ bjnp_recv_data (int devno, SANE_Byte * buffer, size_t start_pos, size_t * len)
   return SANE_STATUS_GOOD;
 }
 
+static int
+bjnp_open_tcp (int devno)
+{
+  int sock;
+  int val;
+  char my_hostname[HOST_NAME_MAX];
+  char pid_str[64];
+  bjnp_sockaddr_t *addr = device[devno].addr;
+  char host[BJNP_HOST_MAX];
+  int port;
+  int connect_timeout = BJNP_TIMEOUT_TCP_CONNECT;
+
+  if (device[devno].tcp_socket != -1)
+    {
+      PDBG (bjnp_dbg( LOG_DEBUG, "bjnp_open_tcp: socket alreeady opened, nothing to do\n"));
+      return 0;
+    }
+  get_address_info( addr, host, &port);
+  PDBG (bjnp_dbg (LOG_DEBUG, "bjnp_open_tcp: Setting up a TCP socket, dest: %s  port %d\n",
+		   host, port ) );
+
+  gethostname (my_hostname, HOST_NAME_MAX);
+  my_hostname[HOST_NAME_MAX - 1] = '\0';
+  sprintf (pid_str, "Process ID = %d", getpid ());
+  bjnp_send_job_details (devno, my_hostname, getusername (), pid_str);
+
+  if ((sock = socket (get_protocol_family( addr ) , SOCK_STREAM, 0)) < 0)
+    {
+      PDBG (bjnp_dbg (LOG_CRIT, "bjnp_open_tcp: ERROR - Can not create socket: %s\n",
+		       strerror (errno)));
+      return -1;
+    }
+
+  val = 1;
+  setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, &val, sizeof (val));
+
+#if 0
+  val = 1;
+  setsockopt (sock, SOL_SOCKET, SO_REUSEPORT, &val, sizeof (val));
+
+  val = 1;
+#endif
+
+  /*
+   * Using TCP_NODELAY improves responsiveness, especially on systems
+   * with a slow loopback interface...
+   */
+
+  val = 1;
+  setsockopt (sock, IPPROTO_TCP, TCP_NODELAY, &val, sizeof (val));
+
+/*
+ * Close this socket when starting another process...
+ */
+
+  fcntl (sock, F_SETFD, FD_CLOEXEC);
+
+  while (connect_timeout > 0)
+    {
+      if (connect
+          (sock, &(addr->addr), sa_size(device[devno].addr)) == 0)
+	    {
+              device[devno].tcp_socket = sock;
+              PDBG( bjnp_dbg(LOG_INFO, "bjnp_open_tcp: created socket %d\n", sock));
+              return 0;
+	    }
+      PDBG (bjnp_dbg( LOG_INFO, "bjnp_open_tcp: INFO - Can not yet connect over TCP to scanner: %s, retrying\n",
+                      strerror(errno)));
+      usleep(BJNP_TCP_CONNECT_INTERVAL * BJNP_USLEEP_MS);
+      connect_timeout = connect_timeout - BJNP_TCP_CONNECT_INTERVAL;
+    }
+  PDBG (bjnp_dbg
+        (LOG_CRIT, "bjnp_open_tcp: ERROR - Can not connect to scanner, giving up!"));
+  return -1;
+}
+
+static void bjnp_close_tcp(int devno)
+{
+  if ( device[devno].tcp_socket != -1)
+    {
+      PDBG( bjnp_dbg( LOG_INFO, "bjnp_close_tcp - closing tcp-socket %d\n", device[devno].tcp_socket));
+      bjnp_finish_job (devno);
+      close (device[devno].tcp_socket);
+      device[devno].tcp_socket = -1;
+    }
+  else
+    {
+      PDBG( bjnp_dbg( LOG_INFO, "bjnp_close_tcp: socket not open, nothing to do.\n"));
+    }
+  device[devno].open = 0;
+}
+
 static BJNP_Status
 bjnp_allocate_device (SANE_String_Const devname,
                       SANE_Int * dn, char *resulting_host)
@@ -1762,7 +1799,7 @@ bjnp_allocate_device (SANE_String_Const devname,
   if (result != 0 )
     {
       PDBG (bjnp_dbg (LOG_CRIT, "bjnp_allocate_device: ERROR - Cannot resolve host: %s port %s\n", host, port));
-      return SANE_STATUS_INVAL;
+      return BJNP_STATUS_INVAL;
     }
 
   /* Check if a device number is already allocated to any of the scanner's addresses */
@@ -1794,7 +1831,7 @@ bjnp_allocate_device (SANE_String_Const devname,
           /* Check if found the scanner before, if so we use the best address
 	   * but still make sure the scanner is listed only once.
 	   * We check for matching addresses as wel as matching mac_addresses as
-           * an IPv6 host can have multiple adresses */
+           * an IPv6 host can have multiple addresses */
 
           if ( strcmp( device[i].mac_address, device[bjnp_no_devices].mac_address ) == 0 )
             {
@@ -2273,6 +2310,13 @@ sanei_bjnp_open (SANE_String_Const devname, SANE_Int * dn)
   if ( (result != BJNP_STATUS_GOOD) && (result != BJNP_STATUS_ALREADY_ALLOCATED ) ) {
     return SANE_STATUS_INVAL;
   }
+
+  if (device[*dn].single_tcp_session && bjnp_open_tcp (*dn) != 0)
+    {
+      PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_opening TCP connection failed.\n\n"));
+      return SANE_STATUS_INVAL;
+    }
+  PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_open done.\n\n"));
   return SANE_STATUS_GOOD;
 }
 
@@ -2286,8 +2330,8 @@ sanei_bjnp_close (SANE_Int dn)
 {
   PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_close(%d):\n", dn));
 
-  device[dn].open = 0;
-  sanei_bjnp_deactivate(dn);
+  bjnp_close_tcp( dn );
+  PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_close done.\n\n"));
 }
 
 /** Activate BJNP device connection
@@ -2298,21 +2342,13 @@ sanei_bjnp_close (SANE_Int dn)
 SANE_Status
 sanei_bjnp_activate (SANE_Int dn)
 {
-  char hostname[256];
-  char pid_str[64];
-
   PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_activate (%d)\n", dn));
-  gethostname (hostname, 256);
-  hostname[255] = '\0';
-  sprintf (pid_str, "Process ID = %d", getpid ());
-
-  bjnp_send_job_details (dn, hostname, getusername (), pid_str);
-
-  if (bjnp_open_tcp (dn) != 0)
+  if (!(device[dn].single_tcp_session) && bjnp_open_tcp (dn) != 0)
     {
+      PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_activate: open TCP connection failed.\n\n"));
       return SANE_STATUS_INVAL;
     }
-
+  PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_activate done.\n\n"));
   return SANE_STATUS_GOOD;
 }
 
@@ -2325,12 +2361,11 @@ SANE_Status
 sanei_bjnp_deactivate (SANE_Int dn)
 {
   PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_deactivate (%d)\n", dn));
-  if ( device[dn].tcp_socket != -1)
-    {
-      bjnp_finish_job (dn);
-      close (device[dn].tcp_socket);
-      device[dn].tcp_socket = -1;
-    }
+  if (!device[dn].single_tcp_session)
+  {
+    bjnp_close_tcp(dn);
+  }
+  PDBG (bjnp_dbg (LOG_INFO, "sanei_bjnp_deactivate done.\n\n"));
   return SANE_STATUS_GOOD;
 }
 
@@ -2357,9 +2392,9 @@ sanei_bjnp_set_timeout (SANE_Int devno, SANE_Int timeout)
  * @param size size of the data
  *
  * @return
- * - SANE_STATUS_GOOD - on succes
+ * - SANE_STATUS_GOOD - on success
  * - SANE_STATUS_EOF - if zero bytes have been read
- * - SANE_STATUS_IO_ERROR - if an error occured during the read
+ * - SANE_STATUS_IO_ERROR - if an error occurred during the read
  * - SANE_STATUS_INVAL - on every other error
  *
  */
@@ -2421,7 +2456,7 @@ sanei_bjnp_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
           if ( device[dn].scanner_data_left < device[dn].blocksize)
             {
               /* the scanner will not react at all to a read request, when no more data is available */
-              /* we now determine end of data by comparing the payload size to the maximun blocksize */
+              /* we now determine end of data by comparing the payload size to the maximum blocksize */
               /* this block is shorter than blocksize, so after this block we are done */
 
               device[dn].last_block = 1;
@@ -2458,7 +2493,7 @@ sanei_bjnp_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
       recvd = recvd + read_size;
     }
 
-  PDBG (bjnp_dbg (LOG_DEBUG, "bjnp_read_bulk: %s: Returning %ld bytes, backend expexts %ld\n",
+  PDBG (bjnp_dbg (LOG_DEBUG, "bjnp_read_bulk: %s: Returning %ld bytes, backend expects %ld\n",
         (recvd == *size)? "OK": "NOTICE",recvd, *size ) );
   *size = recvd;
   if ( *size == 0 )
@@ -2476,8 +2511,8 @@ sanei_bjnp_read_bulk (SANE_Int dn, SANE_Byte * buffer, size_t * size)
  * @param size size of the data
  *
  * @return
- * - SANE_STATUS_GOOD - on succes
- * - SANE_STATUS_IO_ERROR - if an error occured during the write
+ * - SANE_STATUS_GOOD - on success
+ * - SANE_STATUS_IO_ERROR - if an error occurred during the write
  * - SANE_STATUS_INVAL - on every other error
  */
 
@@ -2549,9 +2584,9 @@ sanei_bjnp_write_bulk (SANE_Int dn, const SANE_Byte * buffer, size_t * size)
  * @param size size of the data
  *
  * @return
- * - SANE_STATUS_GOOD - on succes
+ * - SANE_STATUS_GOOD - on success
  * - SANE_STATUS_EOF - if zero bytes have been read
- * - SANE_STATUS_IO_ERROR - if an error occured during the read
+ * - SANE_STATUS_IO_ERROR - if an error occurred during the read
  * - SANE_STATUS_INVAL - on every other error
  *
  */

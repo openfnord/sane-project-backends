@@ -53,15 +53,6 @@ namespace genesys {
 
 ImagePipelineNode::~ImagePipelineNode() {}
 
-std::size_t ImagePipelineNodeBytesSource::consume_remaining_bytes(std::size_t bytes)
-{
-    if (bytes > remaining_bytes_) {
-        bytes = remaining_bytes_;
-    }
-    remaining_bytes_ -= bytes;
-    return bytes;
-}
-
 bool ImagePipelineNodeCallableSource::get_next_row_data(std::uint8_t* out_data)
 {
     bool got_data = producer_(get_row_bytes(), out_data);
@@ -78,7 +69,7 @@ ImagePipelineNodeBufferedCallableSource::ImagePipelineNodeBufferedCallableSource
     format_{format},
     buffer_{input_batch_size, producer}
 {
-    set_remaining_bytes(height_ * get_row_bytes());
+    buffer_.set_remaining_size(height_ * get_row_bytes());
 }
 
 bool ImagePipelineNodeBufferedCallableSource::get_next_row_data(std::uint8_t* out_data)
@@ -92,45 +83,8 @@ bool ImagePipelineNodeBufferedCallableSource::get_next_row_data(std::uint8_t* ou
 
     bool got_data = true;
 
-    auto row_bytes = get_row_bytes();
-    auto bytes_to_ask = consume_remaining_bytes(row_bytes);
-    if (bytes_to_ask < row_bytes) {
-        got_data = false;
-    }
-
-    got_data &= buffer_.get_data(bytes_to_ask, out_data);
+    got_data &= buffer_.get_data(get_row_bytes(), out_data);
     curr_row_++;
-    if (!got_data) {
-        eof_ = true;
-    }
-    return got_data;
-}
-
-
-ImagePipelineNodeBufferedGenesysUsb::ImagePipelineNodeBufferedGenesysUsb(
-        std::size_t width, std::size_t height, PixelFormat format, std::size_t total_size,
-        std::size_t buffer_size, ProducerCallback producer) :
-    width_{width},
-    height_{height},
-    format_{format},
-    buffer_{total_size, buffer_size, producer}
-{
-    set_remaining_bytes(total_size);
-}
-
-bool ImagePipelineNodeBufferedGenesysUsb::get_next_row_data(std::uint8_t* out_data)
-{
-    if (remaining_bytes() != buffer_.remaining_size() + buffer_.available()) {
-        buffer_.set_remaining_size(remaining_bytes() - buffer_.available());
-    }
-    bool got_data = true;
-
-    std::size_t row_bytes = get_row_bytes();
-    std::size_t ask_bytes = consume_remaining_bytes(row_bytes);
-    if (ask_bytes < row_bytes) {
-        got_data = false;
-    }
-    got_data &= buffer_.get_data(ask_bytes, out_data);
     if (!got_data) {
         eof_ = true;
     }
@@ -151,7 +105,6 @@ ImagePipelineNodeArraySource::ImagePipelineNodeArraySource(std::size_t width, st
         throw SaneException("The given array is too small (%zu bytes). Need at least %zu",
                             data_.size(), size);
     }
-    set_remaining_bytes(size);
 }
 
 bool ImagePipelineNodeArraySource::get_next_row_data(std::uint8_t* out_data)
@@ -161,21 +114,11 @@ bool ImagePipelineNodeArraySource::get_next_row_data(std::uint8_t* out_data)
         return false;
     }
 
-    bool got_data = true;
-
     auto row_bytes = get_row_bytes();
-    auto bytes_to_ask = consume_remaining_bytes(row_bytes);
-    if (bytes_to_ask < row_bytes) {
-        got_data = false;
-    }
-
-    std::memcpy(out_data, data_.data() + get_row_bytes() * next_row_, bytes_to_ask);
+    std::memcpy(out_data, data_.data() + row_bytes * next_row_, row_bytes);
     next_row_++;
 
-    if (!got_data) {
-        eof_ = true;
-    }
-    return got_data;
+    return true;
 }
 
 
@@ -319,6 +262,50 @@ bool ImagePipelineNodeSwap16BitEndian::get_next_row_data(std::uint8_t* out_data)
     return got_data;
 }
 
+ImagePipelineNodeInvert::ImagePipelineNodeInvert(ImagePipelineNode& source) :
+    source_(source)
+{
+}
+
+bool ImagePipelineNodeInvert::get_next_row_data(std::uint8_t* out_data)
+{
+    bool got_data = source_.get_next_row_data(out_data);
+    auto num_values = get_width() * get_pixel_channels(source_.get_format());
+    auto depth = get_pixel_format_depth(source_.get_format());
+
+    switch (depth) {
+        case 16: {
+            auto* data = reinterpret_cast<std::uint16_t*>(out_data);
+            for (std::size_t i = 0; i < num_values; ++i) {
+                *data = 0xffff - *data;
+                data++;
+            }
+            break;
+        }
+        case 8: {
+            auto* data = out_data;
+            for (std::size_t i = 0; i < num_values; ++i) {
+                *data = 0xff - *data;
+                data++;
+            }
+            break;
+        }
+        case 1: {
+            auto* data = out_data;
+            auto num_bytes = (num_values + 7) / 8;
+            for (std::size_t i = 0; i < num_bytes; ++i) {
+                *data = ~*data;
+                data++;
+            }
+            break;
+        }
+        default:
+            throw SaneException("Unsupported pixel depth");
+    }
+
+    return got_data;
+}
+
 ImagePipelineNodeMergeMonoLines::ImagePipelineNodeMergeMonoLines(ImagePipelineNode& source,
                                                                  ColorOrder color_order) :
     source_(source),
@@ -456,6 +443,12 @@ ImagePipelineNodeComponentShiftLines::ImagePipelineNodeComponentShiftLines(
                                 static_cast<unsigned>(source.get_format()));
     }
     extra_height_ = *std::max_element(channel_shifts_.begin(), channel_shifts_.end());
+    height_ = source_.get_height();
+    if (extra_height_ > height_) {
+        height_ = 0;
+    } else {
+        height_ -= extra_height_;
+    }
 }
 
 bool ImagePipelineNodeComponentShiftLines::get_next_row_data(std::uint8_t* out_data)
@@ -492,18 +485,13 @@ ImagePipelineNodePixelShiftLines::ImagePipelineNodePixelShiftLines(
     pixel_shifts_{shifts},
     buffer_{get_row_bytes()}
 {
-    DBG_HELPER(dbg);
-    DBG(DBG_proc, "%s: shifts={", __func__);
-    for (auto el : pixel_shifts_) {
-        DBG(DBG_proc, " %zu", el);
-    }
-    DBG(DBG_proc, " }\n");
-
-    if (pixel_shifts_.size() > MAX_SHIFTS) {
-        throw SaneException("Unsupported number of shift configurations %zu", pixel_shifts_.size());
-    }
-
     extra_height_ = *std::max_element(pixel_shifts_.begin(), pixel_shifts_.end());
+    height_ = source_.get_height();
+    if (extra_height_ > height_) {
+        height_ = 0;
+    } else {
+        height_ -= extra_height_;
+    }
 }
 
 bool ImagePipelineNodePixelShiftLines::get_next_row_data(std::uint8_t* out_data)
@@ -521,7 +509,8 @@ bool ImagePipelineNodePixelShiftLines::get_next_row_data(std::uint8_t* out_data)
     auto format = get_format();
     auto shift_count = pixel_shifts_.size();
 
-    std::array<std::uint8_t*, MAX_SHIFTS> rows;
+    std::vector<std::uint8_t*> rows;
+    rows.resize(shift_count, nullptr);
 
     for (std::size_t irow = 0; irow < shift_count; ++irow) {
         rows[irow] = buffer_.get_row_ptr(pixel_shifts_[irow]);
@@ -534,6 +523,63 @@ bool ImagePipelineNodePixelShiftLines::get_next_row_data(std::uint8_t* out_data)
         }
     }
     return got_data;
+}
+
+ImagePipelineNodePixelShiftColumns::ImagePipelineNodePixelShiftColumns(
+        ImagePipelineNode& source, const std::vector<std::size_t>& shifts) :
+    source_(source),
+    pixel_shifts_{shifts}
+{
+    width_ = source_.get_width();
+    extra_width_ = compute_pixel_shift_extra_width(width_, pixel_shifts_);
+    if (extra_width_ > width_) {
+        width_ = 0;
+    } else {
+        width_ -= extra_width_;
+    }
+    temp_buffer_.resize(source_.get_row_bytes());
+}
+
+bool ImagePipelineNodePixelShiftColumns::get_next_row_data(std::uint8_t* out_data)
+{
+    if (width_ == 0) {
+        throw SaneException("Attempt to read zero-width line");
+    }
+    bool got_data = source_.get_next_row_data(temp_buffer_.data());
+
+    auto format = get_format();
+    auto shift_count = pixel_shifts_.size();
+
+    for (std::size_t x = 0, width = get_width(); x < width; x += shift_count) {
+        for (std::size_t ishift = 0; ishift < shift_count && x + ishift < width; ishift++) {
+            RawPixel pixel = get_raw_pixel_from_row(temp_buffer_.data(), x + pixel_shifts_[ishift],
+                                                    format);
+            set_raw_pixel_to_row(out_data, x + ishift, pixel, format);
+        }
+    }
+    return got_data;
+}
+
+
+std::size_t compute_pixel_shift_extra_width(std::size_t source_width,
+                                            const std::vector<std::size_t>& shifts)
+{
+    // we iterate across pixel shifts and find the pixel that needs the maximum shift according to
+    // source_width.
+    int group_size = shifts.size();
+    int non_filled_group = source_width % shifts.size();
+    int extra_width = 0;
+
+    for (int i = 0; i < group_size; ++i) {
+        int shift_groups = shifts[i] / group_size;
+        int shift_rem = shifts[i] % group_size;
+
+        if (shift_rem < non_filled_group) {
+            shift_groups--;
+        }
+        extra_width = std::max(extra_width, shift_groups * group_size + non_filled_group - i);
+    }
+    return extra_width;
 }
 
 ImagePipelineNodeExtract::ImagePipelineNodeExtract(ImagePipelineNode& source,
@@ -734,10 +780,8 @@ ImagePipelineNodeDebug::~ImagePipelineNodeDebug()
 
         auto format = get_format();
         buffer_.linearize();
-        sanei_genesys_write_pnm_file(path_.c_str(), buffer_.get_front_row_ptr(),
-                                     get_pixel_format_depth(format),
-                                     get_pixel_channels(format),
-                                     get_width(), buffer_.height());
+        write_tiff_file(path_, buffer_.get_front_row_ptr(), get_pixel_format_depth(format),
+                        get_pixel_channels(format), get_width(), buffer_.height());
     });
 }
 

@@ -72,7 +72,6 @@
 #include "../include/sane/saneopts.h"
 
 #include <sys/ioctl.h>
-#include <asm/types.h>		/* XXX glibc */
 
 #define BACKEND_NAME v4l
 #include "../include/sane/sanei_backend.h"
@@ -732,7 +731,7 @@ sane_control_option (SANE_Handle handle, SANE_Int option,
        action == SANE_ACTION_GET_VALUE ? "get" :
        action == SANE_ACTION_SET_VALUE ? "set" :
        action == SANE_ACTION_SET_AUTO ? "auto set" :
-       "(unknow action with)", option,
+       "(unknown action with)", option,
        s->opt[option].name ? s->opt[option].name : s->opt[option].title);
 
   cap = s->opt[option].cap;
@@ -1046,7 +1045,7 @@ sane_start (SANE_Handle handle)
   /* v4l1 actually returns BGR when we ask for RGB, so convert it */
   if (s->pict.palette == VIDEO_PALETTE_RGB24)
     {
-      __u32 loop;
+      uint32_t loop;
       DBG (3, "sane_start: converting from BGR to RGB\n");
       for (loop = 0; loop < (s->window.width * s->window.height * 3); loop += 3)
         {

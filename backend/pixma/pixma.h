@@ -119,8 +119,8 @@ typedef uint32_t uint32_t;
 /** \name Version of the driver */
 /**@{*/
 #define PIXMA_VERSION_MAJOR 0
-#define PIXMA_VERSION_MINOR 27
-#define PIXMA_VERSION_BUILD 4
+#define PIXMA_VERSION_MINOR 28
+#define PIXMA_VERSION_BUILD 6
 /**@}*/
 
 /** \name Error codes */
@@ -157,7 +157,12 @@ typedef uint32_t uint32_t;
 #define PIXMA_CAP_NEGATIVE     (1 << 10)
 #define PIXMA_CAP_TPUIR        ((1 << 11) | PIXMA_CAP_TPU)
 #define PIXMA_CAP_ADF_WAIT     (1 << 12)
-#define PIXMA_CAP_ADF_JPEG     (1 << 13)
+#define PIXMA_CAP_ADF_JPEG     (1 << 13)    /* scanner returns image as jpeg from ADF */
+#define PIXMA_CAP_JPEG         (1 << 14)    /* scanner always returns image as jpeg */
+#define PIXMA_CAP_GT_4096      (1 << 15)    /* gamma table has 4096 8-bit values
+                                             * only generation 1 scanners
+                                             * usually gamma table has 1024 16-bit values
+                                             */
 #define PIXMA_CAP_EXPERIMENT   (1 << 31)
 /**@}*/
 
@@ -167,13 +172,19 @@ typedef uint32_t uint32_t;
 #define PIXMA_EV_ACTION_MASK   (0xffffff)
 #define PIXMA_EV_BUTTON1       (1 << 24)
 #define PIXMA_EV_BUTTON2       (2 << 24)
-#define PIXMA_EV_TARGET_MASK   (0xff)
-#define PIXMA_EV_ORIGINAL_MASK (0xff00)
-#define PIXMA_EV_DPI_MASK      (0xff0000)
+#define PIXMA_EV_TARGET_MASK   (0x0f)
+#define PIXMA_EV_ORIGINAL_MASK (0x0f00)
+#define PIXMA_EV_DPI_MASK      (0x0f0000)
+#define PIXMA_EV_DOC_MASK      (0xf000)
+#define PIXMA_EV_STAT_MASK     (0xf00000)
+#define PIXMA_EV_ORIENT_MASK   (0xf0)
 
 #define GET_EV_TARGET(x) (x & PIXMA_EV_TARGET_MASK)
 #define GET_EV_ORIGINAL(x) ( (x & PIXMA_EV_ORIGINAL_MASK) >> 8 )
 #define GET_EV_DPI(x) ( (x & PIXMA_EV_DPI_MASK) >> 16 )
+#define GET_EV_DOC(x) ( (x & PIXMA_EV_DOC_MASK) >> 12 )
+#define GET_EV_STAT(x) ( (x & PIXMA_EV_STAT_MASK) >> 20 )
+#define GET_EV_ORIENT(x) ( (x & PIXMA_EV_ORIENT_MASK) >> 4 )
 
 /**@}*/
 /** @} end of API group */
@@ -300,7 +311,7 @@ struct pixma_scan_param_t
      *   1 =  1 bit B/W lineart (flatbed)
      *   8 =  8 bit grayscale,
      *       24 bit color (both flatbed)
-     *  16 = 16 bit grayscale (TPU, flatbed not implemeted),
+     *  16 = 16 bit grayscale (TPU, flatbed not implemented),
      *       48 bit color (TPU, flatbed not implemented) */
   unsigned fe_depth;
   unsigned be_depth;
@@ -346,6 +357,9 @@ struct pixma_scan_param_t
      *  specified by subdriver will be used. */
   const uint8_t *gamma_table;
 
+  /** value for auto generated gamma table */
+  double gamma;
+
     /** \see #pixma_paper_source_t */
   pixma_paper_source_t source;
 
@@ -371,7 +385,8 @@ struct pixma_config_t
   uint16_t pid;		     /**< USB Product ID */
   unsigned iface;	     /**< USB Interface number */
   const pixma_scan_ops_t *ops;	  /**< Subdriver ops */
-  unsigned min_xdpi;         /**< Minimum horizontal resolution[DPI] */
+  unsigned min_xdpi;   /**< Minimum horizontal resolution[DPI] */
+  unsigned min_xdpi_16;/**< Minimum horizontal resolution[DPI] for 16-bit scans */
   unsigned xdpi;	     /**< Maximum horizontal resolution[DPI] */
   unsigned ydpi;	     /**< Maximum vertical resolution[DPI] */
   unsigned adftpu_min_dpi;    /**< Maximum horizontal resolution[DPI] for adf/tpu

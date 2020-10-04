@@ -1,6 +1,6 @@
 /* SANE - Scanner Access Now Easy.
 
-   Copyright (C) 2011-2019 Rolf Bensch <rolf at bensch hyphen online dot de>
+   Copyright (C) 2011-2020 Rolf Bensch <rolf at bensch hyphen online dot de>
    Copyright (C) 2006-2007 Wittawat Yamwong <wittawat@web.de>
 
    This file is part of the SANE package.
@@ -829,7 +829,7 @@ mp750_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
       n = mp->rawimg_left / 3;
       /* n = number of pixels in the buffer? */
 
-      /* Color to Grayscale converion for CCD sensor */
+      /* Color to Grayscale conversion for CCD sensor */
       if (is_ccd_grayscale (s)) {
 	shift_rgb (mp->rawimg, n, shift[0], shift[1], shift[2], mp->stripe_shift, mp->line_size,
 		   mp->imgcol + mp->imgbuf_ofs);
@@ -957,7 +957,7 @@ static const pixma_scan_ops_t pixma_mp750_ops = {
 	0x04a9, pid,           /* vid pid */		\
 	0,                     /* iface */		\
 	&pixma_mp750_ops,      /* ops */		\
-        0,                     /* min_xdpi not used in this subdriver */ \
+  0, 0,                  /* min_xdpi & min_xdpi_16 not used in this subdriver */ \
 	dpi, 2*(dpi),          /* xdpi, ydpi */		\
         0, 0,                  /* adftpu_min_dpi & adftpu_max_dpi not used in this subdriver */ \
         0, 0,                  /* tpuir_min_dpi & tpuir_max_dpi not used in this subdriver */   \

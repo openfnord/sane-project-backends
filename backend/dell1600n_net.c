@@ -122,7 +122,7 @@ struct ScannerState
   int m_numPages;	        /* number of complete pages (host byte order) */
   struct ComBuf m_pageInfo;	/* "array" of numPages PageInfo structs */
   int m_bFinish;		/* set non-0 to signal that we are finished */
-  int m_bCancelled;		/* set non-0 that bFinish state arose from cancelation */
+  int m_bCancelled;		/* set non-0 that bFinish state arose from cancellation */
   char m_regName[REG_NAME_SIZE];	/* name with which to register */
   unsigned short m_xres;	/* x resolution (network byte order) */
   unsigned short m_yres;	/* y resolution (network byte order) */
@@ -233,6 +233,9 @@ static void JpegDecompTermSource (j_decompress_ptr cinfo);
 /* Results of last call to sane_get_devices */
 static struct DeviceRecord *gKnownDevices[MAX_SCANNERS];
 
+/* Empty list for when network devices are not wanted */
+static const SANE_Device *gEmptyDeviceList[1];
+
 /* Array of open scanner device states.
    :NOTE: (int)SANE_Handle is an offset into this array */
 static struct ScannerState *gOpenScanners[MAX_SCANNERS];
@@ -288,8 +291,7 @@ sane_exit (void)
 /***********************************************************/
 
 SANE_Status
-sane_get_devices (const SANE_Device *** device_list,
-		  SANE_Bool __sane_unused__ local_only)
+sane_get_devices (const SANE_Device *** device_list, SANE_Bool local_only)
 {
 
   int ret;
@@ -307,11 +309,17 @@ sane_get_devices (const SANE_Device *** device_list,
   const char *pVal;
   int valLen;
 
+  if (local_only) {
+    *device_list = gEmptyDeviceList;
+    return SANE_STATUS_GOOD;
+  }
+
   /* init variables */
   ret = SANE_STATUS_GOOD;
   sock = 0;
   pDevice = NULL;
   optYes = 1;
+
   InitComBuf (&queryPacket);
 
   /* clear previous results */
@@ -694,7 +702,7 @@ sane_start (SANE_Handle handle)
   if (!ValidScannerNumber (iHandle))
     return SANE_STATUS_INVAL;
 
-  /* check if we still have oustanding pages of data on this handle */
+  /* check if we still have outstanding pages of data on this handle */
   if (gOpenScanners[iHandle]->m_imageData.m_used){
 
     /* remove empty page */
@@ -1748,7 +1756,7 @@ cleanup:
 /***********************************************************/
 
 /* remove data from the front of a ComBuf struct
-   \return 0 if sucessful, >0 otherwise
+   \return 0 if successful, >0 otherwise
 */
 int
 PopFromComBuf (struct ComBuf *pBuf, size_t datSize)

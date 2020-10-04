@@ -47,6 +47,7 @@ struct TestConfig
 {
     std::uint16_t vendor_id = 0;
     std::uint16_t product_id = 0;
+    std::uint16_t bcd_device = 0;
     std::string model_name;
     genesys::ScanMethod method = genesys::ScanMethod::FLATBED;
     genesys::ScanColorMode color_mode = genesys::ScanColorMode::COLOR_SINGLE_PASS;
@@ -198,7 +199,19 @@ private:
 };
 
 
-void build_checkpoint(const genesys::Genesys_Device& dev,
+void print_params(const SANE_Parameters& params, std::stringstream& out)
+{
+    out << "\n\n================\n"
+        << "Scan params:\n"
+        << "format: " << params.format << "\n"
+        << "last_frame: " << params.last_frame << "\n"
+        << "bytes_per_line: " << params.bytes_per_line << "\n"
+        << "pixels_per_line: " << params.pixels_per_line << "\n"
+        << "lines: " << params.lines << "\n"
+        << "depth: " << params.depth << "\n";
+}
+
+void print_checkpoint(const genesys::Genesys_Device& dev,
                       genesys::TestScannerInterface& iface,
                       const std::string& checkpoint_name,
                       std::stringstream& out)
@@ -239,14 +252,15 @@ void build_checkpoint(const genesys::Genesys_Device& dev,
 
 void run_single_test_scan(const TestConfig& config, std::stringstream& out)
 {
-    auto build_checkpoint_wrapper = [&](const genesys::Genesys_Device& dev,
+    auto print_checkpoint_wrapper = [&](const genesys::Genesys_Device& dev,
                                         genesys::TestScannerInterface& iface,
                                         const std::string& checkpoint_name)
     {
-        build_checkpoint(dev, iface, checkpoint_name, out);
+        print_checkpoint(dev, iface, checkpoint_name, out);
     };
 
-    genesys::enable_testing_mode(config.vendor_id, config.product_id, build_checkpoint_wrapper);
+    genesys::enable_testing_mode(config.vendor_id, config.product_id, config.bcd_device,
+                                 print_checkpoint_wrapper);
 
     SANE_Handle handle;
 
@@ -271,6 +285,8 @@ void run_single_test_scan(const TestConfig& config, std::stringstream& out)
 
     SANE_Parameters params;
     TIE(sane_get_parameters(handle, &params));
+
+    print_params(params, out);
 
     int buffer_size = 1024 * 1024;
     std::vector<std::uint8_t> buffer;
@@ -397,30 +413,33 @@ std::vector<TestConfig> get_all_test_configs()
     std::unordered_set<std::string> model_names;
 
     for (const auto& usb_dev : *genesys::s_usb_devices) {
-        if (genesys::has_flag(usb_dev.model.flags, genesys::ModelFlag::UNTESTED)) {
-            continue;
-        }
-        if (model_names.find(usb_dev.model.name) != model_names.end()) {
-            continue;
-        }
-        model_names.insert(usb_dev.model.name);
 
-        for (auto scan_mode : { genesys::ScanColorMode::LINEART,
-                                genesys::ScanColorMode::GRAY,
+        const auto& model = usb_dev.model();
+
+        if (genesys::has_flag(model.flags, genesys::ModelFlag::UNTESTED)) {
+            continue;
+        }
+        if (model_names.find(model.name) != model_names.end()) {
+            continue;
+        }
+        model_names.insert(model.name);
+
+        for (auto scan_mode : { genesys::ScanColorMode::GRAY,
                                 genesys::ScanColorMode::COLOR_SINGLE_PASS }) {
 
-            auto depth_values = usb_dev.model.bpp_gray_values;
+            auto depth_values = model.bpp_gray_values;
             if (scan_mode == genesys::ScanColorMode::COLOR_SINGLE_PASS) {
-                depth_values = usb_dev.model.bpp_color_values;
+                depth_values = model.bpp_color_values;
             }
             for (unsigned depth : depth_values) {
-                for (auto method_resolutions : usb_dev.model.resolutions) {
+                for (auto method_resolutions : model.resolutions) {
                     for (auto method : method_resolutions.methods) {
                         for (unsigned resolution : method_resolutions.get_resolutions()) {
                             TestConfig config;
-                            config.vendor_id = usb_dev.vendor;
-                            config.product_id = usb_dev.product;
-                            config.model_name = usb_dev.model.name;
+                            config.vendor_id = usb_dev.vendor_id();
+                            config.product_id = usb_dev.product_id();
+                            config.bcd_device = usb_dev.bcd_device();
+                            config.model_name = model.name;
                             config.method = method;
                             config.depth = depth;
                             config.resolution = resolution;

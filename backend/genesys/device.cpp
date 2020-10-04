@@ -102,10 +102,6 @@ Genesys_Device::~Genesys_Device()
 
 void Genesys_Device::clear()
 {
-    read_buffer.clear();
-    binarize_buffer.clear();
-    local_buffer.clear();
-
     calib_file.clear();
 
     calibration_cache.clear();
@@ -114,9 +110,9 @@ void Genesys_Device::clear()
     dark_average_data.clear();
 }
 
-ImagePipelineNodeBytesSource& Genesys_Device::get_pipeline_source()
+ImagePipelineNodeBufferedCallableSource& Genesys_Device::get_pipeline_source()
 {
-    return static_cast<ImagePipelineNodeBytesSource&>(pipeline.front());
+    return static_cast<ImagePipelineNodeBufferedCallableSource&>(pipeline.front());
 }
 
 bool Genesys_Device::is_head_pos_known(ScanHeadId scan_head) const
@@ -258,20 +254,13 @@ std::ostream& operator<<(std::ostream& out, const Genesys_Device& dev)
         << "    read_active: " << dev.read_active << '\n'
         << "    parking: " << dev.parking << '\n'
         << "    document: " << dev.document << '\n'
-        << "    read_buffer.size(): " << dev.read_buffer.size() << '\n'
-        << "    binarize_buffer.size(): " << dev.binarize_buffer.size() << '\n'
-        << "    local_buffer.size(): " << dev.local_buffer.size() << '\n'
-        << "    oe_buffer.size(): " << dev.oe_buffer.size() << '\n'
         << "    total_bytes_read: " << dev.total_bytes_read << '\n'
         << "    total_bytes_to_read: " << dev.total_bytes_to_read << '\n'
         << "    session: " << format_indent_braced_list(4, dev.session) << '\n'
-        << "    lineart_lut: (not printed)\n"
         << "    calibration_cache: (not printed)\n"
         << "    line_count: " << dev.line_count << '\n'
         << "    segment_order: "
         << format_indent_braced_list(4, format_vector_unsigned(4, dev.segment_order)) << '\n'
-        << "    buffer_image: " << dev.buffer_image << '\n'
-        << "    img_buffer.size(): " << dev.img_buffer.size() << '\n'
         << '}';
     return out;
 }

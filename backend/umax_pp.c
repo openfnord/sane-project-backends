@@ -419,7 +419,8 @@ umax_pp_auto_attach (SANEI_Config * config, SANE_Int safe)
  * device name to use for attach try.
  */
 static SANE_Status
-umax_pp_configure_attach (SANEI_Config * config, const char *devname)
+umax_pp_configure_attach (SANEI_Config * config, const char *devname,
+                          void __sane_unused__ *data)
 {
   const char *lp;
   SANE_Char *token;
@@ -961,7 +962,7 @@ sane_init (SANE_Int * version_code, SANE_Auth_Callback authorize)
 
   /* generic configure and attach function */
   status = sanei_configure_attach (UMAX_PP_CONFIG_FILE, &config,
-                                   umax_pp_configure_attach);
+                                   umax_pp_configure_attach, NULL);
 
   /* free option descriptors */
   for (i = 0; i < NUM_CFG_OPTIONS; i++)
@@ -2083,7 +2084,7 @@ sane_start (SANE_Handle handle)
                                 &(dev->th));
       /* we enlarged the scanning zone   */
       /* to allow reordering, we must    */
-      /* substract it from real scanning */
+      /* subtract it from real scanning */
       /* zone                            */
       dev->th -= points;
       DBG (64, "sane_start: bpp=%d,tw=%d,th=%d\n", dev->bpp, dev->tw,

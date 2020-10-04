@@ -518,7 +518,7 @@ static void reset_options(struct device *dev)
     dev->val[OPT_RESOLUTION].w = 150;
     dev->val[OPT_MODE].s = string_match(scan_modes, SANE_VALUE_SCAN_MODE_COLOR);
 
-    /* if docs loaded in adf use it as default source, flatbed oterwise */
+    /* if docs loaded in adf use it as default source, flatbed otherwise */
     dev->val[OPT_SOURCE].s = UNCONST(doc_sources[(dev->doc_loaded)? 1 : 0]);
 
     dev->val[OPT_THRESHOLD].w = SANE_FIX(50);
@@ -1028,7 +1028,8 @@ list_one_device(SANE_String_Const devname)
 
 /* SANE API ignores return code of this callback */
 static SANE_Status
-list_conf_devices(UNUSED(SANEI_Config *config), const char *devname)
+list_conf_devices(SANEI_Config __sane_unused__ *config, const char *devname,
+                  void __sane_unused__ *data)
 {
     return tr_from_devname(devname)->configure_device(devname, list_one_device);
 }
@@ -1080,7 +1081,7 @@ sane_get_devices(const SANE_Device *** device_list, SANE_Bool local)
     config.count = 0;
     config.descriptors = NULL;
     config.values = NULL;
-    sanei_configure_attach(XEROX_CONFIG_FILE, &config, list_conf_devices);
+    sanei_configure_attach(XEROX_CONFIG_FILE, &config, list_conf_devices, NULL);
 
     for (dev_count = 0, dev = devices_head; dev; dev = dev->next)
         dev_count++;

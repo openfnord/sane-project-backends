@@ -51,10 +51,10 @@ If you want to use the test backend, for example with sane-troubleshoot, you sho
    . - sane_open() : open a particular scanner-device and attach_scanner(devicename,&dev)
    . . - sane_set_io_mode : set blocking-mode
    . . - sane_get_select_fd : get scanner-fd
-   . . - sane_get_option_descriptor() : get option informations
+   . . - sane_get_option_descriptor() : get option information
    . . - sane_control_option() : change option values
    . .
-   . . - sane_start() : start image aquisition [V,L,F,S,C,D,O,Z] first time or after cancel. [(F),E,G] every time
+   . . - sane_start() : start image acquisition [V,L,F,S,C,D,O,Z] first time or after cancel. [(F),E,G] every time
    . .   - sane_get_parameters() : returns actual scan-parameters
    . .   - sane_read() : read image-data (from pipe)
    . . - sane_cancel() : cancel operation, kill reader_process [(F), U]
@@ -1299,7 +1299,7 @@ int
 cmparray (unsigned char *array1, unsigned char *array2, size_t len)
 {
 /* compares len bytes of the arrays returns 0 if they match
-returns the first missmatch position if they don't match */
+returns the first mismatch position if they don't match */
 unsigned int i;
 	for(i=0; i<len; ++i)
 	{
@@ -2434,7 +2434,7 @@ First version only does autodiscovery */
     /* Allocate a new client */
     client = avahi_client_new(avahi_simple_poll_get(simple_poll), 0, client_callback, simple_poll, &error);
 
-    /* Check wether creating the client object succeeded */
+    /* Check whether creating the client object succeeded */
     if (!client) {
         DBG(min(1,DBG_AUTO), "Failed to create client: %s\n", avahi_strerror(error));
         goto fail;
@@ -2513,10 +2513,11 @@ attach_one_net(const char *dev, unsigned int model)
 }
 
 static SANE_Status
-attach_one_config(SANEI_Config __sane_unused__ *config, const char *line)
+attach_one_config(SANEI_Config __sane_unused__ *config, const char *line,
+		  void *data)
 {
 	int vendor, product, timeout;
-
+	SANE_Bool local_only = *(SANE_Bool*) data;
 	int len = strlen(line);
 
 	DBG(7, "%s: len = %d, line = %s\n", __func__, len, line);
@@ -2550,27 +2551,30 @@ attach_one_config(SANEI_Config __sane_unused__ *config, const char *line)
 
 	} else if (strncmp(line, "net", 3) == 0) {
 
-		/* remove the "net" sub string */
-		const char *name = sanei_config_skip_whitespace(line + 3);
-		char IP[1024];
-		unsigned int model = 0;
+		if (!local_only) {
+			/* remove the "net" sub string */
+			const char *name =
+				sanei_config_skip_whitespace(line + 3);
+			char IP[1024];
+			unsigned int model = 0;
 
-		if (strncmp(name, "autodiscovery", 13) == 0) {
+			if (strncmp(name, "autodiscovery", 13) == 0) {
 
-#if WITH_AVAHI
-			DBG (30, "%s: Initiating network autodiscovery via avahi\n", __func__);
-			kodak_network_discovery(NULL);
-#else
-			DBG (20, "%s: Network autodiscovery not done because not configured with avahi.\n", __func__);
-#endif
+	#if WITH_AVAHI
+				DBG (30, "%s: Initiating network autodiscovery via avahi\n", __func__);
+				kodak_network_discovery(NULL);
+	#else
+				DBG (20, "%s: Network autodiscovery not done because not configured with avahi.\n", __func__);
+	#endif
 
-		} else if (sscanf(name, "%s %x", IP, &model) == 2) {
-			DBG(30, "%s: Using network device on IP %s, forcing model 0x%x\n", __func__, IP, model);
-			attach_one_net(IP, model);
-		} else {
+			} else if (sscanf(name, "%s %x", IP, &model) == 2) {
+				DBG(30, "%s: Using network device on IP %s, forcing model 0x%x\n", __func__, IP, model);
+				attach_one_net(IP, model);
+			} else {
 				DBG(1, "%s: net entry %s may be a host name?\n", __func__, name);
 				attach_one_net(name, 0);
 			}
+		}
 
 	} else if (sscanf(line, "snmp-timeout %i\n", &timeout)) {
 		/* Timeout for auto network discovery */
@@ -2646,7 +2650,7 @@ sane_exit(void)
 }
 
 SANE_Status
-sane_get_devices(const SANE_Device ***device_list, SANE_Bool __sane_unused__ local_only)
+sane_get_devices(const SANE_Device ***device_list, SANE_Bool local_only)
 {
 	Kodak_Device *dev, *s, *prev=0;
 	int i;
@@ -2662,7 +2666,7 @@ sane_get_devices(const SANE_Device ***device_list, SANE_Bool __sane_unused__ loc
 
 	/* Read the config, mark each device as found, possibly add new devs */
 	sanei_configure_attach(KODAKAIO_CONFIG_FILE, NULL,
-			       attach_one_config);
+			       attach_one_config, &local_only);
 
 	/*delete missing scanners from list*/
 	for (s = first_dev; s;) {
@@ -2756,7 +2760,7 @@ init_options(KodakAio_Scanner *s)
 	s->val[OPT_MODE].w = MODE_COLOR;	/* default */
 	DBG(20, "%s: mode_list has first entry %s, default mode is %s\n", __func__, mode_list[0],mode_list[s->val[OPT_MODE].w]);
 
-	/* theshold the sane std says should be SANE_TYPE_FIXED 0..100 but all other backends seem to use INT 0..255 */
+	/* threshold the sane std says should be SANE_TYPE_FIXED 0..100 but all other backends seem to use INT 0..255 */
 	s->opt[OPT_THRESHOLD].name = SANE_NAME_THRESHOLD;
 	s->opt[OPT_THRESHOLD].title = SANE_TITLE_THRESHOLD;
 	s->opt[OPT_THRESHOLD].desc = SANE_DESC_THRESHOLD;
@@ -2768,7 +2772,7 @@ init_options(KodakAio_Scanner *s)
 	s->val[OPT_THRESHOLD].w = SANE_FIX(50.0);
 	DBG(20, "%s: threshold initialised to fixed %f\n", __func__, SANE_UNFIX(s->val[OPT_THRESHOLD].w));
 
-	/* theshold the sane std says should be SANE_TYPE_FIXED 0..100 but all other backends seem to use INT 0..255
+	/* threshold the sane std says should be SANE_TYPE_FIXED 0..100 but all other backends seem to use INT 0..255
 	s->opt[OPT_THRESHOLD].name = SANE_NAME_THRESHOLD;
 	s->opt[OPT_THRESHOLD].title = SANE_TITLE_THRESHOLD;
 	s->opt[OPT_THRESHOLD].desc = SANE_DESC_THRESHOLD;

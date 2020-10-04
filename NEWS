@@ -1,12 +1,52 @@
 <!-- -*- Mode: markdown -*- -->
 
-## New with the next release
+## New with 1.0.31 (released 2020-08-23)
+
+### Backends
+
+- adds the `canon_lide70` backend
+- `avision`: adds support for the KODAK i1120, fixes thread
+  cancellation issues, disables exposure option for non-filmscanners
+- `canon_dr`: improves error reporting
+- `dmc`: fixes compiler warnings on the scan area options
+- `epsonds`: rewrites the network I/O following changes made to the
+  `epson2` backend in 1.0.30 to fix security issues.  Network support
+  is still unsupported.
+- `escl`: adds ADF support, fixes many minor issues and improves error
+  handling.  Now also supports devices behind a proxy (needs explicit
+  configuration).
+- `fujitsu`: adds support for the fi-800R and a card scanning slot,
+  fixes a bug when reading hardware sensors on the first invocation.
+  Adds USB IDs for fi-7800 and fi-7900.
+- `genesys`: adds support for the Canon 5600F, Canon LiDE 90, Plustek
+  OpticFilm 7200 and 7200 (v2), 7400, 7600i, 8100 and 8200i.  Fixes
+  several issues with the Canon 8600F.  Adds 4800dpi support for the
+  Canon LiDE 210 and fixes 3200dpi flatbed support on the Canon 8400F.
+  Adds an option to fill dark calibration with a constant.  Adds
+  transparency support for gl847 chipset based devices.  Fixes CIS
+  scanner support for gl842 chipset based devices.  Removes lineart
+  and image enhancement emulation support.
+- `gphoto`: supports the PLANon DocuPen RC800 (with a recent enough
+  version of `gphoto2`)
+- `gt68xx`: modifies scan cancellation behaviour
+- `hp5400`: adds button support, fixes a scan cancellation crash issue
+- `pixma`: add supports for the i-SENSYS MF440 Series and untested
+  support for the PIXMMA G7000 Series and GM4000 Series as well as the
+  i-SENSYS MF720 Series.
+- `plustek`: fixes a potential buffer overrun
+- `test`: adds gamma options
 
 ### Documentation
 
 - removes the SANE Standard.  This is now maintained as a separate
   project at https://gitlab.com/sane-project/standard.  HTML and PDF
   versions can be found at https://sane-project.gitlab.io/standard/.
+- adds and updates information for multiple supported and unsupported
+  devices
+- translation updates for British English, French, German, Italian and
+  Ukrainian
+- `scanimage`: documents the JPEG compression level
+- minor improvements documenting build requirements
 
 ### Build
 
@@ -15,6 +55,42 @@
   defaults to enabling if possible.  If the option is given and the
   required support is not available, `configure` will exit with an
   error.
+- improves checking for libjpeg version dependent requirements
+- has been made reproducible (#228)
+- fixes build issues on MinGW
+
+### Miscellaneous
+
+- fixes OpenBSD hotplugd scriptlets (!375)
+- fixes support for unconfigured USB scanners on MacOS (#38)
+- various fixes and improvements in the USB record/replay support
+- fixes a file descriptor validation test in sanei_pio
+- adds missing include in sanei_usb
+
+
+## New with 1.0.30 (released 2020-05-17)
+
+This release fixes several security related issues and a build issue.
+
+### Backends
+
+- `epson2`: fixes CVE-2020-12867 (GHSL-2020-075) and several memory
+  management issues found while addressing that CVE
+- `epsonds`: addresses out-of-bound memory access issues to fix
+  CVE-2020-12862 (GHSL-2020-082) and CVE-2020-12863 (GHSL-2020-083),
+  addresses a buffer overflow fixing CVE-2020-12865 (GHSL-2020-084)
+  and disables network autodiscovery to mitigate CVE-2020-12866
+  (GHSL-2020-079), CVE-2020-12861 (GHSL-2020-080) and CVE-2020-12864
+  (GHSL-2020-081).  Note that this backend does not support network
+  scanners to begin with.
+- `magicolor`: fixes a floating point exception and uninitialized data
+  read
+- fixes an overflow in `sanei_tcp_read()`
+
+### Build
+
+- fixes a build issue where linker flags would become link time
+  dependencies (#239)
 
 
 ## New with 1.0.29 (released 2020-02-02)
@@ -262,7 +338,7 @@ New with 1.0.18, released 2006-07-02:
   microtek2, mustek_pp, niash, plustek, snapscan, sp15c, test, u12, umax1220u.
 * Scanimage batch mode fixes.
 * Scanner lists contain USB vendor/product ids and some statistics now.
-* Udev/hotplug lists are generated autmatically from the .desc files now.
+* Udev/hotplug lists are generated automatically from the .desc files now.
 * Portability fixes (especially for DragonFlyBSD and HP/UX).
 * Build system updates.
 * Updated translations.
@@ -338,7 +414,7 @@ New with 1.0.14, released 2004-05-01:
 New with 1.0.13, released 2003-11-22:
 
 * New backends: mustek_pp_ccd (for Mustek parport CCD scanners),
-  plustek_pp (for Plustek parport scanners, splitted from the plustek backend).
+  plustek_pp (for Plustek parport scanners, split from the plustek backend).
 * Updated backends: avision, canon630u, coolscan, epson, fujitsu, gphoto2,
   gt68xx, hp, hp5400, mustek, mustek_pp, pie, plustek, snapscan, teco2, test,
   umax, umax_pp.
@@ -408,7 +484,7 @@ New with 1.0.9, released 2002-10-24:
 * New tool to create gamma tables (gamma4scanimage).
 * Support for ICC profiles for scanimage.
 * USB scanner should work on all systems supported by libusb now.
-* Portability fixes (especially for big-endian sytems, Irix, OpenStep, OS/2,
+* Portability fixes (especially for big-endian systems, Irix, OpenStep, OS/2,
   Solaris).
 * New and updated translations for various backends.
 * New system for generating lists of manufacturers/backends.
@@ -472,7 +548,7 @@ New with 1.0.6, released 2001-11-05:
 New with 1.0.5, released 2001-07-01:
 
 * New backends: bh (Bell+Howell Copiscan II series), dc240 (Kodak DC240
-  Digital Camera), sm3600 (Microtek ScanMaker 3600), umax_pp (Umax paralell
+  Digital Camera), sm3600 (Microtek ScanMaker 3600), umax_pp (Umax parallel
   port scanners).
 * Updated backends: artec (v0.5.16), dc25 (v1.2), dll (v1.0.3),
   epson (v0.2.08), hp (v0.94), microtek (v0.12.3), microtek2(v0.9),
@@ -501,7 +577,7 @@ New with 1.0.4, released 2000-12-21:
   hp (v0.93), mustek (v1.0-102), mustek_pp (v0.9-devel), plustek (v0.38),
   sharp (v0.32), umax (v1.0-21).
 * Moved frontends xscanimage and xcam to a new package (sane-frontends).
-* Added authentification with encrypted passwords.
+* Added authentication with encrypted passwords.
 * Installation of shared libraries on AIX is supported now.
 * Fixed compilation bugs on Irix and FreeBSD.
 * Better debug output on platforms not supporting vararg macros.
@@ -609,7 +685,7 @@ New with 1.01:
    o larger buffer acquired (speeds up scanning slightly)
    o for SE models minimal resolution increased from 60 dpi to 75 dpi
    o for SE models 75 dpi in color mode is no longer used as the newer
-     firware version seems to be even more buggy
+     firmware version seems to be even more buggy
    o bug in calculation of gamma table corrected (applies only to SE models,
      NOT related to the overflow problem which was corrected via CLIP( ) )
    o default resolution is now set according to the minimal resolution
@@ -818,7 +894,7 @@ New with 0.74:
  o changed the default for the resolution
  o The values for the SANE_Params struct are calculated more precisely
  o dito the number of scan lines that fit into the frontend buffer
- o changed some return stati ( replaced SANE_STATUS_INVAL with
+ o changed some return statuses ( replaced SANE_STATUS_INVAL with
    SANE_STATUS_IO_ERROR where the first one is not allowed)
  o completely rewrote the end of scan and cancel scan handling
  o fixed another bug that caused xscanimage to crash with sigsegv
@@ -837,7 +913,7 @@ New with 0.74:
   o Quality calibration / calibration by driver now works for same scanners.
      - added selection for type of shading data calculation
   o Solved problem with black area at top of the image
-    (happend only with some SCSI-adapters).
+    (happened only with some SCSI-adapters).
   o Added gamma download format type 0 and type 1 for older scanners.
   o Added Astra 1220S as supported scanner:
      - added 36 gamma input bits support for Astra 1220S
@@ -893,7 +969,7 @@ New with 0.73:
        - 3-pass scanners
        - more than 8 bit per color output data. Provisions are made here
          and there in the code, to support more than 8 bit, but that's
-         uncomplete.
+         incomplete.
 
 * configure --disable-static should now work as expected.
 

@@ -46,9 +46,6 @@
 
 namespace genesys {
 
-// buffer.h
-struct Genesys_Buffer;
-
 // calibration.h
 struct Genesys_Calibration_Cache;
 
@@ -74,7 +71,6 @@ class Image;
 
 // image_buffer.h
 class ImageBuffer;
-class ImageBufferGenesysUsb;
 
 // image_pipeline.h
 class ImagePipelineNode;
@@ -86,7 +82,7 @@ struct Pixel;
 struct RawPixel;
 
 // low.h
-struct Genesys_USB_Device_Entry;
+struct UsbDeviceEntry;
 
 // motor.h
 struct Genesys_Motor;

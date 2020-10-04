@@ -124,7 +124,7 @@ static const SANE_Device **devlist = 0;
 static GT68xx_Device **new_dev = 0;
 /* Length of new_dev array */
 static SANE_Int new_dev_len = 0;
-/* Number of entries alloced for new_dev */
+/* Number of entries allocated for new_dev */
 static SANE_Int new_dev_alloced = 0;
 /* Is this computer little-endian ?*/
 SANE_Bool little_endian;
@@ -1527,7 +1527,7 @@ sane_open (SANE_String_Const devicename, SANE_Handle * handle)
     }
 
   /* The firmware check is disabled by default because it may confuse
-     some scanners: So the firmware is loaded everytime. */
+     some scanners: So the firmware is loaded every time. */
 #if 0
   RIE (gt68xx_device_check_firmware (dev, &firmware_loaded));
   firmware_loaded = SANE_FALSE;
@@ -2030,7 +2030,7 @@ sane_start (SANE_Handle handle)
         } while ((i<5) && (document==SANE_FALSE));
       if(document==SANE_FALSE)
         {
-          DBG (4, "sane_start: no doucment detected after %d s\n",i);
+          DBG (4, "sane_start: no document detected after %d s\n",i);
           return SANE_STATUS_NO_DOCS;
         }
     }
@@ -2130,6 +2130,7 @@ sane_read (SANE_Handle handle, SANE_Byte * buf, SANE_Int max_len,
       && s->byte_count >= s->reader->params.pixel_xs)
     {
       DBG (4, "sane_read: nothing more to scan: EOF\n");
+      gt68xx_scanner_stop_scan(s);
       return SANE_STATUS_EOF;
     }
 
@@ -2343,8 +2344,10 @@ sane_cancel (SANE_Handle handle)
           gt68xx_device_carriage_home (s->dev);
         }
       if (s->gamma_table)
-        free (s->gamma_table);
-      s->gamma_table = 0;
+        {
+          free (s->gamma_table);
+          s->gamma_table = 0;
+        }
     }
   else
     {

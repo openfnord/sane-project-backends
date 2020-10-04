@@ -1,6 +1,6 @@
 /* SANE - Scanner Access Now Easy.
 
-   Copyright (C) 2011-2019 Rolf Bensch <rolf at bensch hyphen online dot de>
+   Copyright (C) 2011-2020 Rolf Bensch <rolf at bensch hyphen online dot de>
    Copyright (C) 2006-2007 Wittawat Yamwong <wittawat@web.de>
 
    This file is part of the SANE package.
@@ -162,7 +162,7 @@ struct pixma_scan_ops_t
   void (*finish_scan) (pixma_t *);
 
     /** [Optional] Wait for a user's event, e.g. button event. \a timeout is
-     *  in milliseconds. If an event occured before it's timed out, flags in
+     *  in milliseconds. If an event occurred before it's timed out, flags in
      *  \a s->events should be set accordingly.
      *  \see PIXMA_EV_* */
   void (*wait_event) (pixma_t * s, int timeout);
@@ -176,7 +176,7 @@ struct pixma_scan_ops_t
 };
 
 
-/** \name Funtions for read and write big-endian integer values */
+/** \name Functions for read and write big-endian integer values */
 /**@{*/
 void pixma_set_be16 (uint16_t x, uint8_t * buf);
 void pixma_set_be32 (uint32_t x, uint8_t * buf);
@@ -205,6 +205,9 @@ uint8_t *pixma_newcmd (pixma_cmdbuf_t *, unsigned cmd,
 int pixma_exec (pixma_t *, pixma_cmdbuf_t *);
 int pixma_exec_short_cmd (pixma_t *, pixma_cmdbuf_t *, unsigned cmd);
 int pixma_map_status_errno (unsigned status);
+#if defined(HAVE_LIBXML2)
+int pixma_parse_xml_response(const char *xml_message);
+#endif
 /**@}*/
 
 #define pixma_fill_checksum(start, end) do {		\

@@ -50,26 +50,6 @@
 namespace genesys {
 namespace gl847 {
 
-typedef struct
-{
-    GpioId gpio_id;
-  uint8_t r6b;
-  uint8_t r6c;
-  uint8_t r6d;
-  uint8_t r6e;
-  uint8_t r6f;
-  uint8_t ra6;
-  uint8_t ra7;
-  uint8_t ra8;
-  uint8_t ra9;
-} Gpio_Profile;
-
-static Gpio_Profile gpios[]={
-    { GpioId::CANON_LIDE_200, 0x02, 0xf9, 0x20, 0xff, 0x00, 0x04, 0x04, 0x00, 0x00},
-    { GpioId::CANON_LIDE_700F, 0x06, 0xdb, 0xff, 0xff, 0x80, 0x15, 0x07, 0x20, 0x10},
-    { GpioId::UNKNOWN, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-};
-
 class CommandSetGl847 : public CommandSetCommon
 {
 public:
@@ -80,14 +60,10 @@ public:
     void init(Genesys_Device* dev) const override;
 
     void init_regs_for_warmup(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                              Genesys_Register_Set* regs, int* channels,
-                              int* total_size) const override;
+                              Genesys_Register_Set* regs) const override;
 
     void init_regs_for_shading(Genesys_Device* dev, const Genesys_Sensor& sensor,
                                Genesys_Register_Set& regs) const override;
-
-    void init_regs_for_scan(Genesys_Device* dev, const Genesys_Sensor& sensor,
-                            Genesys_Register_Set& regs) const override;
 
     void init_regs_for_scan_session(Genesys_Device* dev, const Genesys_Sensor& sensor,
                                     Genesys_Register_Set* reg,
@@ -119,8 +95,6 @@ public:
 
     void update_hardware_sensors(struct Genesys_Scanner* s) const override;
 
-    bool needs_update_home_sensor_gpio() const override { return true; }
-
     void update_home_sensor_gpio(Genesys_Device& dev) const override;
 
     void load_document(Genesys_Device* dev) const override;
@@ -128,8 +102,6 @@ public:
     void detect_document_end(Genesys_Device* dev) const override;
 
     void eject_document(Genesys_Device* dev) const override;
-
-    void move_to_ta(Genesys_Device* dev) const override;
 
     void send_shading_data(Genesys_Device* dev, const Genesys_Sensor& sensor, uint8_t* data,
                            int size) const override;

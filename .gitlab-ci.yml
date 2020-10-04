@@ -6,7 +6,7 @@
 variables:
   REGISTRY_HUB: "registry.gitlab.com/sane-project/ci-envs"
   CONFIGURE_MINI: "--enable-silent-rules"
-  CONFIGURE_FULL: "--with-usb --with-avahi --enable-pnm-backend --with-libcurl --with-poppler-glib"
+  CONFIGURE_FULL: "--with-usb --with-usb-record-replay --with-avahi --enable-pnm-backend --with-libcurl --with-poppler-glib"
 
 stages:
   - tarball
@@ -76,14 +76,14 @@ debian-10-full:
     - doc/sanei-html
     expire_in: 1 day
 
-fedora-31-clang:
-  image: $REGISTRY_HUB:fedora-31-clang
+fedora-32-clang:
+  image: $REGISTRY_HUB:fedora-32-clang
   variables:
     CONFIGURE_OPTS: "$CONFIGURE_MINI $CONFIGURE_FULL"
   <<: *compile_definition
 
-alpine-3.11-musl:
-  image: $REGISTRY_HUB:alpine-3.11-musl
+alpine-3.12-musl:
+  image: $REGISTRY_HUB:alpine-3.12-musl
   variables:
     CONFIGURE_OPTS: "$CONFIGURE_MINI $CONFIGURE_FULL"
   <<: *compile_definition

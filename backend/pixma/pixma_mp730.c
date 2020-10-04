@@ -1,6 +1,6 @@
 /* SANE - Scanner Access Now Easy.
 
-   Copyright (C) 2011-2019 Rolf Bensch <rolf at bensch hyphen online dot de>
+   Copyright (C) 2011-2020 Rolf Bensch <rolf at bensch hyphen online dot de>
    Copyright (C) 2007-2008 Nicolas Martin, <nicols-guest at alioth dot debian dot org>
    Copyright (C) 2006-2007 Wittawat Yamwong <wittawat@web.de>
 
@@ -817,7 +817,7 @@ static const pixma_scan_ops_t pixma_mp730_ops = {
               0x04a9, pid,       /* vid pid */	      \
               1,                 /* iface */		      \
               &pixma_mp730_ops,  /* ops */            \
-              0,                 /* min_xdpi not used in this subdriver */ \
+              0, 0,              /* min_xdpi & min_xdpi_16 not used in this subdriver */ \
               dpi, dpi,          /* xdpi, ydpi */	    \
               0, 0,              /* adftpu_min_dpi & adftpu_max_dpi not used in this subdriver */ \
               0, 0,              /* tpuir_min_dpi & tpuir_max_dpi not used in this subdriver */  \

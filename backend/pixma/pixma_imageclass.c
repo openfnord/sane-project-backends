@@ -461,7 +461,7 @@ step1 (pixma_t * s)
   iclass_t *mf = (iclass_t *) s->subdriver;
 
   /* don't wait full timeout for 1st command */
-  rec_tmo = s->rec_tmo;         /* save globel timeout */
+  rec_tmo = s->rec_tmo;         /* save global timeout */
   s->rec_tmo = 2;               /* set timeout to 2 seconds */
   error = query_status (s);
   s->rec_tmo = rec_tmo;         /* restore global timeout */
@@ -632,6 +632,8 @@ iclass_check_param (pixma_t * s, pixma_scan_param_t * sp)
   /* PIXMA_CAP_ADF also works for PIXMA_CAP_ADFDUP */
   if ((s->cfg->cap & PIXMA_CAP_ADF) && sp->source == PIXMA_SOURCE_FLATBED)
     sp->h = MIN (sp->h, 877 * sp->xdpi / 75);
+
+  sp->mode_jpeg = (s->cfg->cap & PIXMA_CAP_JPEG);
 
   /* PDBG (pixma_dbg (4, "*iclass_check_param***** Finally: channels=%u, depth=%u, x=%u, y=%u, w=%u, line_size=%" PRIu64 " , h=%u*****\n",
                    sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->line_size, sp->h)); */
@@ -930,7 +932,7 @@ static const pixma_scan_ops_t pixma_iclass_ops = {
             0x04a9, pid,              /* vid pid */	\
             1,                        /* iface */		\
             &pixma_iclass_ops,        /* ops */		\
-            0,                        /* min_xdpi not used in this subdriver */ \
+            0, 0,                     /* min_xdpi & min_xdpi_16 not used in this subdriver */ \
             dpi, dpi,                 /* xdpi, ydpi */	\
             0,                        /* adftpu_min_dpi not used in this subdriver */ \
             adftpu_max_dpi,           /* adftpu_max_dpi */ \
@@ -992,7 +994,7 @@ const pixma_config_t pixma_iclass_devices[] = {
   DEV ("Canon i-SENSYS MF110/910 Series", "MF110", MF110_PID, 600, 0, 640, 1050, 0),
   DEV ("Canon i-SENSYS MF520 Series", "MF520", MF520_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF420 Series", "MF420", MF420_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
-  DEV ("Canon i-SENSYS MF260 Series", "MF260", MF260_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
+  DEV ("Canon i-SENSYS MF260 Series", "MF260", MF260_PID, 600, 0, 640, 1050, PIXMA_CAP_JPEG | PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF740 Series", "MF740", MF740_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),
   DEV ("Canon i-SENSYS MF741C/743C", "MF741C/743C", MF743_PID, 600, 300, 640, 1050, PIXMA_CAP_ADFDUP),       /* ADFDUP restricted to 300dpi */
   DEV ("Canon i-SENSYS MF640 Series", "MF642C/643C/644C", MF640_PID, 600, 0, 640, 1050, PIXMA_CAP_ADFDUP),

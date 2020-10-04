@@ -65,6 +65,7 @@ EXTRA_DIST += saned.conf.in
 BACKEND_CONFS= abaton.conf agfafocus.conf apple.conf artec.conf \
 	       artec_eplus48u.conf avision.conf bh.conf \
 	       canon630u.conf canon.conf canon_dr.conf \
+               canon_lide70.conf \
 	       canon_pp.conf cardscan.conf coolscan2.conf coolscan3.conf \
 	       coolscan.conf dc210.conf dc240.conf dc25.conf \
 	       dell1600n_net.conf dmc.conf epjitsu.conf epson2.conf \
@@ -157,6 +158,7 @@ be_convenience_libs = libabaton.la libagfafocus.la \
     libapple.la libartec.la libartec_eplus48u.la \
     libas6e.la libavision.la libbh.la \
     libcanon.la libcanon630u.la libcanon_dr.la \
+    libcanon_lide70.la \
     libcanon_pp.la libcardscan.la libcoolscan.la \
     libcoolscan2.la libcoolscan3.la libdc25.la \
     libdc210.la libdc240.la libdell1600n_net.la \
@@ -183,13 +185,14 @@ be_convenience_libs = libabaton.la libagfafocus.la \
     libumax1220u.la libumax_pp.la libv4l.la \
     libxerox_mfp.la
 
-# Each stand alone backend thats possible to be built should be listed
+# Each stand-alone backend that's possible to be built should be listed
 # here.  There are the libraries that are installed under $(libdir)/sane.
 # Format is libsane-${backend}.la.
 be_dlopen_libs = libsane-abaton.la libsane-agfafocus.la \
     libsane-apple.la libsane-artec.la libsane-artec_eplus48u.la \
     libsane-as6e.la libsane-avision.la libsane-bh.la \
     libsane-canon.la libsane-canon630u.la libsane-canon_dr.la \
+    libsane-canon_lide70.la \
     libsane-canon_pp.la libsane-cardscan.la libsane-coolscan.la \
     libsane-coolscan2.la libsane-coolscan3.la libsane-dc25.la \
     libsane-dc210.la libsane-dc240.la libsane-dell1600n_net.la \
@@ -229,15 +232,15 @@ COMMON_LIBS = ../lib/liblib.la $(XML_LIBS)
 # Each backend should define a convenience library that compiles
 # all related files within backend directory.  General guideline
 # is to have a ${backend}.c and ${backend}.h.  Some backends also
-# add a few support source files to convience library.
+# add a few support source files to convenience library.
 # Note: automake doesn't really use header files listed here.
 # They are indications that they need to be distributed only.
 libabaton_la_SOURCES = abaton.c abaton.h
 libabaton_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=abaton
 
-# Each backend should define a stand alone library that gets installed.
+# Each backend should define a stand-alone library that gets installed.
 # This will need to link in a special file ${backend}-s.c that allows
-# the backend to be stand alone and contain all SANE API functions.
+# the backend to be stand-alone and contain all SANE API functions.
 # Also, it will need to link in related convenience library as well as
 # any external libraries required to resolve symbols.
 #
@@ -343,6 +346,17 @@ libsane_canon_dr_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=canon_dr
 libsane_canon_dr_la_LDFLAGS = $(DIST_SANELIBS_LDFLAGS)
 libsane_canon_dr_la_LIBADD = $(COMMON_LIBS) libcanon_dr.la ../sanei/sanei_init_debug.lo ../sanei/sanei_constrain_value.lo ../sanei/sanei_config.lo ../sanei/sanei_config2.lo sane_strstatus.lo ../sanei/sanei_usb.lo ../sanei/sanei_scsi.lo ../sanei/sanei_magic.lo $(MATH_LIB) $(SCSI_LIBS) $(USB_LIBS) $(RESMGR_LIBS)
 EXTRA_DIST += canon_dr.conf.in
+
+libcanon_lide70_la_SOURCES = canon_lide70.c
+libcanon_lide70_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=canon_lide70
+
+nodist_libsane_canon_lide70_la_SOURCES = canon_lide70-s.c
+libsane_canon_lide70_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=canon_lide70
+libsane_canon_lide70_la_LDFLAGS = $(DIST_SANELIBS_LDFLAGS)
+libsane_canon_lide70_la_LIBADD = $(COMMON_LIBS) libcanon_lide70.la ../sanei/sanei_init_debug.lo ../sanei/sanei_constrain_value.lo ../sanei/sanei_config.lo  sane_strstatus.lo ../sanei/sanei_usb.lo  $(MATH_LIB) $(USB_LIBS) $(RESMGR_LIBS)
+EXTRA_DIST += canon_lide70.conf.in
+# TODO: Why are this distributed but not compiled?
+EXTRA_DIST += canon_lide70-common.c
 
 libcanon_pp_la_SOURCES = canon_pp.c canon_pp.h canon_pp-io.c canon_pp-io.h canon_pp-dev.c canon_pp-dev.h
 libcanon_pp_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=canon_pp
@@ -514,11 +528,9 @@ libsane_fujitsu_la_LIBADD = $(COMMON_LIBS) libfujitsu.la ../sanei/sanei_init_deb
 EXTRA_DIST += fujitsu.conf.in
 
 libgenesys_la_SOURCES = genesys/genesys.cpp genesys/genesys.h \
-    genesys/buffer.h genesys/buffer.cpp \
     genesys/calibration.h \
     genesys/command_set.h \
     genesys/command_set_common.h genesys/command_set_common.cpp \
-    genesys/conv.h genesys/conv.cpp \
     genesys/device.h genesys/device.cpp \
     genesys/enums.h genesys/enums.cpp \
     genesys/error.h genesys/error.cpp \
@@ -526,6 +538,7 @@ libgenesys_la_SOURCES = genesys/genesys.cpp genesys/genesys.h \
     genesys/gl646.cpp genesys/gl646.h genesys/gl646_registers.h \
     genesys/gl124.cpp genesys/gl124.h genesys/gl124_registers.h \
     genesys/gl841.cpp genesys/gl841.h genesys/gl841_registers.h \
+    genesys/gl842.cpp genesys/gl842.h genesys/gl842_registers.h \
     genesys/gl843.cpp genesys/gl843.h genesys/gl843_registers.h \
     genesys/gl846.cpp genesys/gl846.h genesys/gl846_registers.h \
     genesys/gl847.cpp genesys/gl847.h genesys/gl847_registers.h \
@@ -563,7 +576,10 @@ libgenesys_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=genesys
 nodist_libsane_genesys_la_SOURCES = genesys-s.cpp
 libsane_genesys_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=genesys
 libsane_genesys_la_LDFLAGS = $(DIST_SANELIBS_LDFLAGS)
-libsane_genesys_la_LIBADD = $(COMMON_LIBS) libgenesys.la  ../sanei/sanei_magic.lo ../sanei/sanei_init_debug.lo ../sanei/sanei_constrain_value.lo ../sanei/sanei_config.lo sane_strstatus.lo ../sanei/sanei_usb.lo $(MATH_LIB) $(USB_LIBS) $(RESMGR_LIBS)
+libsane_genesys_la_LIBADD = $(COMMON_LIBS) libgenesys.la \
+    ../sanei/sanei_init_debug.lo ../sanei/sanei_constrain_value.lo \
+    ../sanei/sanei_config.lo sane_strstatus.lo ../sanei/sanei_usb.lo \
+    $(MATH_LIB) $(TIFF_LIBS) $(USB_LIBS) $(RESMGR_LIBS)
 EXTRA_DIST += genesys.conf.in
 
 libgphoto2_i_la_SOURCES = gphoto2.c gphoto2.h
@@ -919,15 +935,34 @@ libpixma_la_SOURCES = pixma/pixma.c \
 	pixma/pixma_bjnp.h \
 	pixma/pixma_bjnp_private.h \
 	pixma/pixma_rename.h
-libpixma_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=pixma
+libpixma_la_CPPFLAGS = $(AM_CPPFLAGS) $(XML_CFLAGS) -DBACKEND_NAME=pixma
+
+# Generate options files included by pixma/pixma.c from said file.
+# The circular dependency means we cannot add it as a prerequisite
+# for the targets that build the options files.
+
+$(srcdir)/pixma/pixma.c: \
+	$(srcdir)/pixma/pixma_sane_options.h \
+	$(srcdir)/pixma/pixma_sane_options.c
+
+$(srcdir)/pixma/pixma_sane_options.h:
+	@echo Generating $@ from $(@D)/pixma.c
+	@(cd $(@D); $(PYTHON) scripts/pixma_gen_options.py h < pixma.c > $(@F))
+$(srcdir)/pixma/pixma_sane_options.c:
+	@echo Generating $@ from $(@D)/pixma.c
+	@(cd $(@D); $(PYTHON) scripts/pixma_gen_options.py   < pixma.c > $(@F))
+
+EXTRA_DIST += pixma/pixma_sane_options.c
+EXTRA_DIST += pixma/pixma_sane_options.h
+EXTRA_DIST += pixma/scripts/pixma_gen_options.py
+CLEANFILES += pixma/pixma_sane_options.c
+CLEANFILES += pixma/pixma_sane_options.h
 
 nodist_libsane_pixma_la_SOURCES = pixma-s.c
 libsane_pixma_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=pixma
 libsane_pixma_la_LDFLAGS = $(DIST_SANELIBS_LDFLAGS)
-libsane_pixma_la_LIBADD = $(COMMON_LIBS) libpixma.la ../sanei/sanei_init_debug.lo ../sanei/sanei_constrain_value.lo ../sanei/sanei_config.lo  sane_strstatus.lo ../sanei/sanei_usb.lo ../sanei/sanei_thread.lo $(SANEI_SANEI_JPEG_LO) $(JPEG_LIBS) $(MATH_LIB) $(SOCKET_LIBS) $(USB_LIBS) $(SANEI_THREAD_LIBS) $(RESMGR_LIBS)
+libsane_pixma_la_LIBADD = $(COMMON_LIBS) libpixma.la ../sanei/sanei_init_debug.lo ../sanei/sanei_constrain_value.lo ../sanei/sanei_config.lo  sane_strstatus.lo ../sanei/sanei_usb.lo ../sanei/sanei_thread.lo $(SANEI_SANEI_JPEG_LO) $(JPEG_LIBS) $(XML_LIBS) $(MATH_LIB) $(SOCKET_LIBS) $(USB_LIBS) $(SANEI_THREAD_LIBS) $(RESMGR_LIBS)
 EXTRA_DIST += pixma.conf.in
-# included in pixma.c
-EXTRA_DIST += pixma/pixma_sane_options.c pixma/pixma_sane_options.h
 
 libplustek_la_SOURCES = plustek.c plustek.h
 libplustek_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=plustek
