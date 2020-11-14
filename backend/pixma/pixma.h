@@ -163,7 +163,12 @@ typedef uint32_t uint32_t;
                                              * only generation 1 scanners
                                              * usually gamma table has 1024 16-bit values
                                              */
-#define PIXMA_CAP_EXPERIMENT   (1 << 31)
+/* Some scanners have bugs related to user area selections, notably the imageClass MF4770n on ADF.
+ * In this case, we will do full-width scans and extract the requested selection. */
+#define PIXMA_CAP_SCAN_FULL_WIDTH_ADF        (1 << 16)
+#define PIXMA_CAP_SCAN_FULL_WIDTH_FLATBED    (1 << 17)
+
+#define PIXMA_CAP_EXPERIMENT            (1 << 31)
 /**@}*/
 
 /** \name Button events and related information returned by pixma_wait_event() */
@@ -289,16 +294,28 @@ struct pixma_device_status_t
 /** Scan parameters. */
 struct pixma_scan_param_t
 {
+  /**
+   * fe_ parameters are related to our interactions with the frontend.
+   * be_ parameters are related to our interactions with the scanner (or "backend") itself.
+   *
+   * These will be mostly the same except for software lineart where they
+   * will be different since the scanners do not support lineart in hardware
+   * and we must translate from a grey scan.
+   */
+
   /** Size in bytes of one image line (row).
    *  line_size >= depth / 8 * channels * w <br>
+   *  be_line_size is the width of data per line that we get from the scanner.
+   *
+   *  This may be padded to the left, so we need to take xs into account
+   *  which is the index into the line of the start of data that we are interested in.
+   *
    *  This field will be set by pixma_check_scan_param(). */
   uint64_t fe_line_size;
   uint64_t be_line_size;
 
     /** Size in bytes of the whole image.
      *  image_size = line_size * h <br>
-     *  This field relates to our interactions with the scanner and NOT with the frontend.
-     *  Particularly, for software lineart, this will be different.
      *  This field will be set by pixma_check_scan_param(). */
   uint64_t fe_image_size;
   uint64_t be_image_size;
@@ -326,7 +343,7 @@ struct pixma_scan_param_t
    *  bottom; in pixels.
    * xs is the offset in x direction of the selected scan range relative
    * to the range read from the scanner and wx the width in x direction
-   * of the scan line read from scanner. */
+   * of the scan line read from scanner, both in pixels. */
   /*@{ */
   unsigned x, y, w, h,   xs, wx;
   /*@} */

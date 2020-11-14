@@ -1129,7 +1129,7 @@ post_process_image_data (pixma_t * s, pixma_imagebuf_t * ib)
 {
   mp150_t *mp = (mp150_t *) s->subdriver;
   unsigned c, lines, line_size, n, m, cw, cx;
-  uint8_t *sptr, *dptr, *gptr, *cptr;
+  uint8_t *sptr, *gptr, *cptr;
 
   if (s->param->mode_jpeg)
     {
@@ -1160,7 +1160,7 @@ post_process_image_data (pixma_t * s, pixma_imagebuf_t * ib)
   m = (n > 0) ? s->param->wx / n : 1;
 
   /* Initialize pointers */
-  sptr = dptr = gptr = cptr = mp->imgbuf;
+  sptr = gptr = cptr = mp->imgbuf;
 
   /* walk through complete received lines */
   line_size = get_cis_line_size (s);

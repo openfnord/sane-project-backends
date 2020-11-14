@@ -152,7 +152,6 @@ typedef struct iclass_t
 {
   enum iclass_state_t state;
   pixma_cmdbuf_t cb;
-  unsigned raw_width;
   uint8_t current_status[12];
 
   uint8_t *buf, *blkptr, *lineptr;
@@ -290,15 +289,39 @@ send_scan_param (pixma_t * s)
   iclass_t *mf = (iclass_t *) s->subdriver;
   uint8_t *data;
 
+  /*
+   * Compute the parameters and substitute based on flags.
+   *
+   * Note the correction for scanners that have buggy width selection firmware:
+   * we ask for the *full* width of the scan area and crop.
+   *
+   */
+  uint32_t x = s->param->x - s->param->xs;
+  uint32_t y = s->param->y;
+  uint32_t w = ALIGN_SUP(s->param->w + s->param->xs, 32);
+  uint32_t h = s->param->h;
+
+  if (((s->cfg->cap & PIXMA_CAP_SCAN_FULL_WIDTH_ADF)
+      && ((s->param->source == PIXMA_SOURCE_ADF)
+          || (s->param->source == PIXMA_SOURCE_ADFDUP)))
+      || ((s->cfg->cap & PIXMA_CAP_SCAN_FULL_WIDTH_FLATBED)
+          && (s->param->source == PIXMA_SOURCE_FLATBED)))
+    {
+      x = 0;
+      w = s->cfg->width * s->param->xdpi / 75;
+    }
+
+  PDBG (pixma_dbg (4, "send_scan_param: x=%u y=%u w=%u h=%u", x, y, w, h));
+
   data = pixma_newcmd (&mf->cb, cmd_scan_param, 0x2e, 0);
   pixma_set_be16 (s->param->xdpi | 0x1000, data + 0x04);
   pixma_set_be16 (s->param->ydpi | 0x1000, data + 0x06);
-  pixma_set_be32 (s->param->x, data + 0x08);
-  pixma_set_be32 (s->param->y, data + 0x0c);
-  pixma_set_be32 (mf->raw_width, data + 0x10);
-  pixma_set_be32 (s->param->h, data + 0x14);
+  pixma_set_be32 (x, data + 0x08);
+  pixma_set_be32 (y, data + 0x0c);
+  pixma_set_be32 (w, data + 0x10);
+  pixma_set_be32 (h, data + 0x14);
   data[0x18] = (s->param->be_channels == 1) ? 0x04 : 0x08;
-  data[0x19] = s->param->be_channels * ((s->param->be_depth == 1) ? 8 : s->param->be_depth);	/* bits per pixel */
+  data[0x19] = s->param->be_depth;	/* bits per pixel */
   data[0x1f] = 0x7f;
   data[0x20] = 0xff;
   data[0x23] = 0x81;
@@ -585,47 +608,52 @@ iclass_close (pixma_t * s)
 static int
 iclass_check_param (pixma_t * s, pixma_scan_param_t * sp)
 {
-  UNUSED (s);
-
-  /* PDBG (pixma_dbg (4, "*iclass_check_param***** Initially: channels=%u, depth=%u, x=%u, y=%u, w=%u, line_size=%" PRIu64 " , h=%u*****\n",
-                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->line_size, sp->h)); */
-
-  sp->fe_depth = 8;
-  sp->be_depth = 8;
+  sp->fe_channels = 3;
+  sp->be_channels = 3;
   sp->software_lineart = 0;
 
+  switch (sp->mode)
+  {
+    /* standard scan modes
+     * 8 bit per channel in color and grayscale mode */
+    case PIXMA_SCAN_MODE_GRAY:
+      sp->fe_channels = 1;
+      sp->be_channels = 1;
+      /* fall through */
+
+    case PIXMA_SCAN_MODE_COLOR:
+      sp->fe_depth = 8;
+      sp->be_depth = 8;
+      break;
+
+      /* software lineart
+       * 1 bit per channel */
+    case PIXMA_SCAN_MODE_LINEART:
+      sp->software_lineart = 1;
+
+      sp->fe_channels = 1;
+      sp->fe_depth = 1;
+
+      sp->be_channels = 1;
+      sp->be_depth = 8;
+      break;
+
+    default:
+      break;
+  }
+
   /*
-   * For lineart, the scanner will be doing a gray scan and we
-   * will convert it. No native lineart mode.
+   * These machines return image data aligned to 32 byte blocks.
+   * Therefore, the data blocks returned may start at a point to the left of what we asked for and
+   * extend further to the right to the next 32 byte boundary.
+   * We indicate the index into the data that we are interested by xs.
+   *
+   * So we start xs pixels into the data, and extract fe_line_size bytes.
    *
    */
-  if (sp->mode == PIXMA_SCAN_MODE_LINEART)
-  {
-    sp->software_lineart = 1;
-    sp->fe_channels = 1;
-    sp->fe_depth = 1;
-
-    sp->be_channels = 1;
-    sp->be_depth = 8;
-}
-
-  if (sp->software_lineart == 1)
-    {
-      /*
-       * TODO: mp150 no longer enforces the 8-bit alignment restriction.
-       * I don't think that imageclass needs to do it either.
-       * Enforcing alignment causes more problems than it solves, esp. ensuring
-       * that we don't exceed the right margin of the scanner. [RL]
-       *
-       */
-      sp->fe_line_size = ALIGN_SUP (sp->w, 32) * sp->fe_channels;
-      sp->be_line_size = ALIGN_SUP (sp->w, 32) * sp->be_channels;
-    }
-  else
-    {
-      sp->fe_line_size = ALIGN_SUP (sp->w, 32) * sp->fe_channels;
-      sp->be_line_size = sp->fe_line_size;
-    }
+  sp->fe_line_size = ((sp->w * sp->fe_channels * sp->fe_depth) + 7) / 8;
+  sp->xs = sp->x % 32;
+  sp->be_line_size = ((ALIGN_SUP(sp->xs + sp->w, 32) * sp->be_channels * sp->be_depth) + 7) / 8;
 
   /* Some exceptions here for particular devices */
   /* Those devices can scan up to Legal 14" with ADF, but A4 11.7" in flatbed */
@@ -633,10 +661,31 @@ iclass_check_param (pixma_t * s, pixma_scan_param_t * sp)
   if ((s->cfg->cap & PIXMA_CAP_ADF) && sp->source == PIXMA_SOURCE_FLATBED)
     sp->h = MIN (sp->h, 877 * sp->xdpi / 75);
 
+  /*
+   * Some machines have buggy width selections, so for them we will scan the whole
+   * width and crop it to requirement.
+   *
+   */
+  if (((s->cfg->cap & PIXMA_CAP_SCAN_FULL_WIDTH_ADF)
+      && ((sp->source == PIXMA_SOURCE_ADF)
+          || (sp->source == PIXMA_SOURCE_ADFDUP)))
+      || ((s->cfg->cap & PIXMA_CAP_SCAN_FULL_WIDTH_FLATBED)
+          && (sp->source == PIXMA_SOURCE_FLATBED)))
+    {
+      sp->be_line_size = (((s->cfg->width * sp->xdpi / 75) * sp->be_channels
+          * sp->be_depth) + 7) / 8;
+      sp->xs = sp->x;
+    }
+
   sp->mode_jpeg = (s->cfg->cap & PIXMA_CAP_JPEG);
 
-  /* PDBG (pixma_dbg (4, "*iclass_check_param***** Finally: channels=%u, depth=%u, x=%u, y=%u, w=%u, line_size=%" PRIu64 " , h=%u*****\n",
-                   sp->channels, sp->depth, sp->x, sp->y, sp->w, sp->line_size, sp->h)); */
+  PDBG(pixma_dbg (4, "*iclass_check_param***** be_channels=%u be_depth=%u, "
+                  "be_line_size=%" PRIu64 ", fe_line_size=%" PRIu64 ", x=%u y=%u w=%u h=%u xs=%u *****\n",
+                  sp->be_channels,
+                  sp->be_depth,
+                  sp->be_line_size,
+                  sp->fe_line_size,
+                  sp->x, sp->y, sp->w, sp->h, sp->xs));
 
   return 0;
 }
@@ -656,10 +705,6 @@ iclass_scan (pixma_t * s)
   while (handle_interrupt (s, 0) > 0)
     {
     }
-
-  // TODO: Perhaps this is really now the same as be_line_size? [RL]
-  mf->raw_width = ALIGN_SUP (s->param->w, 32);
-  PDBG (pixma_dbg (3, "raw_width = %u\n", mf->raw_width));
 
   n = IMAGE_BLOCK_SIZE / s->param->be_line_size + 1;
   buf_len = (n + 1) * s->param->be_line_size + IMAGE_BLOCK_SIZE;
@@ -712,10 +757,17 @@ iclass_scan (pixma_t * s)
 static int
 iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
 {
-  int error, n;
+  int error;
+  unsigned n;
   iclass_t *mf = (iclass_t *) s->subdriver;
-  unsigned block_size, lines_size, lineart_lines_size, first_block_size;
+  unsigned block_size, first_block_size;
   uint8_t info;
+
+  /* process image sizes
+   * These are the parameters of the received data */
+  unsigned c = (s->param->be_channels * s->param->be_depth) / 8;  /* bytes per pixel */
+  unsigned cw = c * s->param->w;                                   /* image width in bytes */
+  unsigned cx = c * s->param->xs;                                  /* x-offset in bytes */
 
 /*
  * 1. send a block request cmd (d4 20 00... 04 00 06)
@@ -723,6 +775,7 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
  * 3. read the block one chunk at a time
  * 4. repeat until have enough to process >=1 lines
  */
+  unsigned bytes_written = 0;
   do
     {
       do
@@ -773,33 +826,17 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
 
       /* add current block to remainder of previous */
       mf->blk_len += block_size;
+
       /* n = number of full lines (rows) we have in the buffer. */
       n = mf->blk_len / s->param->be_line_size;
-      if (n != 0)
-        {
-          /* PDBG (pixma_dbg (4, "*iclass_fill_buffer***** Processing with n=%d, w=%i, line_size=%" PRIu64 ", raw_width=%u ***** \n",
-                           n, s->param->w, s->param->line_size, mf->raw_width)); */
-          /* PDBG (pixma_dbg (4, "*iclass_fill_buffer*****                 scan_mode=%d, lineptr=%" PRIu64 ", blkptr=%" PRIu64 " \n",
-                           s->param->mode, (uint64_t)mf->lineptr, (uint64_t)mf->blkptr)); */
+      unsigned blk_idx = 0;
 
-          /* gray to lineart convert
-           * mf->lineptr         : image line
-           * mf->blkptr          : scanned image block as grayscale
-           * s->param->w         : image width
-           * s->param->be_line_size : scanned image width */
+      for (unsigned blk_num = 0; blk_num < n; blk_num++, blk_idx += s->param->be_line_size)
+        {
           if (s->param->mode == PIXMA_SCAN_MODE_LINEART)
             {
-              int i;
-              uint8_t *sptr, *dptr;
-
-              /* PDBG (pixma_dbg (4, "*iclass_fill_buffer***** Processing lineart *****\n")); */
-
-              /* process ALL lines */
-              sptr = mf->blkptr;
-              dptr = mf->lineptr;
-              for (i = 0; i < n; i++, sptr += mf->raw_width)
-                dptr = pixma_binarize_line (s->param, dptr, sptr,
-                                            s->param->be_line_size, 1);
+              (void) pixma_binarize_line (s->param, mf->lineptr + bytes_written,
+                                          mf->blkptr + blk_idx + cx, cw, 1);
             }
           else if (s->param->be_channels != 1 &&
                   mf->generation == 1 &&
@@ -808,19 +845,18 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
 	          s->cfg->pid != MF8030_PID)
             {
               /* color and not MF46xx or MF65xx */
-              pack_rgb (mf->blkptr, n, mf->raw_width, mf->lineptr);
+              pack_rgb (mf->blkptr + blk_idx + cx, 1, cw, mf->lineptr + bytes_written);
             }
           else
             {
               /* grayscale */
-              memcpy (mf->lineptr, mf->blkptr, n * s->param->be_line_size);
+              memcpy (mf->lineptr + bytes_written, mf->blkptr + blk_idx + cx, cw);
             }
-          /* cull remainder and shift left */
-          lineart_lines_size = n * s->param->be_line_size;
-          lines_size = n * s->param->fe_line_size;
-          mf->blk_len -= lines_size;
-          memcpy (mf->blkptr, mf->blkptr + lines_size, mf->blk_len);
+          bytes_written += s->param->fe_line_size;
         }
+      /* cull remainder and shift left */
+      mf->blk_len -= n * s->param->be_line_size;
+      memcpy (mf->blkptr, mf->blkptr + (n * s->param->be_line_size), mf->blk_len);
     }
   while (n == 0);
 
@@ -828,7 +864,8 @@ iclass_fill_buffer (pixma_t * s, pixma_imagebuf_t * ib)
    * ib->rptr : start of image buffer
    * ib->rend : end of image buffer */
   ib->rptr = mf->lineptr;
-  ib->rend = mf->lineptr + (s->param->mode == PIXMA_SCAN_MODE_LINEART ? lineart_lines_size : lines_size);
+  ib->rend = mf->lineptr + bytes_written;
+
   /* PDBG (pixma_dbg (4, "*iclass_fill_buffer*****                 rptr=%" PRIu64 ", rend=%" PRIu64 ", diff=%ld \n",
                    (uint64_t)ib->rptr, (uint64_t)ib->rend, ib->rend - ib->rptr)); */
   return ib->rend - ib->rptr;
@@ -957,7 +994,7 @@ const pixma_config_t pixma_iclass_devices[] = {
   DEV ("Canon imageCLASS D550", "D550", D550_PID, 600, 0, 640, 1050, PIXMA_CAP_ADF),
   DEV ("Canon i-SENSYS MF4500 Series", "MF4500", MF4500_PID, 600, 0, 640, 877, PIXMA_CAP_ADF),
   DEV ("Canon i-SENSYS MF3010", "MF3010", MF3010_PID, 600, 0, 640, 877, 0),
-  DEV ("Canon i-SENSYS MF4700 Series", "MF4700", MF4700_PID, 600, 0, 640, 1050, PIXMA_CAP_ADF),
+  DEV ("Canon i-SENSYS MF4700 Series", "MF4700", MF4700_PID, 600, 0, 640, 1050, PIXMA_CAP_ADF | PIXMA_CAP_SCAN_FULL_WIDTH_ADF),
   DEV ("Canon i-SENSYS MF4800 Series", "MF4800", MF4800_PID, 600, 0, 640, 1050, PIXMA_CAP_ADF),
   DEV ("Canon imageCLASS MF4570dw", "MF4570dw", MF4570_PID, 600, 0, 640, 877, 0),
   DEV ("Canon i-SENSYS MF8200C Series", "MF8200C", MF8200_PID, 600, 300, 640, 1050, PIXMA_CAP_ADF),
