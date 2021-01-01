@@ -212,7 +212,8 @@ static int isSupportedDevice(struct device __sane_unused__ *dev)
 	/* blacklist malfunctioning device(s) */
 	if (!strncmp(dev->sane.model, "SCX-4500W", 9) ||
             !strncmp(dev->sane.model, "C460", 4) ||
-	    !!strstr(dev->sane.model, "CLX-3170") ||
+            !!strstr(dev->sane.model, "CLX-3170") ||
+            !!strstr(dev->sane.model, "WorkCentre 3225") ||
 	    !strncmp(dev->sane.model, "M288x", 5))
 	    return 0;
         return 1;
