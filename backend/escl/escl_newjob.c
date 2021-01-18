@@ -37,12 +37,6 @@
 
 #define PATH_MAX 4096
 
-struct uploading
-{
-    const char *read_data;
-    size_t size;
-};
-
 struct downloading
 {
     char *memory;
@@ -137,7 +131,7 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
 {
     CURL *curl_handle = NULL;
     int off_x = 0, off_y = 0;
-    struct uploading *upload = NULL;
+    struct downloading *upload = NULL;
     struct downloading *download = NULL;
     const char *scan_jobs = "/eSCL/ScanJobs";
     char cap_data[PATH_MAX] = { 0 };
@@ -155,7 +149,7 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
         DBG( 1, "Create NewJob : the name or the scan are invalid.\n");
         return (NULL);
     }
-    upload = (struct uploading *)calloc(1, sizeof(struct uploading));
+    upload = (struct downloading *)calloc(1, sizeof(struct downloading));
     if (upload == NULL) {
         *status = SANE_STATUS_NO_MEM;
         DBG( 1, "Create NewJob : memory allocation failure\n");
@@ -271,7 +265,7 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
                     support_options[0] == 0 ? " " : support_options);
 wake_up_device:
     DBG( 1, "Create NewJob : %s\n", cap_data);
-    upload->read_data = strdup(cap_data);
+    upload->memory = strdup(cap_data);
     upload->size = strlen(cap_data);
     download->memory = malloc(1);
     download->size = 0;
@@ -279,7 +273,7 @@ wake_up_device:
     if (curl_handle != NULL) {
         escl_curl_url(curl_handle, device, scan_jobs);
         curl_easy_setopt(curl_handle, CURLOPT_POST, 1L);
-        curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, upload->read_data);
+        curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, (const char*)upload->memory);
         curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDSIZE, upload->size);
         curl_easy_setopt(curl_handle, CURLOPT_HEADERFUNCTION, download_callback);
         curl_easy_setopt(curl_handle, CURLOPT_HEADERDATA, (void *)download);
@@ -333,7 +327,7 @@ wake_up_device:
         curl_easy_cleanup(curl_handle);
     }
     if (wakup_count > 0 && wakup_count < 4) {
-        free(upload->read_data);
+        free(upload->memory);
         upload->size = 0;
         free(download->memory);
         download->size = 0;
