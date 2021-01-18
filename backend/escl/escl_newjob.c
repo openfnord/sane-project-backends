@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #ifdef PATH_MAX
 # undef PATH_MAX
@@ -146,6 +147,7 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
     char *f_ext = "";
     char *format_ext = NULL;
     char duplex_mode[1024] = { 0 };
+    int wakup_count = 0;
 
     *status = SANE_STATUS_GOOD;
     if (device == NULL || scanner == NULL) {
@@ -166,7 +168,6 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
         *status = SANE_STATUS_NO_MEM;
         return (NULL);
     }
-    curl_handle = curl_easy_init();
     if (scanner->caps[scanner->source].default_format)
         free(scanner->caps[scanner->source].default_format);
     scanner->caps[scanner->source].default_format = NULL;
@@ -214,65 +215,68 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
          off_x = (scanner->caps[scanner->source].pos_x > scanner->caps[scanner->source].width) / 2;
     if (scanner->caps[scanner->source].pos_y > scanner->caps[scanner->source].height)
          off_y = (scanner->caps[scanner->source].pos_y > scanner->caps[scanner->source].height) / 2;
+
+    char support_options[1024];
+    memset(support_options, 0, 1024);
+    char *source = (scanner->source == PLATEN ? "Platen" : "Feeder");
+    if (scanner->use_threshold)
+    {
+       char *tmp = add_support_option("ThresholdSupport", scanner->val_threshold);
+       if (support_options[0])
+          strcat(support_options, tmp);
+       else
+          strcpy(support_options, tmp);
+       free(tmp);
+    }
+    if (scanner->use_sharpen)
+    {
+       char *tmp = add_support_option("SharpenSupport", scanner->val_sharpen);
+       if (support_options[0])
+          strcat(support_options, tmp);
+       else
+          strcpy(support_options, tmp);
+       free(tmp);
+    }
+    if (scanner->use_contrast)
+    {
+       char *tmp = add_support_option("ContrastSupport", scanner->val_contrast);
+       if (support_options[0])
+          strcat(support_options, tmp);
+       else
+          strcpy(support_options, tmp);
+       free(tmp);
+    }
+    if (scanner->use_brightness)
+    {
+       char *tmp = add_support_option("BrightnessSupport", scanner->val_brightness);
+       if (support_options[0])
+          strcat(support_options, tmp);
+       else
+          strcpy(support_options, tmp);
+       free(tmp);
+    }
+    snprintf(cap_data, sizeof(cap_data), settings,
+    		scanner->caps[scanner->source].height,
+    		scanner->caps[scanner->source].width,
+    		off_x,
+    		off_y,
+    		scanner->caps[scanner->source].default_format,
+    		format_ext,
+    		scanner->caps[scanner->source].default_color,
+    		scanner->caps[scanner->source].default_resolution,
+    		scanner->caps[scanner->source].default_resolution,
+    		source,
+    		source,
+    		duplex_mode[0] == 0 ? " " : duplex_mode,
+                    support_options[0] == 0 ? " " : support_options);
+wake_up_device:
+    DBG( 1, "Create NewJob : %s\n", cap_data);
+    upload->read_data = strdup(cap_data);
+    upload->size = strlen(cap_data);
+    download->memory = malloc(1);
+    download->size = 0;
+    curl_handle = curl_easy_init();
     if (curl_handle != NULL) {
-        char support_options[1024];
-        memset(support_options, 0, 1024);
-	char *source = (scanner->source == PLATEN ? "Platen" : "Feeder");
-        if (scanner->use_threshold)
-        {
-           char *tmp = add_support_option("ThresholdSupport", scanner->val_threshold);
-           if (support_options[0])
-              strcat(support_options, tmp);
-           else
-              strcpy(support_options, tmp);
-           free(tmp);
-        }
-        if (scanner->use_sharpen)
-        {
-           char *tmp = add_support_option("SharpenSupport", scanner->val_sharpen);
-           if (support_options[0])
-              strcat(support_options, tmp);
-           else
-              strcpy(support_options, tmp);
-           free(tmp);
-        }
-        if (scanner->use_contrast)
-        {
-           char *tmp = add_support_option("ContrastSupport", scanner->val_contrast);
-           if (support_options[0])
-              strcat(support_options, tmp);
-           else
-              strcpy(support_options, tmp);
-           free(tmp);
-        }
-        if (scanner->use_brightness)
-        {
-           char *tmp = add_support_option("BrightnessSupport", scanner->val_brightness);
-           if (support_options[0])
-              strcat(support_options, tmp);
-           else
-              strcpy(support_options, tmp);
-           free(tmp);
-        }
-        snprintf(cap_data, sizeof(cap_data), settings,
-			scanner->caps[scanner->source].height,
-			scanner->caps[scanner->source].width,
-			off_x,
-			off_y,
-			scanner->caps[scanner->source].default_format,
-			format_ext,
-			scanner->caps[scanner->source].default_color,
-			scanner->caps[scanner->source].default_resolution,
-			scanner->caps[scanner->source].default_resolution,
-			source,
-			source,
-			duplex_mode[0] == 0 ? " " : duplex_mode,
-                        support_options[0] == 0 ? " " : support_options);
-        DBG( 1, "Create NewJob : %s\n", cap_data);
-        upload->read_data = strdup(cap_data);
-        upload->size = strlen(cap_data);
-        download->memory = malloc(1);
-        download->size = 0;
         escl_curl_url(curl_handle, device, scan_jobs);
         curl_easy_setopt(curl_handle, CURLOPT_POST, 1L);
         curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, upload->read_data);
@@ -312,8 +316,10 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
                     if (strstr(download->memory, "409 Conflict") != NULL)
                         *status = SANE_STATUS_NO_DOCS;
                     // If "503 Service Unavailable" appear, it means that device is busy (scanning in progress)
-                    else if (strstr(download->memory, "503 Service Unavailable") != NULL)
+                    else if (strstr(download->memory, "503 Service Unavailable") != NULL) {
+                        wakup_count += 1;
                         *status = SANE_STATUS_DEVICE_BUSY;
+		    }
                     else
                         *status = SANE_STATUS_INVAL;
                 }
@@ -325,6 +331,14 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
             }
         }
         curl_easy_cleanup(curl_handle);
+    }
+    if (wakup_count > 0 && wakup_count < 4) {
+        free(upload->read_data);
+        upload->size = 0;
+        free(download->memory);
+        download->size = 0;
+        usleep(250);
+        goto wake_up_device;
     }
     if (upload != NULL)
         free(upload);
