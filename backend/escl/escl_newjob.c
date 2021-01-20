@@ -262,11 +262,11 @@ escl_newjob (capabilities_t *scanner, const ESCL_Device *device, SANE_Status *st
     		source,
     		source,
     		duplex_mode[0] == 0 ? " " : duplex_mode,
-                    support_options[0] == 0 ? " " : support_options);
-wake_up_device:
-    DBG( 1, "Create NewJob : %s\n", cap_data);
+                support_options[0] == 0 ? " " : support_options);
     upload->memory = strdup(cap_data);
     upload->size = strlen(cap_data);
+wake_up_device:
+    DBG( 1, "Create NewJob : %s\n", cap_data);
     download->memory = malloc(1);
     download->size = 0;
     curl_handle = curl_easy_init();
@@ -327,15 +327,17 @@ wake_up_device:
         curl_easy_cleanup(curl_handle);
     }
     if (wakup_count > 0 && wakup_count < 4) {
-        free(upload->memory);
-        upload->size = 0;
         free(download->memory);
+        download->memory = NULL;
         download->size = 0;
+        *status = SANE_STATUS_GOOD;
         usleep(250);
         goto wake_up_device;
     }
-    if (upload != NULL)
+    if (upload != NULL) {
+        free(upload->memory);
         free(upload);
+    }
     if (download != NULL)
         free(download);
     return (result);
