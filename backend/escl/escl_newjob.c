@@ -303,6 +303,7 @@ wake_up_device:
                         *status = SANE_STATUS_INVAL;
                     }
                     free(download->memory);
+                    download->memory = NULL;
                 }
                 else {
                     DBG( 1, "Create NewJob : The creation of the failed job: %s\n", download->memory);
