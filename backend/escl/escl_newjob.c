@@ -296,6 +296,7 @@ wake_up_device:
                           result = strdup(location);
                           DBG( 1, "Create NewJob : %s\n", result);
                           *temporary = '\n';
+                          wakup_count = 0;
                        }
                     }
                     if (result == NULL) {
