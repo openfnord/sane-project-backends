@@ -4233,11 +4233,22 @@ attach (SANE_String_Const devname, Avision_ConnectionType con_type,
         ++matches;
     }
 
+    if ((con_type == AV_USB) && (Avision_Device_List[model_num].usb_product)) {
+      ++match_count;
+      if (attaching_hw && (Avision_Device_List[model_num].usb_product == attaching_hw->usb_product))
+        ++matches;
+    }
+
+    if ((con_type == AV_USB) && (Avision_Device_List[model_num].usb_vendor)) {
+      ++match_count;
+      if (attaching_hw && (Avision_Device_List[model_num].usb_vendor == attaching_hw->usb_vendor))
+        ++matches;
+    }
+
     /* we need 2 matches (mfg, model) for SCSI entries, or the ones available
        for "we know what we are looking for" USB entries */
-    if ((attaching_hw == &(Avision_Device_List [model_num]) &&
-         matches == match_count) ||
-	matches == 2)
+    if ((attaching_hw == &(Avision_Device_List [model_num])) &&
+         (matches == match_count))
     {
       DBG (1, "attach: Scanner matched entry: %d: \"%s\", \"%s\", 0x%.4x, 0x%.4x\n",
            model_num,
