@@ -85,7 +85,9 @@ find_nodes_s(xmlNode *node)
 static void
 print_xml_job_status(xmlNode *node,
                      SANE_Status *job,
-                     int *image)
+		     SANE_Status *stateReason,
+                     int *image,
+		     int *sr)
 {
     while (node) {
         if (node->type == XML_ELEMENT_NODE) {
@@ -105,9 +107,20 @@ print_xml_job_status(xmlNode *node,
 	                *image = atoi(state);
 	            }
                 }
+		else if (strcmp((const char *)node->name, "JobStateReasons") == 0) {
+		    print_xml_job_status(node, job, stateReason, image, sr);
+		}
+		else if (strcmp((const char *)node->name, "JobStateReason") == 0) {
+                    const char *reason = (const char *)xmlNodeGetContent(node);
+		    *sr = 1;
+		    if (!strcmp(reason, "QueuedInDevice") == 0) {
+                        *stateReason = SANE_STATUS_GOOD;
+                        DBG(10, "jobStatReason SANE_STATUS_GOOD\n");
+		    }
+		}
             }
         }
-        print_xml_job_status(node->children, job, image);
+        print_xml_job_status(node->children, job, stateReason, image, sr);
         node = node->next;
     }
 }
@@ -118,7 +131,9 @@ print_xml_platen_and_adf_status(xmlNode *node,
                                 SANE_Status *adf,
                                 const char* jobId,
                                 SANE_Status *job,
-                                int *image)
+                                SANE_Status *stateReason,
+                                int *image,
+				int sr)
 {
     while (node) {
         if (node->type == XML_ELEMENT_NODE) {
@@ -164,7 +179,7 @@ print_xml_platen_and_adf_status(xmlNode *node,
                 }
                 else if (jobId && job && strcmp((const char *)node->name, "JobUri") == 0) {
                     if (strstr((const char *)xmlNodeGetContent(node), jobId)) {
-						print_xml_job_status(node, job, image);
+						print_xml_job_status(node, job, stateReason, image, sr);
 					}
                 }
             }
@@ -174,7 +189,9 @@ print_xml_platen_and_adf_status(xmlNode *node,
                                         adf,
                                         jobId,
                                         job,
-                                        image);
+					stateReason,
+                                        image,
+					sr);
         node = node->next;
     }
 }
@@ -196,12 +213,14 @@ escl_status(const ESCL_Device *device,
     SANE_Status status = SANE_STATUS_DEVICE_BUSY;
     SANE_Status platen= SANE_STATUS_DEVICE_BUSY;
     SANE_Status adf= SANE_STATUS_DEVICE_BUSY;
+    SANE_Status stateReason = SANE_STATUS_DEVICE_BUSY;
     CURL *curl_handle = NULL;
     struct idle *var = NULL;
     xmlDoc *data = NULL;
     xmlNode *node = NULL;
     const char *scanner_status = "/eSCL/ScannerStatus";
     int image = -1;
+    int sr = 0;
     int pass = 0;
 reload:
 
@@ -239,14 +258,17 @@ reload:
     }
     /* Decode Job status */
     // Thank's Alexander Pevzner (pzz@apevzner.com)
-    print_xml_platen_and_adf_status(node, &platen, &adf, jobId, job, &image);
+    print_xml_platen_and_adf_status(node, &platen, &adf, jobId, job, &stateReason, &image, &sr);
     if (platen != SANE_STATUS_GOOD &&
         platen != SANE_STATUS_UNSUPPORTED) {
         status = platen;
     } else if (source == PLATEN) {
         status = platen;
     } else {
-        status = adf;
+        if (sr == 1)
+	    status = stateReason;
+	else
+            status = adf;
     }
     DBG (10, "STATUS : %s\n", sane_strstatus(status));
 clean:
