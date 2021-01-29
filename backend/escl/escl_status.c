@@ -133,7 +133,7 @@ print_xml_platen_and_adf_status(xmlNode *node,
                                 SANE_Status *job,
                                 SANE_Status *stateReason,
                                 int *image,
-				int sr)
+				int *sr)
 {
     while (node) {
         if (node->type == XML_ELEMENT_NODE) {
