@@ -1,0 +1,17 @@
+/* doc/man-html.css -- styling for HTML formatted manual pages
+   Copyright (C) 2021  SANE Project
+
+   SPDX-License-Identifier: CC-BY-SA-4.0
+ */
+
+/* These are the mandoc defaults and still need to be tweaked to
+   something suitable for the project's website.  Maybe the SANE
+   Standard style is a good target.
+ */
+
+div.Pp { margin: 1ex 0ex; }
+div.Nd, div.Bf, div.Op { display: inline; }
+span.Pa, span.Ad { font-style: italic; }
+span.Ms { font-weight: bold; }
+dl.Bl-diag > dt { font-weight: bold; }
+code.Nm, code.Fl, code.Cm, code.Ic, code.In, code.Fd, code.Fn, code.Cd { font-weight: bold; font-family: inherit; }

@@ -87,9 +87,10 @@ all: bemans html-pages
 dist_doc_DATA = backend-writing.txt
 nobase_dist_doc_DATA = $(BEDOCS)
 EXTRA_DIST += descriptions.txt releases.md sane-logo2.jpg sane-logo.png \
-  sane.png
+  sane.png man-html.css
 
 MAN2HTML = mandoc -T utf8 -T html \
+	    -O style=$(srcdir)/man-html.css -W unsupp -W error -W warning \
 	    | sed 's|<b>\([^<]*\)</b>(\([0-9]\))|<a href="\1.\2.\html"><b>\1</b>(\2)</a>|g'
 
 %.1 %.5 %.7 %.8: %.man
@@ -215,7 +216,7 @@ install-data-local: install-beman5
 uninstall-local:
 	rm -rf $(DESTDIR)$(beman5dir)/sane-*.5
 
-html-man: $(MANPAGES)
+html-man: $(MANPAGES) $(srcdir)/man.css
 	@for page in $(MANPAGES); do \
 	  echo "translating $${page} to $${page}.html..."; \
 	  cat $${page} | $(MAN2HTML) > $${page}.html; \
