@@ -5,6 +5,7 @@
 # Uncomment the following line:
 # networking=no
 #
+### BJNP/MFNP configuration
 # bjnp-timeout=5000
 # Specify the timeout (in ms) to be used for all the folllowing
 # scanners.
@@ -30,3 +31,13 @@
 #
 # Example using for a scanner using mfnp including the optional timeout:
 # mfnp://scanner.bad-network.org/timeout=1500
+#
+#
+### AXIS configuration
+# Uncomment the following line to enable auto detection of AXIS network
+# scanners (on the same subnet):
+# axis_auto_detection=yes
+#
+# Or add a scanner manually:
+# axis://myscanner.my.domain
+# axis://192.168.0.123

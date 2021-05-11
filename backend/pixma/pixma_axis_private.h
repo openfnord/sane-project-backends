@@ -10,9 +10,7 @@
 
 #define AXIS_WIMP_PORT 		10260	/* UDP port for discovery */
 
-#define cpu_to_le16(x)		(x)
-#define le16_to_cpu(x)		(x)
-
+#define WIMP_HEADER_MAGIC	0x03
 #define WIMP_SERVER_INFO	0x24
 #define WIMP_SERVER_STATUS	0x30
 #define WIMP_REPLY		(1 << 0)
@@ -22,6 +20,7 @@ struct axis_wimp_header {
 	uint8_t zero;
 } __attribute__((__packed__));
 
+#define WIMP_GET_MAGIC		0x02
 #define WIMP_GET_NAME		0x02
 #define WIMP_GET_STATUS		0x03
 struct axis_wimp_get {
@@ -43,6 +42,9 @@ struct axis_wimp_get_reply {
 	uint16_t len;
 	uint16_t unknown;
 } __attribute__((__packed__));
+
+#define AXIS_SERIAL_LEN		32	/* arbitrary limit */
+#define AXIS_USERNAME_LEN	32	/* arbitrary limit */
 
 #define AXIS_SCAN_PORT		49152	/* TCP port for scan data */
 
@@ -83,7 +85,6 @@ typedef struct device_s
   int tcp_socket;		/* open tcp socket for communcation to scannner */
   /* device information */
   struct in_addr addr;		/* IP address of the scanner */
-  int axis_timeout;             /* timeout (msec) for next poll command */
   int int_size;			/* size of interrupt data */
   uint8_t int_data[16];		/* interrupt data */
 } axis_device_t;

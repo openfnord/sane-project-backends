@@ -109,6 +109,40 @@ get_scanner_info (unsigned devnr)
   return si;
 }
 
+static const struct pixma_config_t *lookup_scanner(const char *makemodel,
+                                                   const struct pixma_config_t *const pixma_devices[])
+{
+  int i;
+  const struct pixma_config_t *cfg;
+  char *match;
+
+  for (i = 0; pixma_devices[i]; i++)
+    {
+      /* loop through the device classes (mp150, mp730 etc) */
+      for (cfg = pixma_devices[i]; cfg->name; cfg++)
+        {
+          /* loop through devices in class */
+          pixma_dbg( 5, "lookup_scanner: Checking for %s in %s\n", makemodel, cfg->model);
+          if ((match = strcasestr (makemodel, cfg->model)) != NULL)
+            {
+              /* possible match found, make sure it is not a partial match */
+              /* MP600 and MP600R are different models! */
+              /* some models contain ranges, so check for a '-' too */
+
+              if ((match[strlen(cfg->model)] == ' ') ||
+                  (match[strlen(cfg->model)] == '\0') ||
+                  (match[strlen(cfg->model)] == '-'))
+                {
+                  pixma_dbg (3, "lookup_scanner: Scanner model found: Name %s(%s) matches %s\n", cfg->model, cfg->name, makemodel);
+                  return cfg;
+                }
+            }
+       }
+    }
+  pixma_dbg (3, "lookup_scanner: Scanner model %s not found, giving up!\n", makemodel);
+  return NULL;
+}
+
 static SANE_Status
 attach (SANE_String_Const devname)
 {
@@ -129,11 +163,13 @@ attach (SANE_String_Const devname)
 
 
 static SANE_Status
-attach_net (SANE_String_Const devname,
+attach_net (SANE_String_Const devname,  SANE_String_Const makemodel,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg, int interface)
+             const struct pixma_config_t *const pixma_devices[],int interface)
 {
   scanner_info_t *si;
+  const pixma_config_t *cfg;
+  SANE_Status error;
 
   si = (scanner_info_t *) calloc (1, sizeof (*si));
   if (!si)
@@ -141,30 +177,35 @@ attach_net (SANE_String_Const devname,
   si->devname = strdup (devname);
   if (!si->devname)
     return SANE_STATUS_NO_MEM;
-
-  si->cfg = cfg;
-  sprintf(si->serial, "%s_%s", cfg->model, serial);
-  si -> interface = interface;
-  si->next = first_scanner;
-  first_scanner = si;
-  nscanners++;
-  return SANE_STATUS_GOOD;
+  if ((cfg = lookup_scanner(makemodel, pixma_devices)) == (struct pixma_config_t *)NULL)
+    error = SANE_STATUS_INVAL;
+  else
+    {
+      si->cfg = cfg;
+      snprintf(si->serial, sizeof(si->serial), "%s_%s", cfg->model, serial);
+      si -> interface = interface;
+      si->next = first_scanner;
+      first_scanner = si;
+      nscanners++;
+      error = SANE_STATUS_GOOD;
+    }
+  return error;
 }
 
 static SANE_Status
-attach_bjnp (SANE_String_Const devname,
+attach_bjnp (SANE_String_Const devname, SANE_String_Const makemodel,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg)
+             const struct pixma_config_t *const pixma_devices[])
 {
-  return attach_net(devname, serial, cfg, INT_BJNP);
+  return attach_net(devname, makemodel, serial, pixma_devices, INT_BJNP);
 }
 
 static SANE_Status
-attach_axis (SANE_String_Const devname,
+attach_axis (SANE_String_Const devname, SANE_String_Const makemodel,
              SANE_String_Const serial,
-             const struct pixma_config_t *cfg)
+             const struct pixma_config_t *const pixma_devices[])
 {
-  return attach_net(devname, serial, cfg, INT_AXIS);
+  return attach_net(devname, makemodel, serial, pixma_devices, INT_AXIS);
 }
 
 static void
@@ -366,7 +407,8 @@ pixma_collect_devices (const char **conf_devices,
       j++;
 
     }
-  sanei_axis_find_devices(conf_devices, attach_axis, pixma_devices);
+  if (! local_only)
+    sanei_axis_find_devices(conf_devices, attach_axis, pixma_devices);
   si = first_scanner;
   while (j < nscanners)
     {
@@ -497,22 +539,21 @@ pixma_write (pixma_io_t * io, const void *cmd, unsigned len)
   size_t count = len;
   int error;
 
-  if (io->interface == INT_BJNP)
+  switch (io->interface)
     {
-    sanei_bjnp_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
-    error = map_error (sanei_bjnp_write_bulk (io->dev, cmd, &count));
-    }
-  else if (io->interface == INT_AXIS)
-    {
-    sanei_axis_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
-    error = map_error (sanei_axis_write_bulk (io->dev, cmd, &count));
-    }
-  else
-    {
+    case INT_BJNP:
+      sanei_bjnp_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
+      error = map_error (sanei_bjnp_write_bulk (io->dev, cmd, &count));
+      break;
+    case INT_AXIS:
+      sanei_axis_set_timeout (io->dev, PIXMA_BULKOUT_TIMEOUT);
+      error = map_error (sanei_axis_write_bulk (io->dev, cmd, &count));
+      break;
+    default:
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
-    sanei_usb_set_timeout (PIXMA_BULKOUT_TIMEOUT);
+      sanei_usb_set_timeout (PIXMA_BULKOUT_TIMEOUT);
 #endif
-    error = map_error (sanei_usb_write_bulk (io->dev, cmd, &count));
+      error = map_error (sanei_usb_write_bulk (io->dev, cmd, &count));
     }
   if (error == PIXMA_EIO)
     error = PIXMA_ETIMEDOUT;	/* FIXME: SANE doesn't have ETIMEDOUT!! */
@@ -534,18 +575,17 @@ pixma_read (pixma_io_t * io, void *buf, unsigned size)
   size_t count = size;
   int error;
 
-  if (io-> interface == INT_BJNP)
+  switch (io->interface)
     {
-    sanei_bjnp_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
-    error = map_error (sanei_bjnp_read_bulk (io->dev, buf, &count));
-    }
-  else if (io-> interface == INT_AXIS)
-    {
-    sanei_axis_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
-    error = map_error (sanei_axis_read_bulk (io->dev, buf, &count));
-    }
-  else
-    {
+    case INT_BJNP:
+      sanei_bjnp_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
+      error = map_error (sanei_bjnp_read_bulk (io->dev, buf, &count));
+      break;
+    case INT_AXIS:
+      sanei_axis_set_timeout (io->dev, PIXMA_BULKIN_TIMEOUT);
+      error = map_error (sanei_axis_read_bulk (io->dev, buf, &count));
+      break;
+    default:
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
       sanei_usb_set_timeout (PIXMA_BULKIN_TIMEOUT);
 #endif
@@ -571,18 +611,17 @@ pixma_wait_interrupt (pixma_io_t * io, void *buf, unsigned size, int timeout)
     timeout = INT_MAX;
   else if (timeout < 100)
     timeout = 100;
-  if (io-> interface == INT_BJNP)
+  switch (io->interface)
     {
+    case INT_BJNP:
       sanei_bjnp_set_timeout (io->dev, timeout);
       error = map_error (sanei_bjnp_read_int (io->dev, buf, &count));
-    }
-  else if (io-> interface == INT_AXIS)
-    {
+      break;
+    case INT_AXIS:
       sanei_axis_set_timeout (io->dev, timeout);
       error = map_error (sanei_axis_read_int (io->dev, buf, &count));
-    }
-  else
-    {
+      break;
+    default:
 #ifdef HAVE_SANEI_USB_SET_TIMEOUT
       sanei_usb_set_timeout (timeout);
 #endif
@@ -590,7 +629,7 @@ pixma_wait_interrupt (pixma_io_t * io, void *buf, unsigned size, int timeout)
     }
   if (error == PIXMA_EIO ||
       (io->interface == INT_BJNP && error == PIXMA_EOF) ||  /* EOF is a bjnp timeout error! */
-      (io->interface == INT_AXIS && error == PIXMA_EOF))    /* EOF is a bjnp timeout error! */
+      (io->interface == INT_AXIS && error == PIXMA_EOF))    /* EOF is an axis timeout error! */
     error = PIXMA_ETIMEDOUT;	/* FIXME: SANE doesn't have ETIMEDOUT!! */
   if (error == 0)
     error = count;
