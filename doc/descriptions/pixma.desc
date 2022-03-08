@@ -1029,19 +1029,19 @@
 :interface "USB"
 :usbid "0x04a9" "0x18b7"
 :status :good
-:comment "Resolutions are supported up to 600DPI, 1200DPI does not work. WiFi not Working."
+:comment "All resolutions are supported (up to 600DPI). WiFi not Working."
 
 :model "PIXMA TS3451"
 :interface "USB"
 :usbid "0x04a9" "0x18b7"
 :status :good
-:comment "Resolutions are supported up to 600DPI, 1200DPI does not work. WiFi not Working."
+:comment "All resolutions are supported (up to 600DPI). WiFi not Working."
 
 :model "PIXMA TS3452"
 :interface "USB"
 :usbid "0x04a9" "0x18b7"
 :status :good
-:comment "Resolutions are supported up to 600DPI, 1200DPI does not work. WiFi not Working."
+:comment "All resolutions are supported (up to 600DPI). WiFi not Working."
 
 :model "PIXMA TS3500 Series"
 :interface "USB"
