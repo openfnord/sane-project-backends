@@ -1025,11 +1025,23 @@
 :status :good
 :comment "All resolutions supported (up to 1200DPI). WiFi not working."
 
-:model "PIXMA TS3400 Series"
+:model "PIXMA TS3450 Series"
 :interface "USB"
 :usbid "0x04a9" "0x18b7"
-:status :untested
-:comment "Testers needed!"
+:status :good
+:comment "Resolutions are supported up to 600DPI, 1200DPI does not work. WiFi not Working."
+
+:model "PIXMA TS3451 Series"
+:interface "USB"
+:usbid "0x04a9" "0x18b7"
+:status :good
+:comment "Resolutions are supported up to 600DPI, 1200DPI does not work. WiFi not Working."
+
+:model "PIXMA TS3452 Series"
+:interface "USB"
+:usbid "0x04a9" "0x18b7"
+:status :good
+:comment "Resolutions are supported up to 600DPI, 1200DPI does not work. WiFi not Working."
 
 :model "PIXMA TS3500 Series"
 :interface "USB"
