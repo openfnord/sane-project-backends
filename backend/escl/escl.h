@@ -102,6 +102,7 @@ typedef struct ESCL_Device {
     SANE_Bool https;
     struct curl_slist *hack;
     char     *unix_socket;
+    char     *user_passwd;
 } ESCL_Device;
 
 typedef struct capst

@@ -1135,6 +1135,7 @@ SANE_Status
 escl_parse_name(SANE_String_Const name, ESCL_Device *device)
 {
     SANE_String_Const host = NULL;
+    SANE_String_Const host2 = NULL;
     SANE_String_Const port_str = NULL;
     DBG(10, "escl_parse_name\n");
     if (name == NULL || device == NULL) {
@@ -1153,14 +1154,23 @@ escl_parse_name(SANE_String_Const name, ESCL_Device *device)
     if (strncmp(name, "https://", 8) == 0) {
         device->https = SANE_TRUE;
         device->type = strdup("https");
-        host = name + 8;
+        host2 = name + 8;
     } else if (strncmp(name, "http://", 7) == 0) {
         device->https = SANE_FALSE;
         device->type = strdup("http");
-        host = name + 7;
+        host2 = name + 7;
     } else {
         DBG(1, "Unknown URL scheme in %s", name);
         return SANE_STATUS_INVAL;
+    }
+
+    host = strchr(host2, '@');
+    if (host) {
+        host++;
+	device->user_passwd  = strndup(host2, host - host2 - 1);
+    }
+    else {
+	host = host2;
     }
 
     port_str = strchr(host, ':');
