@@ -1548,7 +1548,7 @@ finish_pass (Test_Device * test_device)
       SANE_Pid pid;
 
       DBG (2, "finish_pass: terminating reader process %ld\n",
-	   (long) test_device->reader_pid);
+           sanei_thread_pid_to_long(test_device->reader_pid));
       sanei_thread_kill (test_device->reader_pid);
       pid = sanei_thread_waitpid (test_device->reader_pid, &status);
       if (!sanei_thread_is_valid (pid))

@@ -1228,7 +1228,7 @@ terminate_reader_task (pixma_sane_t * ss, int *exit_code)
   if (ss->sp.source != PIXMA_SOURCE_ADF && ss->sp.source != PIXMA_SOURCE_ADFDUP)
     ss->idle = SANE_TRUE;
 
-  if (result == pid)
+  if (sanei_thread_pid_compare(result, pid))
     {
       if (exit_code)
 	      *exit_code = status;
@@ -1261,7 +1261,8 @@ start_reader_task (pixma_sane_t * ss)
   if (sanei_thread_is_valid (ss->reader_taskid))
     {
       PDBG (pixma_dbg
-	    (1, "BUG:reader_taskid(%ld) != -1\n", (long) ss->reader_taskid));
+	    (1, "BUG:reader_taskid(%ld) != -1\n",
+	     sanei_thread_pid_to_long(ss->reader_taskid)));
       terminate_reader_task (ss, NULL);
     }
   if (pipe (fds) == -1)
@@ -1297,7 +1298,8 @@ start_reader_task (pixma_sane_t * ss)
       PDBG (pixma_dbg (1, "ERROR:unable to start reader task\n"));
       return PIXMA_ENOMEM;
     }
-  PDBG (pixma_dbg (3, "Reader task id=%ld (%s)\n", (long) pid,
+  PDBG (pixma_dbg (3, "Reader task id=%ld (%s)\n",
+                   sanei_thread_pid_to_long(pid),
 		   (is_forked) ? "forked" : "threaded"));
   ss->reader_taskid = pid;
   return 0;

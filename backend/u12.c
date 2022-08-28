@@ -409,7 +409,7 @@ static SANE_Status do_cancel( U12_Scanner *scanner, SANE_Bool closepipe )
 		res = sanei_thread_waitpid( scanner->reader_pid, 0 );
 		alarm(0);
 
-		if( res != scanner->reader_pid ) {
+		if( !sanei_thread_pid_compare(res, scanner->reader_pid) ) {
 			DBG( _DBG_PROC,"sanei_thread_waitpid() failed !\n");
 
 			/* do it the hard way...*/

@@ -62,10 +62,39 @@
 
 #ifdef USE_PTHREAD
 #include <pthread.h>
-typedef pthread_t SANE_Pid;
-#else
-typedef int SANE_Pid;
 #endif
+
+/** Object used to identify a thread or process.
+ *
+ * SANE_Pid is defined with an additional validity flag
+ * since there is no cross-platform consensus on how to construct
+ * a pthread_t that can be reliably tested for validity.
+ * This is because pthread_t is opaque so we *cannot* make assumptions
+ * about what the underlying type is. It is often an int, sometimes
+ * a pointer and rarely an actual structure.
+ *
+ * Comparing pthread_t values for equality with == is not defined!
+ * Using pthread_equal() for pthread_t is recommended.
+ * For users of this API, we will provide a function sanei_thread_pid_compare()
+ * for comparing SANE_Pids and callers are urged to use it.
+ *
+ * In any case, comparing two pids with the same pthread_t will fail
+ * equality tests if either of the pids are marked as invalid.
+ * Two invalid pids are not equal.
+ *
+ */
+typedef struct
+{
+  SANE_Bool is_valid;
+
+#ifdef USE_PTHREAD
+  pthread_t pid;
+#else
+  int pid;
+#endif
+
+} SANE_Pid;
+
 
 /** Initialize sanei_thread.
  *
@@ -112,7 +141,7 @@ extern SANE_Bool sanei_thread_is_valid (SANE_Pid pid);
  *  For details on the pthread_t type, see in particular Issue 6 of
  *  http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_types.h.html
  */
-#define sanei_thread_invalidate(pid) ((pid) = (SANE_Pid)(-1))
+#define sanei_thread_invalidate(sane_pid) ((sane_pid).pid = SANE_FALSE)
 
 /** Initialize a SANE_Pid
  *
@@ -193,5 +222,32 @@ extern SANE_Pid sanei_thread_waitpid (SANE_Pid pid, int *status);
  * - any other value - if the task finished unexpectantly or hasn't finished yet
  */
 extern SANE_Status sanei_thread_get_status (SANE_Pid pid);
+
+
+/** Compare SANE_Pid for equality.
+ *
+ * @param pid1 - the id of the first task
+ * @param pid2 - the id of the second task
+ *
+ * @return
+ * - SANE_TRUE - if the SANE_Pids are the same (or equivalent).
+ * - SANE_FALSE - if the SANE_Pids are not the same (or not equivalent).
+ */
+extern SANE_Bool sanei_thread_pid_compare (SANE_Pid pid1, SANE_Pid pid2);
+
+/** Generate a long value to represent a SANE_Pid
+ *
+ * We cannot make any assumptions about what this long value represents since
+ * the underlying thread/process id on each platform may be different.
+ *
+ * It is handy for display purposes though, for example identifying which thread
+ * is being referred to in diagnostics.
+ *
+ * @param pid - the id of the task
+ *
+ * @return
+ * - long value of pid.
+ */
+extern long sanei_thread_pid_to_long( SANE_Pid pid );
 
 #endif /* sanei_thread_h */

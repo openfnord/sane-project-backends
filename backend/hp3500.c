@@ -966,7 +966,7 @@ attachScanner (const char *devicename)
   dev->devicename = strdup (devicename);
   dev->sfd = -1;
   dev->last_scan = 0;
-  dev->reader_pid = (SANE_Pid) -1;
+  sanei_thread_invalidate(dev->reader_pid);
   dev->pipe_r = dev->pipe_w = -1;
 
   dev->sane.name = dev->devicename;

@@ -2033,8 +2033,9 @@ do_cancel (Coolscan_t * scanner)
 
       /* ensure child knows it's time to stop: */
       sanei_thread_kill (scanner->reader_pid);
-      while (sanei_thread_waitpid(scanner->reader_pid, &exit_status) !=
-                                                        scanner->reader_pid );
+      while (!sanei_thread_pid_compare(sanei_thread_waitpid(scanner->reader_pid, &exit_status),
+                                       scanner->reader_pid) )
+	      ;
       sanei_thread_invalidate (scanner->reader_pid);
     }
 

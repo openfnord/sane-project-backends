@@ -1893,7 +1893,7 @@ void sane_cancel (SANE_Handle h)
             res = sanei_thread_waitpid( pss->child, 0 );
             alarm(0);
 
-            if( res != pss->child ) {
+            if( !sanei_thread_pid_compare(res, pss->child) ) {
                 DBG( DL_MINOR_ERROR,"sanei_thread_waitpid() failed !\n");
 
                 /* do it the hard way...*/

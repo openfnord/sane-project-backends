@@ -90,7 +90,7 @@ struct hp_handle_s
 static hp_bool_t
 hp_handle_isScanning (HpHandle this)
 {
-  return this->reader_pid != 0;
+  return sanei_thread_is_valid(this->reader_pid);
 }
 
 /*
@@ -157,7 +157,7 @@ hp_handle_startReader (HpHandle this, HpScsi scsi)
   int	fds[2];
   sigset_t 		old_set;
 
-  assert(this->reader_pid == 0);
+  assert(!sanei_thread_is_valid(this->reader_pid));
   this->cancelled = 0;
   this->pipe_write_fd = this->pipe_read_fd = -1;
 
@@ -178,39 +178,38 @@ hp_handle_startReader (HpHandle this, HpScsi scsi)
   /* Returning means to be in the parent or thread/fork failed */
   this->reader_pid = sanei_thread_begin (this->child_forked ? reader_process :
                                          reader_thread, (void *) this);
-  if (this->reader_pid != 0)
+  if (sanei_thread_is_valid (this->reader_pid))
     {
       /* Here we are in the parent */
       sigprocmask(SIG_SETMASK, &old_set, 0);
 
-      if ( this->child_forked )
-      { /* After fork(), parent must close writing end of pipe */
-        DBG(3, "hp_handle_startReader: parent closes write end of pipe\n");
-        close (this->pipe_write_fd);
-        this->pipe_write_fd = -1;
-      }
+      if (this->child_forked)
+        { /* After fork(), parent must close writing end of pipe */
+          DBG (3, "hp_handle_startReader: parent closes write end of pipe\n");
+          close (this->pipe_write_fd);
+          this->pipe_write_fd = -1;
+        }
 
-      if (!sanei_thread_is_valid (this->reader_pid))
-	{
-          if ( !this->child_forked )
-          {
-            close (this->pipe_write_fd);
-            this->pipe_write_fd = -1;
-          }
-	  close (this->pipe_read_fd);
-          this->pipe_read_fd = -1;
-
-          DBG(1, "hp_handle_startReader: fork() failed\n");
-
-	  return SANE_STATUS_IO_ERROR;
-	}
-
-      DBG(1, "start_reader: reader process %ld started\n", (long) this->reader_pid);
+      DBG (1, "start_reader: reader process %ld started\n",
+           sanei_thread_pid_to_long (this->reader_pid));
       return SANE_STATUS_GOOD;
     }
 
-  DBG(3, "Unexpected return from sanei_thread_begin()\n");
-  return SANE_STATUS_INVAL;
+  /*
+   * Error kicking off the reader.
+   *
+   */
+  if (!this->child_forked)
+    {
+      close (this->pipe_write_fd);
+      this->pipe_write_fd = -1;
+    }
+  close (this->pipe_read_fd);
+  this->pipe_read_fd = -1;
+
+  DBG (1, "hp_handle_startReader: fork()/thread start failed\n");
+
+  return SANE_STATUS_IO_ERROR;
 }
 
 static SANE_Status
@@ -221,10 +220,11 @@ hp_handle_stopScan (HpHandle this)
   this->cancelled = 0;
   this->bytes_left = 0;
 
-  if (this->reader_pid)
+  if (sanei_thread_is_valid(this->reader_pid))
     {
       int info;
-      DBG(3, "hp_handle_stopScan: killing child (%ld)\n", (long) this->reader_pid);
+      DBG(3, "hp_handle_stopScan: killing child (%ld)\n",
+          sanei_thread_pid_to_long(this->reader_pid));
       sanei_thread_kill (this->reader_pid);
       sanei_thread_waitpid(this->reader_pid, &info);
 
@@ -232,7 +232,7 @@ hp_handle_stopScan (HpHandle this)
 	  WIFEXITED(info) ? "exited, status" : "signalled, signal",
 	  WIFEXITED(info) ? WEXITSTATUS(info) : WTERMSIG(info));
       close(this->pipe_read_fd);
-      this->reader_pid = 0;
+      sanei_thread_invalidate(this->reader_pid);
 
       if ( !FAILED( sanei_hp_scsi_new(&scsi, this->dev->sanedev.name)) )
       {
@@ -732,11 +732,11 @@ sanei_hp_handle_cancel (HpHandle this)
   /* Therefore the read might not return until it is interrupted. */
   DBG(3,"sanei_hp_handle_cancel: compat flags: 0x%04x\n",
       (int)this->dev->compat);
-  if (    (this->reader_pid)
-       && (this->dev->compat & HP_COMPAT_OJ_1150C) )
+  if (sanei_thread_is_valid (this->reader_pid)
+    && (this->dev->compat & HP_COMPAT_OJ_1150C))
   {
      DBG(3,"sanei_hp_handle_cancel: send SIGTERM to child (%ld)\n",
-         (long) this->reader_pid);
+         sanei_thread_pid_to_long(this->reader_pid));
      sanei_thread_kill(this->reader_pid);
   }
 }

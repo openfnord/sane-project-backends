@@ -3490,7 +3490,7 @@ do_cancel (Artec48U_Scanner * s, SANE_Bool closepipe)
       res = sanei_thread_waitpid (s->reader_pid, 0);
       alarm (0);
 
-      if (res != s->reader_pid)
+      if (!sanei_thread_pid_compare(res, s->reader_pid))
 	{
 	  XDBG ((1, "sanei_thread_waitpid() failed !\n"));
 	}
