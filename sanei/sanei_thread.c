@@ -117,7 +117,7 @@ sanei_thread_is_forked( void )
 static void
 sanei_thread_set_invalid( SANE_Pid *pid )
 {
-  pid->is_valid = SANE_FALSE;
+	sanei_thread_invalidate(*pid);
 }
 #endif
 

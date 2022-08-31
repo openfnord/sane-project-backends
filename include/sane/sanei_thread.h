@@ -141,7 +141,7 @@ extern SANE_Bool sanei_thread_is_valid (SANE_Pid pid);
  *  For details on the pthread_t type, see in particular Issue 6 of
  *  http://pubs.opengroup.org/onlinepubs/9699919799/basedefs/sys_types.h.html
  */
-#define sanei_thread_invalidate(sane_pid) ((sane_pid).pid = SANE_FALSE)
+#define sanei_thread_invalidate(sane_pid) ((sane_pid).is_valid = SANE_FALSE)
 
 /** Initialize a SANE_Pid
  *
