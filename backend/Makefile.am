@@ -66,7 +66,7 @@ EXTRA_DIST += saned.conf.in
 # Backends are not required to have a config file. Any backend
 # that wants to install a config file should list it here.
 BACKEND_CONFS= abaton.conf agfafocus.conf apple.conf artec.conf \
-	       artec_eplus48u.conf avision.conf bh.conf \
+	       artec_eplus48u.conf avision.conf bh.conf brother_mfp.conf \
 	       canon630u.conf canon.conf canon_dr.conf \
                canon_lide70.conf \
 	       canon_pp.conf cardscan.conf coolscan2.conf coolscan3.conf \
@@ -160,7 +160,7 @@ clean-local:
 # example of working around that issue.
 be_convenience_libs = libabaton.la libagfafocus.la \
     libapple.la libartec.la libartec_eplus48u.la \
-    libas6e.la libavision.la libbh.la \
+    libas6e.la libavision.la libbh.la libbrother_mfp.la \
     libcanon.la libcanon630u.la libcanon_dr.la \
     libcanon_lide70.la \
     libcanon_pp.la libcardscan.la libcoolscan.la \
@@ -194,7 +194,7 @@ be_convenience_libs = libabaton.la libagfafocus.la \
 # Format is libsane-${backend}.la.
 be_dlopen_libs = libsane-abaton.la libsane-agfafocus.la \
     libsane-apple.la libsane-artec.la libsane-artec_eplus48u.la \
-    libsane-as6e.la libsane-avision.la libsane-bh.la \
+    libsane-as6e.la libsane-avision.la libsane-bh.la libsane-brother_mfp.la \
     libsane-canon.la libsane-canon630u.la libsane-canon_dr.la \
     libsane-canon_lide70.la \
     libsane-canon_pp.la libsane-cardscan.la libsane-coolscan.la \
@@ -380,6 +380,27 @@ libsane_bh_la_LIBADD = $(COMMON_LIBS) libbh.la \
     ../sanei/sanei_scsi.lo \
     $(SCSI_LIBS) $(RESMGR_LIBS)
 EXTRA_DIST += bh.conf.in
+
+
+libbrother_mfp_la_SOURCES = brother_mfp.c #brother_mfp.h
+libbrother_mfp_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=brother_mfp
+
+nodist_libsane_brother_mfp_la_SOURCES = brother_mfp-s.c
+libsane_brother_mfp_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=brother_mfp
+libsane_brother_mfp_la_LDFLAGS = $(DIST_SANELIBS_LDFLAGS)
+libsane_brother_mfp_la_LIBADD = $(COMMON_LIBS) libbrother_mfp.la \
+    ../sanei/sanei_init_debug.lo \
+    ../sanei/sanei_constrain_value.lo \
+    ../sanei/sanei_usb.lo \
+    ../sanei/sanei_config.lo \
+    sane_strstatus.lo \
+    $(USB_LIBS)
+EXTRA_DIST += brother_mfp.conf.in
+
+
+
+
+
 
 libcanon_la_SOURCES = canon.c canon.h
 libcanon_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=canon
