@@ -566,6 +566,13 @@ for be in ${BACKENDS}; do
     fi
     ;;
 
+    brother_mfp)
+    if test "${HAVE_CXX11}" != "1"; then
+      echo "*** $be backend requires C++11 support - $DISABLE_MSG"
+      backend_supported="no"
+    fi
+    ;;
+
     mustek_pp)
     if test "${sane_cv_use_libieee1284}" != "yes" && test "${enable_parport_directio}" != "yes"; then
       echo "*** $be backend requires libieee1284 or parport-directio libraries - $DISABLE_MSG"
