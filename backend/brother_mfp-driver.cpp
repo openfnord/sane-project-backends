@@ -56,14 +56,6 @@
 
 /*-----------------------------------------------------------------*/
 
-const char* BrotherDriver::ScanModeToText (BrotherScanMode scan_mode)
-{
-  static const char *scan_mode_text[] =
-    { "CGRAY", "GRAY64", "ERRDIF", "TEXT" };
-
-  return scan_mode_text[scan_mode];
-}
-
 SANE_Status BrotherUSBDriver::Connect ()
 {
   SANE_Status res;
@@ -904,11 +896,6 @@ BrotherDriver::BrotherDriver (BrotherFamily family) :
   {
     case BROTHER_FAMILY_4:
       encoder = new BrotherEncoderFamily4();
-      if (nullptr == encoder)
-        {
-          DBG (DBG_SERIOUS,
-               "BrotherDriver::BrotherDriver: failed to allocate encoder.\n");
-        }
       break;
 
 //      case BROTHER_FAMILY_1:
@@ -921,6 +908,12 @@ BrotherDriver::BrotherDriver (BrotherFamily family) :
            "BrotherDriver::BrotherDriver: no encoder available for family: %d.\n", family);
       break;
   }
+
+  if (nullptr == encoder)
+    {
+      DBG (DBG_SERIOUS,
+	   "BrotherDriver::BrotherDriver: failed to allocate encoder.\n");
+    }
 }
 
 BrotherDriver::~BrotherDriver ()
@@ -944,6 +937,7 @@ BrotherUSBDriver::BrotherUSBDriver (const char *devicename, BrotherFamily family
  }
 
 BrotherUSBDriver::~BrotherUSBDriver ()
- {
-   free(devicename);
- }
+{
+  delete[] data_buffer;
+  free (devicename);
+}

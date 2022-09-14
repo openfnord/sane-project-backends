@@ -49,7 +49,14 @@
 
 #include "brother_mfp-driver.h"
 
-extern "C" void sanei_debug_brother_mfp_call(int level, const char *msg, ...);
+/*
+ * Define me to add the temporary debugging file output
+ * of scan data.
+ *
+ * TODO: I will remove this shortly anyway. For dev only.
+ *
+ */
+//#define BROTHER_ENABLE_SCAN_FILE	1
 
 /*-----------------------------------------------------------------*/
 
@@ -150,7 +157,9 @@ struct BrotherDevice
       internal_scan_mode(nullptr),
       x_res (0),
       y_res (0),
+#ifdef BROTHER_ENABLE_SCAN_FILE
       scan_file (nullptr),
+#endif
       driver (nullptr)
   {
         (void)memset(opt, 0, sizeof(opt));
@@ -172,18 +181,6 @@ struct BrotherDevice
   SANE_Int y_res;
 
   FILE *scan_file;
-
-//  SANE_Int pixel_x_offset;
-//  SANE_Int pixel_x_width;
-//
-//  SANE_Int pixel_y_offset;
-//  SANE_Int pixel_y_height;
-
-  // TODO: Perhaps move these to the driver?
-//  SANE_Bool is_open;
-//  SANE_Bool is_scanning;
-//  SANE_Bool in_session;
-//  SANE_Bool is_cancelled;
 
   BrotherDriver *driver;
 
@@ -1111,12 +1108,14 @@ sane_start (SANE_Handle handle)
    * We are only doing this because we need to add JPEG decoding.
    *
    */
+#ifdef BROTHER_ENABLE_SCAN_FILE
   device->scan_file = fopen("/home/ralph/scandata.out", "w");
   if (device->scan_file == NULL)
     {
       DBG (DBG_SERIOUS, "sane_start: failed to open scan data file.\n");
       return SANE_STATUS_INVAL;
     }
+#endif
 
   return device->driver->StartScan();
 }
@@ -1146,6 +1145,7 @@ sane_read (SANE_Handle handle, SANE_Byte * data,
    * TODO: remove me! For test only.
    *
    */
+#ifdef BROTHER_ENABLE_SCAN_FILE
   fwrite(data, *length, 1, device->scan_file);
 
   if (res == SANE_STATUS_EOF)
@@ -1154,6 +1154,7 @@ sane_read (SANE_Handle handle, SANE_Byte * data,
       fclose(device->scan_file);
       device->scan_file = NULL;
     }
+#endif
 
   return res;
 }
@@ -1173,11 +1174,13 @@ sane_cancel (SANE_Handle handle)
       DBG (DBG_EVENT, "sane_cancel: scan failed to cancel.\n");
     }
 
+#ifdef BROTHER_ENABLE_SCAN_FILE
   if (device->scan_file)
     {
       fclose(device->scan_file);
       device->scan_file = NULL;
     }
+#endif
 }
 
 

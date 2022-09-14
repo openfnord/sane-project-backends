@@ -59,11 +59,6 @@ const char* BrotherEncoder::ScanModeToText (BrotherScanMode scan_mode)
   static const char *scan_mode_text[] =
     { "CGRAY", "GRAY64", "ERRDIF", "TEXT" };
 
-  if (scan_mode > (sizeof(scan_mode_text) / sizeof(scan_mode_text[0])))
-    {
-      return nullptr;
-    }
-
   return scan_mode_text[scan_mode];
 }
 
