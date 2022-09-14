@@ -58,90 +58,6 @@ extern "C" void sanei_debug_brother_mfp_call(int level, const char *msg, ...);
 
 /*-----------------------------------------------------------------*/
 
-typedef struct
-{
-  size_t dummy;
-} Brother_jpeg_decode_state;
-
-typedef struct
-{
-  size_t dummy;
-} Brother_raw_decode_state;
-
-//static void Brother_decode_gray_rlength_init (Brother_rlen_decode_state *state);
-//static void Brother_decode_jpeg_init (Brother_jpeg_decode_state *state);
-//static void Brother_decode_gray_raw_init (Brother_raw_decode_state *state);
-//
-//static SANE_Status Brother_decode_jpeg (Brother_jpeg_decode_state *state,
-//                                        const SANE_Byte *in_buffer, size_t in_buffer_len,
-//                                        SANE_Byte *out_buffer, size_t out_buffer_len,
-//                                        size_t *bytes_consumed, size_t *bytes_written);
-//
-//static SANE_Status Brother_decode_gray_raw (Brother_raw_decode_state *state,
-//                                        const SANE_Byte *in_buffer, size_t in_buffer_len,
-//                                        SANE_Byte *out_buffer, size_t out_buffer_len,
-//                                        size_t *bytes_consumed, size_t *bytes_written);
-//
-//static SANE_Status Brother_decode_gray_rlength (Brother_rlen_decode_state *state,
-//                                                const SANE_Byte *in_buffer, size_t in_buffer_len,
-//                                                SANE_Byte *out_buffer, size_t out_buffer_len,
-//                                                size_t *bytes_consumed, size_t *bytes_written);
-
-
-//static void
-//Brother_decode_jpeg_init (Brother_jpeg_decode_state *state)
-//{
-//  (void)state;
-////  state->decode_bytes_left = 0;
-//}
-//
-//static void
-//Brother_decode_gray_raw_init (Brother_raw_decode_state *state)
-//{
-//  (void)state;
-////  state->decode_bytes_left = block_size;
-//}
-//
-//
-//static SANE_Status
-//Brother_decode_jpeg (Brother_jpeg_decode_state *state,
-//                     const SANE_Byte *in_buffer, size_t in_buffer_len,
-//                     SANE_Byte *out_buffer, size_t out_buffer_len,
-//                     size_t *bytes_consumed, size_t *bytes_written)
-//{
-//  (void)state;
-//
-//  /*
-//   * TODO: replace with JPEG decoding.
-//   *
-//   */
-//  size_t bytes_to_copy = MIN(in_buffer_len, (size_t)out_buffer_len);
-//  (void) memcpy (out_buffer, in_buffer, bytes_to_copy);
-//
-//  *bytes_written = bytes_to_copy;
-//  *bytes_consumed = bytes_to_copy;
-//
-//  return SANE_STATUS_GOOD;
-//}
-//
-//static SANE_Status
-//Brother_decode_gray_raw (Brother_raw_decode_state *state,
-//                         const SANE_Byte *in_buffer, size_t in_buffer_len,
-//                         SANE_Byte *out_buffer, size_t out_buffer_len,
-//                         size_t *bytes_consumed, size_t *bytes_written)
-//{
-//  (void)state;
-//
-//  size_t bytes_to_copy = MIN(in_buffer_len, (size_t )out_buffer_len);
-//  (void) memcpy (out_buffer, in_buffer, bytes_to_copy);
-//
-//  *bytes_written = bytes_to_copy;
-//  *bytes_consumed = bytes_to_copy;
-//
-//  return SANE_STATUS_GOOD;
-//}
-
-
 const char* BrotherDriver::ScanModeToText (BrotherScanMode scan_mode)
 {
   static const char *scan_mode_text[] =
@@ -1030,9 +946,9 @@ BrotherUSBDriver::BrotherUSBDriver (const char *devicename, BrotherFamily family
      was_cancelled(false),
      devicename (nullptr),
      fd (0),
+     small_buffer {0},
      data_buffer (nullptr),
      data_buffer_bytes (0)
-
  {
    this->devicename = strdup(devicename);
  }

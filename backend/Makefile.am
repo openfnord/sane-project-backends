@@ -382,8 +382,7 @@ libsane_bh_la_LIBADD = $(COMMON_LIBS) libbh.la \
 EXTRA_DIST += bh.conf.in
 
 
-libbrother_mfp_la_SOURCES = brother_mfp.h \
-		brother_mfp-driver.cpp \
+libbrother_mfp_la_SOURCES = brother_mfp-driver.cpp \
 		brother_mfp-driver.h \
 		brother_mfp-common.h \
 		brother_mfp-encoder.cpp \

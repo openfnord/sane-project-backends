@@ -145,12 +145,15 @@ struct BrotherDevice
       model (nullptr),
       sane_device {nullptr, nullptr, nullptr, nullptr},
       name (nullptr),
+      modes {0},
+      params {SANE_FRAME_GRAY, SANE_FALSE, 0, 0, 0, 0},
       internal_scan_mode(nullptr),
       x_res (0),
       y_res (0),
       scan_file (nullptr),
       driver (nullptr)
   {
+        (void)memset(opt, 0, sizeof(opt));
   }
   struct BrotherDevice *next;
 
@@ -325,12 +328,12 @@ attach_with_no_ret (const char *devicename)
 static size_t
 max_string_size (const SANE_String_Const strings[])
 {
-  size_t size, max_size = 0;
+  size_t max_size = 0;
   SANE_Int i;
 
   for (i = 0; strings[i]; ++i)
     {
-      size = strlen (strings[i]) + 1;
+      size_t size = strlen (strings[i]) + 1;
       if (size > max_size)
         max_size = size;
     }
@@ -685,7 +688,7 @@ sane_close (SANE_Handle handle)
 
   DBG (DBG_EVENT, "sane_close\n");
 
-  device = (BrotherDevice *)handle;
+  device = static_cast<BrotherDevice *>(handle);
 
   /*
    * Check is a valid device handle by running through our list of devices.
@@ -725,7 +728,7 @@ sane_close (SANE_Handle handle)
 const SANE_Option_Descriptor *
 sane_get_option_descriptor (SANE_Handle handle, SANE_Int option)
 {
-  BrotherDevice *device = (BrotherDevice *)handle;
+  BrotherDevice *device = static_cast<BrotherDevice *>(handle);
 
   DBG (DBG_EVENT, "sane_get_option_descriptor: device=%s, option = %d\n", device->name, option);
   if (option < 0 || option >= NUM_OPTIONS)
@@ -741,7 +744,7 @@ SANE_Status
 sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
 		     void *value, SANE_Int * info)
 {
-  BrotherDevice *device = (BrotherDevice *)handle;
+  BrotherDevice *device = static_cast<BrotherDevice *>(handle);
 
   DBG (DBG_EVENT, "sane_control_option\n");
 
@@ -832,19 +835,6 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
                option, device->opt[option].name, *(SANE_Int *) value);
 
           status = SANE_STATUS_GOOD;
-
-          if (option == OPT_CONTRAST)
-            {
-              status = device->driver->SetContrast((SANE_Int)device->val[option].w);
-            }
-          else if (option == OPT_BRIGHTNESS)
-            {
-              status = device->driver->SetBrightness((SANE_Int)device->val[option].w);
-            }
-          if (status != SANE_STATUS_GOOD)
-            {
-              return status;
-            }
           break;
 
 	case OPT_MODE:
@@ -943,7 +933,7 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
 SANE_Status
 sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
 {
-  BrotherDevice *device = (BrotherDevice *)handle;
+  BrotherDevice *device = static_cast<BrotherDevice *>(handle);
   SANE_Status rc = SANE_STATUS_GOOD;
 
   DBG (DBG_EVENT, "sane_get_parameters\n");
@@ -988,6 +978,22 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
     }
 
   rc = device->driver->SetRes ((int)device->val[OPT_X_RESOLUTION].w, (int)device->val[OPT_Y_RESOLUTION].w);
+  if (rc != SANE_STATUS_GOOD)
+    {
+      return rc;
+    }
+
+  /*
+   * Brightness and contrast.
+   *
+   */
+  rc = device->driver->SetContrast((SANE_Int)device->val[OPT_CONTRAST].w);
+  if (rc != SANE_STATUS_GOOD)
+    {
+      return rc;
+    }
+
+  rc = device->driver->SetBrightness((SANE_Int)device->val[OPT_BRIGHTNESS].w);
   if (rc != SANE_STATUS_GOOD)
     {
       return rc;
@@ -1080,7 +1086,7 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
 SANE_Status
 sane_start (SANE_Handle handle)
 {
-  BrotherDevice *device = (BrotherDevice *)handle;
+  BrotherDevice *device = static_cast<BrotherDevice *>(handle);
   SANE_Status res;
 
   DBG (DBG_EVENT, "sane_start\n");
@@ -1120,7 +1126,7 @@ SANE_Status
 sane_read (SANE_Handle handle, SANE_Byte * data,
 	   SANE_Int max_length, SANE_Int * length)
 {
-  BrotherDevice *device = (BrotherDevice *)handle;
+  BrotherDevice *device = static_cast<BrotherDevice *>(handle);
 
   DBG (DBG_EVENT, "sane_read\n");
 
@@ -1156,7 +1162,7 @@ void
 sane_cancel (SANE_Handle handle)
 {
   SANE_Status res;
-  BrotherDevice *device = (BrotherDevice *)handle;
+  BrotherDevice *device = static_cast<BrotherDevice *>(handle);
 
   DBG (DBG_EVENT, "sane_cancel\n");
 

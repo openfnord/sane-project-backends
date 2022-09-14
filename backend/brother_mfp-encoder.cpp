@@ -297,10 +297,12 @@ SANE_Status BrotherEncoderFamily4::EncodeParameterBlock (SANE_Byte *data, size_t
                           "C=JPEG\nJ=MID\n" : "C=RLENGTH\n",
                       (unsigned int) (scan_params.param_brightness + 50),
                       (unsigned int) (scan_params.param_contrast + 50),
-                      scan_params.param_pixel_x_offset,
-                      scan_params.param_pixel_y_offset,
-                      scan_params.param_pixel_x_offset + scan_params.param_pixel_x_width,
-                      scan_params.param_pixel_y_offset + scan_params.param_pixel_y_height);
+                      (unsigned int) (scan_params.param_pixel_x_offset),
+                      (unsigned int) (scan_params.param_pixel_y_offset),
+                      (unsigned int) (scan_params.param_pixel_x_offset
+                          + scan_params.param_pixel_x_width),
+                      (unsigned int) (scan_params.param_pixel_y_offset
+                          + scan_params.param_pixel_y_height));
 
   if (*length > data_len)
     {
@@ -656,10 +658,11 @@ DecodeStatus BrotherGrayRLengthDecoder::DecodeScanData (const SANE_Byte *in_buff
        *
        */
       size_t bytes_to_copy = MIN(out_buffer_len, block_bytes_left);
-      size_t consumed = 0;
 
       if (bytes_to_copy)
         {
+          size_t consumed = 0;
+
           if (decode_state == BROTHER_DECODE_RLEN_IN_BYTES)
             {
               bytes_to_copy = MIN(bytes_to_copy, in_buffer_len);

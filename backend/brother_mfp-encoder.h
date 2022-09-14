@@ -267,29 +267,29 @@ public:
   {
   }
 
-  void Reset()
+  void Reset() override
   {
     current_header.block_type = 0;
   }
 
   SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,
-                                 BrotherSessionResponse &response);
+                                 BrotherSessionResponse &response) override;
 
-  SANE_Status EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length);
+  SANE_Status EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
   SANE_Status DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherBasicParamResponse &response);
+                                             BrotherBasicParamResponse &response) override;
 
-  SANE_Status EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length);
+  SANE_Status EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
   SANE_Status DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                  BrotherADFResponse &response);
+                                  BrotherADFResponse &response) override;
 
-  SANE_Status EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length);
+  SANE_Status EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
   SANE_Status DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
                                       size_t *src_data_consumed, SANE_Byte *dst_data,
-                                      size_t dest_data_len, size_t *dest_data_written);
+                                      size_t dest_data_len, size_t *dest_data_written) override;
 
 private:
   DecodeStatus DecodeScanDataHeader (const SANE_Byte *src_data, size_t src_data_len,

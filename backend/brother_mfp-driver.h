@@ -69,7 +69,10 @@
 class BrotherDriver
 {
 public:
-  BrotherDriver (BrotherFamily family);
+  explicit BrotherDriver (BrotherFamily family);
+
+  BrotherDriver(const BrotherDriver &) = delete;
+  BrotherDriver &operator=(const BrotherDriver &) = delete;
 
   virtual ~BrotherDriver();
 
@@ -147,16 +150,16 @@ public:
 
   ~BrotherUSBDriver ();
 
-  SANE_Status Connect ();
+  SANE_Status Connect () override;
 
-  SANE_Status Disconnect ();
+  SANE_Status Disconnect () override;
 
-  SANE_Status StartScan ();
+  SANE_Status StartScan () override;
 
-  SANE_Status CancelScan ();
+  SANE_Status CancelScan () override;
 
   SANE_Status ReadScanData (SANE_Byte *data, size_t data_len,
-                            size_t *bytes_read);
+                            size_t *bytes_read) override;
 
 private:
   SANE_Status StartSession ();
