@@ -44,8 +44,6 @@
 #include "brother_mfp-common.h"
 #include "brother_mfp-driver.h"
 
-extern "C" void sanei_debug_brother_mfp_call(int level, const char *msg, ...);
-
 /*
  * Protocol defines.
  *
@@ -70,9 +68,6 @@ const char* BrotherDriver::ScanModeToText (BrotherScanMode scan_mode)
 
   return scan_mode_text[scan_mode];
 }
-
-
-
 
 SANE_Status BrotherUSBDriver::Connect ()
 {

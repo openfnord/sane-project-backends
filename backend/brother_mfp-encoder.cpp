@@ -708,6 +708,13 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
                                                  size_t *src_data_consumed, SANE_Byte *dest_data,
                                                  size_t dest_data_len, size_t *dest_data_written)
 {
+  (void)src_data;
+  (void)src_data_len;
+  (void)src_data_consumed;
+  (void)dest_data;
+  (void)dest_data_len;
+  (void)dest_data_written;
+
   // TODO: finish me.
   return DECODE_STATUS_ERROR;
 
