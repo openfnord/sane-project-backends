@@ -883,7 +883,7 @@ SANE_Status BrotherUSBDriver::StartScan ()
    * Reset the encoder/decoder.
    *
    */
-  encoder->Reset();
+  encoder->NewPage();
 
   return SANE_STATUS_GOOD;
 }

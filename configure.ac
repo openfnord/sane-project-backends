@@ -696,6 +696,9 @@ for backend in ${BACKENDS} ; do
   BACKEND_LIBS_ENABLED="${BACKEND_LIBS_ENABLED} libsane-${backend}.la"
   BACKEND_CONFS_ENABLED="${BACKEND_CONFS_ENABLED} ${backend}.conf"
   BACKEND_MANS_ENABLED="${BACKEND_MANS_ENABLED} sane-${backend}.5"
+  if test x$backend = xbrother_mfp; then
+    with_brother_mfp_tests=yes
+  fi
   if test x$backend = xgenesys; then
     with_genesys_tests=yes
   fi
@@ -705,6 +708,7 @@ for backend in ${BACKENDS} ; do
 done
 AC_SUBST(BACKEND_LIBS_ENABLED)
 AM_CONDITIONAL(WITH_GENESYS_TESTS, test xyes = x$with_genesys_tests)
+AM_CONDITIONAL(WITH_BROTHER_MFP_TESTS, test xyes = x$with_brother_mfp_tests)
 AM_CONDITIONAL(INSTALL_UMAX_PP_TOOLS, test xyes = x$install_umax_pp_tools)
 
 AC_ARG_VAR(PRELOADABLE_BACKENDS, [list of backends to preload into single DLL])
@@ -797,6 +801,7 @@ AC_CONFIG_FILES([Makefile lib/Makefile sanei/Makefile frontend/Makefile \
   po/Makefile.in testsuite/Makefile \
   testsuite/backend/Makefile \
   testsuite/backend/genesys/Makefile \
+  testsuite/backend/brother_mfp/Makefile \
   testsuite/sanei/Makefile testsuite/tools/Makefile \
   tools/Makefile doc/doxygen-sanei.conf doc/doxygen-genesys.conf])
 AC_CONFIG_FILES([tools/sane-config], [chmod a+x tools/sane-config])

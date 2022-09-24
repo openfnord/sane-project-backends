@@ -1,0 +1,8 @@
+# Options for the brother_mfp backend
+
+# Brother MFC-J4320DW
+usb 0x04f9 0x033a
+
+# device list for non-linux-systems (enable if autodetect fails):
+#/dev/scanner
+#/dev/usb/scanner0

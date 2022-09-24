@@ -33,6 +33,9 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
+#include <jpeglib.h>
+#include <jerror.h>
+
 #include "brother_mfp-common.h"
 
 #include "../include/sane/sane.h"
@@ -141,7 +144,6 @@ enum DecodeStatus
 {
   DECODE_STATUS_GOOD,
   DECODE_STATUS_TRUNCATED,
-  DECODE_STATUS_MORE,
   DECODE_STATUS_ENDOFDATA,
   DECODE_STATUS_ENDOFFRAME,
   DECODE_STATUS_ERROR
@@ -169,7 +171,7 @@ public:
   {
   }
 
-  virtual void Reset() = 0;
+  virtual void NewPage() = 0;
 
   SANE_Status SetScanMode (BrotherScanMode scan_mode);
   SANE_Status SetRes (SANE_Int x, SANE_Int y);
@@ -205,14 +207,79 @@ protected:
   BrotherParameters scan_params;
 };
 
+#include <setjmp.h>
+
+
 class BrotherJFIFDecoder
 {
 public:
-  void Reset();
+  BrotherJFIFDecoder():
+    is_running(false)
+  {
+    /*
+     * Not sure if this is a safe way to get the cinfo into
+     * a consistent state but at least all pointers will be NULL.
+     *
+     */
+    (void)memset(&state.cinfo, 0, sizeof(state.cinfo));
+
+    // TODO: override error stuff to avoid exit on error.
+    // Also provide a mechanism to check for errors.
+    state.cinfo.err = jpeg_std_error(&state.jerr);
+    state.cinfo.err->error_exit = ErrorExitManager;
+
+    jpeg_create_decompress (&state.cinfo);
+
+    /*
+     * Set up source manager.
+     *
+     */
+    state.src_mgr.init_source = InitSource;
+    state.src_mgr.fill_input_buffer = FillInputBuffer;
+    state.src_mgr.skip_input_data = SkipInputData;
+    state.src_mgr.resync_to_restart = jpeg_resync_to_restart;
+    state.src_mgr.term_source = TermSource;
+
+    state.cinfo.src = &state.src_mgr;
+  }
+
+  static void ErrorExitManager(j_common_ptr cinfo)
+  {
+    (void)cinfo;
+    longjmp(my_env, 1);
+  }
+
+  ~BrotherJFIFDecoder()
+  {
+    jpeg_destroy_decompress(&state.cinfo);
+  }
+
+  void NewBlock();
+  void NewPage();
 
   DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
                                size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
                                size_t *dest_data_written);
+
+private:
+  static void InitSource (j_decompress_ptr cinfo);
+  static boolean FillInputBuffer(j_decompress_ptr cinfo);
+  static void SkipInputData(j_decompress_ptr cinfo, long num_bytes);
+  static void TermSource(j_decompress_ptr cinfo);
+
+  struct CompressionState
+  {
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    struct jpeg_source_mgr src_mgr;
+    bool have_read_header;
+  } state;
+
+  bool is_running;
+
+// TODO: Move me to the state.
+  static jmp_buf my_env;
+
 };
 
 class BrotherGrayRLengthDecoder
@@ -224,7 +291,8 @@ public:
     block_bytes_left(0)
   {
   }
-  void Reset();
+  void NewBlock();
+  void NewPage();
 
   DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
                                size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
@@ -251,7 +319,8 @@ public:
   BrotherGrayRawDecoder()
   {
   }
-  void Reset();
+  void NewBlock();
+  void NewPage();
 
   DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
                                size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
@@ -267,7 +336,7 @@ public:
   {
   }
 
-  void Reset() override
+  void NewPage() override
   {
     current_header.block_type = 0;
   }

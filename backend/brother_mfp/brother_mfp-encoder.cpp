@@ -389,8 +389,10 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
               break;
             }
 
-          DBG (DBG_IMPORTANT, "BrotherEncoderFamily4::DecodeScanData: decoded new block header: 0x%2.2x\n",
-               current_header.block_type);
+          DBG (DBG_IMPORTANT,
+               "BrotherEncoderFamily4::DecodeScanData: decoded new block header: 0x%2.2x, length=%zu\n",
+               current_header.block_type,
+               current_header.block_len);
 
           src_data += header_consumed;
           src_data_len -= header_consumed;
@@ -413,7 +415,7 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
         {
           if (new_block)
             {
-              jfif_decoder.Reset ();
+              jfif_decoder.NewBlock ();
             }
 
           res = jfif_decoder.DecodeScanData (src_data,
@@ -427,7 +429,7 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
         {
           if (new_block)
             {
-              gray_decoder.Reset ();
+              gray_decoder.NewBlock ();
             }
 
           res = gray_decoder.DecodeScanData (src_data,
@@ -441,7 +443,7 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
         {
           if (new_block)
             {
-              gray_raw_decoder.Reset ();
+              gray_raw_decoder.NewBlock ();
             }
 
           res = gray_raw_decoder.DecodeScanData (src_data,
@@ -463,6 +465,10 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
       src_data += bytes_consumed;
       src_data_len -= bytes_consumed;
       current_header.block_len -= bytes_consumed;
+
+      DBG (DBG_IMPORTANT,
+           "BrotherEncoderFamily4::DecodeScanData: bytes remaining after decode=%zu\n",
+           current_header.block_len);
 
       dest_data += bytes_written;
       dest_data_len -= bytes_written;
@@ -563,11 +569,16 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanDataHeader (const SANE_Byte *src_d
   return DECODE_STATUS_GOOD;
 }
 
-void BrotherGrayRLengthDecoder::Reset ()
+void BrotherGrayRLengthDecoder::NewBlock ()
 {
   decode_state = BROTHER_DECODE_RLEN_INIT;
   decode_expand_char = 0;
   block_bytes_left = 0;
+}
+
+void BrotherGrayRLengthDecoder::NewPage ()
+{
+  NewBlock();
 }
 
 /*
@@ -695,28 +706,226 @@ DecodeStatus BrotherGrayRLengthDecoder::DecodeScanData (const SANE_Byte *in_buff
   return DECODE_STATUS_GOOD;
 }
 
-void BrotherJFIFDecoder::Reset ()
+
+#include <jpeglib.h>
+#include <jerror.h>
+
+void BrotherJFIFDecoder::NewBlock()
 {
+  // Nothing to do.
 }
+
+void BrotherJFIFDecoder::NewPage ()
+{
+  /*
+   * Aborting a non-running state should be OK.
+   *
+   */
+  jpeg_abort_decompress(&state.cinfo);
+  state.have_read_header = false;
+}
+
+void BrotherJFIFDecoder::InitSource (j_decompress_ptr cinfo)
+{
+  DBG (DBG_EVENT, "BrotherJFIFDecoder::InitSource.\n");
+
+  (void)cinfo;
+
+  /*
+   * We will have already setup all the available data.
+   *
+   */
+  return;
+}
+
+boolean BrotherJFIFDecoder::FillInputBuffer(j_decompress_ptr cinfo)
+{
+  (void)cinfo;
+
+  /*
+   * We can not supply more data.
+   * We setup the data buffer already with everything we have.
+   *
+   */
+  DBG (DBG_EVENT, "BrotherJFIFDecoder::FillInputBuffer.\n");
+
+  return FALSE;
+}
+
+void BrotherJFIFDecoder::SkipInputData(j_decompress_ptr cinfo, long num_bytes)
+{
+  (void)cinfo;
+  (void)num_bytes;
+
+  /*
+   * TODO: Note the special attention required here.
+   * num_bytes might exceed the number of bytes in the src_data so we must remember
+   * the excess so that we can discard it when we add more data later!!!!!!!
+   *
+   */
+  DBG (DBG_EVENT, "BrotherJFIFDecoder::SkipInputData.\n");
+
+}
+
+void BrotherJFIFDecoder::TermSource(j_decompress_ptr cinfo)
+{
+  (void)cinfo;
+  DBG (DBG_EVENT, "BrotherJFIFDecoder::TermSource.\n");
+
+}
+
+
+jmp_buf BrotherJFIFDecoder::my_env;
 
 DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
                                                  size_t *src_data_consumed, SANE_Byte *dest_data,
                                                  size_t dest_data_len, size_t *dest_data_written)
 {
-  (void)src_data;
-  (void)src_data_len;
-  (void)src_data_consumed;
-  (void)dest_data;
-  (void)dest_data_len;
-  (void)dest_data_written;
+  DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData\n");
 
-  // TODO: finish me.
-  return DECODE_STATUS_ERROR;
 
+  *src_data_consumed = 0;
+  *dest_data_written = 0;
+
+
+  /*
+   * Initialise read buffer.
+   *
+   */
+  state.src_mgr.bytes_in_buffer = src_data_len;
+  state.src_mgr.next_input_byte = src_data;
+
+  if (setjmp(my_env) != 0)
+    {
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: setjmp error return\n");
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * Read header if we haven't yet.
+   *
+   */
+  if (!state.have_read_header)
+    {
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Trying to read header.\n");
+
+      int read_status = jpeg_read_header(&state.cinfo, TRUE);
+      if (read_status == JPEG_SUSPENDED)
+	{
+	  return DECODE_STATUS_GOOD;
+	}
+      else if (read_status != JPEG_HEADER_OK)
+	{
+	  return DECODE_STATUS_ERROR;
+	}
+      state.have_read_header = true;
+
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Starting decompress.\n");
+
+      if (!jpeg_start_decompress(&state.cinfo))
+	{
+	  /*
+	   * Need more data.
+	   *
+	   */
+	  return DECODE_STATUS_GOOD;
+	}
+
+      /*
+       * Make sure that we will be getting the data that we expect.
+       * This is for colour only, so we expect 3 components.
+       *
+       */
+      if (state.cinfo.out_color_components != 3)
+	{
+	  return DECODE_STATUS_ERROR;
+	}
+
+      /*
+       * TODO: Perhaps also check the dimensions are what we are expecting.
+       * Depending on the issues related to width alignment, we might
+       * have to do some trimming on the scan lines if we had to round up the
+       * the width and/or round down the left margin.
+       *
+       */
+    }
+
+  /*
+   * Let's try to decompress some JPEG!
+   *
+   */
+  DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Converting data.\n");
+
+  SANE_Byte *output_ptr = dest_data;
+
+  const size_t line_size = sizeof(JSAMPLE) * state.cinfo.output_width * state.cinfo.out_color_components;
+
+  size_t output_size = dest_data_len;
+
+  while (output_size >= line_size)
+    {
+      /*
+       * Estimate the number of lines we can generate from
+       * the available output space.
+       *
+       */
+//      JDIMENSION max_lines = dest_data_len / (state.cinfo.output_width * 3);
+
+      JDIMENSION converted = jpeg_read_scanlines (&state.cinfo, &output_ptr, 1);
+
+      DBG (DBG_IMPORTANT,
+           "BrotherJFIFDecoder::DecodeScanData: Convert %u scanlines. Remaining scanlines: %u\n",
+           (unsigned int) converted, (unsigned int)(state.cinfo.output_height - state.cinfo.output_scanline));
+
+      output_size -= line_size;
+      output_ptr += converted * line_size;
+
+      if (converted == 0)
+        {
+          break;
+        }
+    }
+
+  /*
+   * Account for what we have processed.
+   *
+   * Note that libjpeg will have altered state.src_mgr.bytes_in_buffer
+   * to a backtracked position for it to restart again.
+   * This is why it is CRUCIAL that we do not try to guess.
+   *
+   */
+  *dest_data_written = output_ptr - dest_data;
+  *src_data_consumed = src_data_len - state.src_mgr.bytes_in_buffer;
+
+  DBG (DBG_IMPORTANT,
+       "BrotherJFIFDecoder::DecodeScanData: Finished: consumed %zu bytes, written %zu bytes\n",
+       *src_data_consumed,
+       *dest_data_written);
+
+  /*
+   * If we have output all the scanlines, then we need to finish up.
+   *
+   */
+  if (state.cinfo.output_scanline >= state.cinfo.output_height)
+    {
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Converted all scanlines. Finishing.\n");
+
+      if (!jpeg_finish_decompress(&state.cinfo))
+        {
+          return DECODE_STATUS_ERROR;
+        }
+    }
+
+  return DECODE_STATUS_GOOD;
 }
 
 
-void BrotherGrayRawDecoder::Reset ()
+void BrotherGrayRawDecoder::NewPage ()
+{
+  // Nothing to do.
+}
+
+void BrotherGrayRawDecoder::NewBlock()
 {
   // Nothing to do.
 }

@@ -56,7 +56,7 @@
  * TODO: I will remove this shortly anyway. For dev only.
  *
  */
-//#define BROTHER_ENABLE_SCAN_FILE	1
+#define BROTHER_ENABLE_SCAN_FILE	1
 
 /*-----------------------------------------------------------------*/
 
@@ -180,7 +180,9 @@ struct BrotherDevice
   SANE_Int x_res;
   SANE_Int y_res;
 
+#ifdef BROTHER_ENABLE_SCAN_FILE
   FILE *scan_file;
+#endif
 
   BrotherDriver *driver;
 
@@ -1060,7 +1062,7 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
    */
   device->params = *params;
 
-  DBG (DBG_SERIOUS,
+  DBG (DBG_IMPORTANT,
        "sane_get_parameters: params: format:%d last_frame:%d bytes_per_line:%d "
        "pixels_per_line: %d lines:%d depth:%d\n",
        params->format,
@@ -1070,12 +1072,6 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
        params->lines,
        params->depth);
 
-//  SANE_Frame format;
-//  SANE_Bool last_frame;
-//  SANE_Int bytes_per_line;
-//  SANE_Int pixels_per_line;
-//  SANE_Int lines;
-//  SANE_Int depth;
   return rc;
 }
 
@@ -1131,11 +1127,13 @@ sane_read (SANE_Handle handle, SANE_Byte * data,
 
   *length = 0;
 
+#ifdef BROTHER_ENABLE_SCAN_FILE
   if (!device->scan_file)
     {
       DBG (DBG_SERIOUS, "sane_read: no scan data file.\n");
       return SANE_STATUS_EOF;
     }
+#endif
 
   size_t scan_len = 0;
   SANE_Status res = device->driver->ReadScanData(data, (size_t)max_length, &scan_len);
@@ -1147,14 +1145,17 @@ sane_read (SANE_Handle handle, SANE_Byte * data,
    */
 #ifdef BROTHER_ENABLE_SCAN_FILE
   fwrite(data, *length, 1, device->scan_file);
+#endif
 
   if (res == SANE_STATUS_EOF)
     {
       DBG (DBG_EVENT, "sane_read: read receives EOF.\n");
+#ifdef BROTHER_ENABLE_SCAN_FILE
       fclose(device->scan_file);
       device->scan_file = NULL;
-    }
 #endif
+    }
+
 
   return res;
 }
