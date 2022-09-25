@@ -182,6 +182,12 @@ SANE_Status BrotherEncoderFamily4::DecodeSessionResp (const SANE_Byte *data, siz
   return SANE_STATUS_GOOD;
 }
 
+/*
+ * NOTE:
+ * Supply a buffer that is at least 1 char longer than is necessary
+ * as snprintf() will require space for a terminating NUL.
+ *
+ */
 SANE_Status BrotherEncoderFamily4::EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len,
                                                               size_t *length)
 {
@@ -229,15 +235,6 @@ SANE_Status BrotherEncoderFamily4::DecodeBasicParameterBlockResp (const SANE_Byt
 
 SANE_Status BrotherEncoderFamily4::EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length)
 {
-  const char *mode_text = ScanModeToText (scan_params.param_scan_mode);
-  if (nullptr == mode_text)
-    {
-      DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily4::EncodeBasicParameterBlock: failed to get scan mode text for mode %d\n",
-           scan_params.param_scan_mode);
-      return SANE_STATUS_INVAL;
-    }
-
   *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
 
   if (*length > data_len)
@@ -289,7 +286,7 @@ SANE_Status BrotherEncoderFamily4::EncodeParameterBlock (SANE_Byte *data, size_t
                       (unsigned int) scan_params.param_y_res,
                       mode_text,
                       (scan_params.param_scan_mode == BROTHER_SCAN_MODE_COLOR) ?
-                          "C=JPEG\nJ=MID\n" : "C=RLENGTH\n",
+                          "C=JPEG\nJ=MID" : "C=RLENGTH",
                       (unsigned int) (scan_params.param_brightness + 50),
                       (unsigned int) (scan_params.param_contrast + 50),
                       (unsigned int) (scan_params.param_pixel_x_offset),
@@ -601,7 +598,13 @@ DecodeStatus BrotherGrayRLengthDecoder::DecodeScanData (const SANE_Byte *in_buff
   size_t in_buffer_len_start = in_buffer_len;
   size_t out_buffer_len_start = out_buffer_len;
 
-  while (in_buffer_len && out_buffer_len)
+  /*
+   * Notice that we do the check for in and out space at the bottom, not here:
+   * We might not have any additional src, but we might still be able to progress the decode,
+   * especially in the case of an in-progress decompression.
+   *
+   */
+  do
     {
       /*
        * Check the current state to see what we should do.
@@ -690,7 +693,7 @@ DecodeStatus BrotherGrayRLengthDecoder::DecodeScanData (const SANE_Byte *in_buff
               decode_state = BROTHER_DECODE_RLEN_INIT;
             }
         }
-    }
+    } while (in_buffer_len && out_buffer_len);
 
   if (!in_buffer_len || !out_buffer_len)
     {

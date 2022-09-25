@@ -91,8 +91,8 @@ struct BrotherSessionResponse
 struct BrotherParameters
 {
   BrotherParameters():
-    param_brightness (50),
-    param_contrast (50),
+    param_brightness (0),
+    param_contrast (0),
     param_pixel_x_offset (0),
     param_pixel_x_width (0),
     param_pixel_y_offset (0),

@@ -11,14 +11,19 @@ TEST_LDADD = \
   ../../../lib/liblib.la \
   ../../../backend/libbrother_mfp.la \
   ../../../backend/sane_strstatus.lo \
-  $(USB_LIBS) $(XML_LIBS) $(PTHREAD_LIBS)
+  $(USB_LIBS) $(XML_LIBS) $(PTHREAD_LIBS) $(JPEG_LIBS)
 
-check_PROGRAMS = brother_mfp_unit_tests 
+check_PROGRAMS = brother_mfp_unit_tests
 TESTS = brother_mfp_unit_tests
 
 AM_CPPFLAGS += -I. -I$(srcdir) -I$(top_builddir)/include -I$(top_srcdir)/include $(USB_CFLAGS) \
     -DBACKEND_NAME=brother_mfp -DTESTSUITE_BACKEND_BROTHER_MFP_SRCDIR=$(srcdir)
 
-brother_mfp_unit_tests_SOURCES = brother_mfp_tests.cpp brother_mfp_tests.h
+brother_mfp_unit_tests_SOURCES = \
+	brother_mfp_tests.cpp \
+	brother_mfp_tests.h	\
+	brother_mfp_tests_family4.cpp \
+	brother_mfp_tests_gray_rlength.cpp \
+	../genesys/minigtest.cpp
 
 brother_mfp_unit_tests_LDADD = $(TEST_LDADD)

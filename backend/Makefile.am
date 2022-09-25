@@ -400,7 +400,7 @@ libsane_brother_mfp_la_LIBADD = $(COMMON_LIBS) libbrother_mfp.la \
     ../sanei/sanei_usb.lo \
     ../sanei/sanei_config.lo \
     sane_strstatus.lo \
-    $(USB_LIBS) $(JPEG_LIBS) 
+    $(USB_LIBS) $(JPEG_LIBS)
 EXTRA_DIST += brother_mfp.conf.in
 
 

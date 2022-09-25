@@ -19,3 +19,6 @@
 */
 
 #pragma once
+
+extern void test_family4();
+extern void test_gray_rlength();

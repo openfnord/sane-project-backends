@@ -18,14 +18,17 @@
    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#define DEBUG_DECLARE_ONLY
+#define DEBUG_NOT_STATIC
 
-#include <stdio.h>
+#include "../../include/sane/sanei_debug.h"
+#include "../genesys/minigtest.h"
 #include "brother_mfp_tests.h"
 
-int main()
+int main ()
 {
-	printf("Brother MFP tests.\n");
+  DBG_INIT ();
 
-	return 0;
+  test_family4 ();
+  test_gray_rlength ();
+  return finish_tests ();
 }
