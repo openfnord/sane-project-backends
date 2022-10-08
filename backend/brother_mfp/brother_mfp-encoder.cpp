@@ -324,6 +324,16 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
   size_t orig_src_data_len = src_data_len;
   size_t orig_dest_data_len = dest_data_len;
 
+  /*
+   * Now take note here that we do not *necessarily* need src_data to be able to decode.
+   * We might have terminated the previous call not because we ran out of input, but because
+   * we ran out of output space. Some blocks are just repetitions that are unrolled and require
+   * no additional src data. So we enter this loop *even if there is nothing in the src_data buffer*.
+   *
+   * All of the functions that we are about to call must be able to deal with src_data_len == 0
+   * intelligently.
+   *
+   */
   for (;;)
     {
       /*
@@ -492,10 +502,10 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
        * It might be that there is data in the input buffer
        * but we need more to proceed.
        *
-       * If we haven't consumed anything, we cannot have made any progress.
+       * If we haven't written anything, we cannot have made any progress.
        *
        */
-      if (bytes_consumed == 0)
+      if (bytes_written == 0)
         {
           break;
         }
@@ -612,6 +622,15 @@ DecodeStatus BrotherGrayRLengthDecoder::DecodeScanData (const SANE_Byte *in_buff
        */
       if (decode_state == BROTHER_DECODE_RLEN_INIT)
         {
+          /*
+           * We need src to be able to decode.
+           *
+           */
+          if (in_buffer_len == 0)
+            {
+              break;
+            }
+
           /*
            * INIT state: we are ready to start to process another sub-block.
            *
@@ -937,6 +956,19 @@ DecodeStatus BrotherGrayRawDecoder::DecodeScanData (const SANE_Byte *src_data, s
                                                     size_t *src_data_consumed, SANE_Byte *dest_data,
                                                     size_t dest_data_len, size_t *dest_data_written)
 {
+  /*
+   * Quick check. This isn't strictly necessary because the following code copes
+   * properly with src_data_len == 0, but we might change this code in the future
+   * and we might not realise that it must.
+   *
+   * At least we make it clear here that we need src_data to do something useful.
+   *
+   */
+  if (src_data_len == 0)
+    {
+      return DECODE_STATUS_GOOD;
+    }
+
   /*
    * Just copy to the output what we can from the input.
    * It's just raw data.

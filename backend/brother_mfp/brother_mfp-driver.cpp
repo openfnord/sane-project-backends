@@ -358,19 +358,6 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
       DBG (DBG_IMPORTANT,
            "BrotherUSBDriver::ReadScanData: read %zu bytes, now buffer has %zu bytes\n",
            bytes_to_read, data_buffer_bytes);
-
-      /*
-       * Nothing to read: we will just try again next time.
-       *
-       * TODO: We need an overall timeout. We cannot wait indefinitely for
-       * data that isn't coming.
-       *
-       */
-      if (bytes_to_read == 0)
-        {
-          *length = 0;
-          return SANE_STATUS_GOOD;
-        }
     }
 
   /*
