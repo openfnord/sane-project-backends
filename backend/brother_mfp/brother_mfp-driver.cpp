@@ -182,6 +182,74 @@ SANE_Status BrotherUSBDriver::StartSession ()
       return SANE_STATUS_GOOD;
     }
 
+  SANE_Status res = ExecStartSession ();
+  if (res != SANE_STATUS_GOOD)
+    {
+
+      /*
+       * Perhaps a session is in progress from a prior crash?
+       * We will try to stop then restart.
+       *
+       */
+      res = ExecStopSession ();
+      if (res != SANE_STATUS_GOOD)
+        {
+          DBG (DBG_WARN,
+               "BrotherUSBDriver::StartSession: failed to send stop session sequence for restart: %s.\n",
+               devicename);
+          return SANE_STATUS_DEVICE_BUSY;
+        }
+
+      SANE_Status res = ExecStartSession ();
+      if (res != SANE_STATUS_GOOD)
+        {
+          DBG (DBG_WARN,
+               "BrotherUSBDriver::StartSession: failed to send start session sequence for restart: %s.\n",
+               devicename);
+          return SANE_STATUS_DEVICE_BUSY;
+        }
+    }
+
+    in_session = true;
+
+    return SANE_STATUS_GOOD;
+}
+
+SANE_Status BrotherUSBDriver::StopSession ()
+{
+  /*
+   * Initialisation.
+   *
+   */
+  if (!is_open)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::StopSession: device not open: %s.\n",
+           devicename);
+      return SANE_STATUS_INVAL;
+    }
+
+  if (!in_session)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::StopSession: not in session: %s.\n",
+           devicename);
+      return SANE_STATUS_GOOD;
+    }
+
+  SANE_Status res = ExecStopSession ();
+  if (res != SANE_STATUS_GOOD)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::StopSession: failed to send stop sequence.\n");
+      return res;
+    }
+
+  in_session = false;
+
+  return SANE_STATUS_GOOD;
+}
+
+
+SANE_Status BrotherUSBDriver::ExecStartSession ()
+{
    SANE_Status res = sanei_usb_control_msg (fd, USB_DIR_IN | USB_TYPE_VENDOR,
                                BROTHER_USB_REQ_STARTSESSION,
                                2, 0, 5, small_buffer);
@@ -217,31 +285,12 @@ SANE_Status BrotherUSBDriver::StartSession ()
       return SANE_STATUS_DEVICE_BUSY;
     }
 
-  in_session = true;
-
   return SANE_STATUS_GOOD;
 }
 
-SANE_Status BrotherUSBDriver::StopSession ()
+
+SANE_Status BrotherUSBDriver::ExecStopSession ()
 {
-  /*
-   * Initialisation.
-   *
-   */
-  if (!is_open)
-    {
-      DBG (DBG_WARN, "BrotherUSBDriver::StopSession: device not open: %s.\n",
-           devicename);
-      return SANE_STATUS_INVAL;
-    }
-
-  if (!in_session)
-    {
-      DBG (DBG_WARN, "BrotherUSBDriver::StopSession: not in session: %s.\n",
-           devicename);
-      return SANE_STATUS_GOOD;
-    }
-
    SANE_Status res = sanei_usb_control_msg (fd, USB_DIR_IN | USB_TYPE_VENDOR,
                                BROTHER_USB_REQ_STOPSESSION,
                                2, 0, 5, small_buffer);
@@ -276,8 +325,6 @@ SANE_Status BrotherUSBDriver::StopSession ()
           "BrotherUSBDriver::StopSession: scanner indicates not ready.\n");
       return SANE_STATUS_DEVICE_BUSY;
     }
-
-  in_session = false;
 
   return SANE_STATUS_GOOD;
 }
@@ -321,12 +368,14 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
 
   /*
    * First, see if we need to do a read from the device to satisfy the read.
+   * Only if we have space to read though. Obviously.
    *
-   * I will arbitrarily pick 1024 as our limit. If we have anything near to that, we *really*
-   * should be able to decode *something*.
+   * TODO: Perhaps we might put some lower limit to the amount of space available.
+   * No point in doing a "tiny" read because we don't have much space available.
    *
    */
-  if (data_buffer_bytes < 1024)
+  size_t bytes_to_read = (BROTHER_READ_BUFFER_LEN - data_buffer_bytes) & ~(1024 - 1);
+  if (bytes_to_read > 0)
     {
 
       /*
@@ -338,8 +387,6 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
        * It's OK: as long as we are reading something substantial, that is fine.
        *
        */
-      size_t bytes_to_read = (BROTHER_READ_BUFFER_LEN - data_buffer_bytes) & ~(1024 - 1);
-
       DBG (DBG_IMPORTANT,
            "BrotherUSBDriver::ReadScanData: attempting read, space for %zu bytes\n",
            bytes_to_read);
@@ -364,7 +411,7 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
    * Try to decode some data.
    *
    */
-  size_t data_consumed;
+  size_t data_consumed = 0;
 
   res = encoder->DecodeScanData (data_buffer,
                                  data_buffer_bytes,

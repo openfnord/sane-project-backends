@@ -163,7 +163,7 @@ SANE_Status BrotherEncoderFamily4::DecodeSessionResp (const SANE_Byte *data, siz
    * TODO: Check the valid status values are 0x00 or 0x20
    *
    */
-  if ((data[4] != 0x00) && (data[4] != 0x20))
+  if ((data[4] != 0x00) && (data[4] != 0x80))
 
     {
       DBG (DBG_SERIOUS,
@@ -408,7 +408,7 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
 	}
 
       /*
-       * Attempt to to decode the data block.
+       * Attempt to decode the data block.
        * We will exit the function if we can only partially
        * decode it, hoping to do more next time.
        *
@@ -454,11 +454,11 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
             }
 
           res = gray_raw_decoder.DecodeScanData (src_data,
-                                             in_len,
-                                             &bytes_consumed,
-                                             dest_data,
-                                             dest_data_len,
-                                             &bytes_written);
+                                                 in_len,
+                                                 &bytes_consumed,
+                                                 dest_data,
+                                                 dest_data_len,
+                                                 &bytes_written);
         }
       else
         {
@@ -469,23 +469,23 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
           break;
         }
 
-      src_data += bytes_consumed;
-      src_data_len -= bytes_consumed;
-      current_header.block_len -= bytes_consumed;
-
-      DBG (DBG_IMPORTANT,
-           "BrotherEncoderFamily4::DecodeScanData: bytes remaining after decode=%zu\n",
-           current_header.block_len);
-
-      dest_data += bytes_written;
-      dest_data_len -= bytes_written;
-
       if (res != DECODE_STATUS_GOOD)
         {
           current_header.block_type = 0;
           ret_status = SANE_STATUS_IO_ERROR;
           break;
         }
+
+      src_data += bytes_consumed;
+      src_data_len -= bytes_consumed;
+      current_header.block_len -= bytes_consumed;
+
+      DBG (DBG_IMPORTANT,
+           "BrotherEncoderFamily4::DecodeScanData: current block bytes remaining after decode=%zu\n",
+           current_header.block_len);
+
+      dest_data += bytes_written;
+      dest_data_len -= bytes_written;
 
       /*
        * Perhaps we have completed the block.
@@ -511,8 +511,11 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
         }
     }
 
-  *src_data_consumed = orig_src_data_len - src_data_len;
-  *dest_data_written = orig_dest_data_len - dest_data_len;
+  if (ret_status == SANE_STATUS_GOOD)
+    {
+      *src_data_consumed = orig_src_data_len - src_data_len;
+      *dest_data_written = orig_dest_data_len - dest_data_len;
+    }
 
   return ret_status;
 }
@@ -745,6 +748,7 @@ void BrotherJFIFDecoder::NewPage ()
    */
   jpeg_abort_decompress(&state.cinfo);
   state.have_read_header = false;
+  decompress_bytes = 0;
 }
 
 void BrotherJFIFDecoder::InitSource (j_decompress_ptr cinfo)
@@ -796,19 +800,104 @@ void BrotherJFIFDecoder::TermSource(j_decompress_ptr cinfo)
 
 }
 
-
 jmp_buf BrotherJFIFDecoder::my_env;
+
+
+void BrotherJFIFDecoder::ErrorExitManager(j_common_ptr cinfo)
+{
+  char jpegLastErrorMsg[JMSG_LENGTH_MAX];
+  ( *(cinfo->err->format_message) ) (cinfo, jpegLastErrorMsg);
+  DBG (DBG_SERIOUS, "BrotherJFIFDecoder::ErrorExitManager: libjpeg error=[%s]\n", jpegLastErrorMsg);
+
+  longjmp(my_env, 1);
+}
+
 
 DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
                                                  size_t *src_data_consumed, SANE_Byte *dest_data,
                                                  size_t dest_data_len, size_t *dest_data_written)
 {
-  DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData\n");
-
+  DBG (DBG_EVENT,
+       "BrotherJFIFDecoder::DecodeScanData: src_data_len=%zu dest_data_len=%zu\n",
+       src_data_len,
+       dest_data_len);
 
   *src_data_consumed = 0;
   *dest_data_written = 0;
 
+  /*
+   * Loop around, appending data to our decompress buffer and trying to
+   * decompress as we go until we exhaust the output buffer or the input.
+   *
+   */
+  while (src_data_len > 0)
+    {
+      /*
+       * Append what we can to the decompress buffer.
+       *
+       */
+      size_t bytes_to_copy = MIN(sizeof(decompress_buffer) - decompress_bytes, src_data_len);
+
+      (void) memcpy (decompress_buffer + decompress_bytes, src_data, bytes_to_copy);
+      decompress_bytes += bytes_to_copy;
+
+      src_data += bytes_to_copy;
+      src_data_len -= bytes_to_copy;
+      *src_data_consumed += bytes_to_copy;
+
+      /*
+       * Now to try to decompress.
+       *
+       */
+      size_t decompress_consumed = 0;
+      size_t bytes_written = 0;
+      DecodeStatus res = DecodeScanData_CompressBuffer (decompress_buffer,
+                                                        decompress_bytes,
+                                                        &decompress_consumed,
+                                                        dest_data,
+                                                        dest_data_len,
+                                                        &bytes_written);
+
+      if (res != DECODE_STATUS_GOOD)
+        {
+          *src_data_consumed = 0;
+          *dest_data_written = 0;
+          return res;
+        }
+
+      /*
+       * Shift out any data that we consumed.
+       *
+       */
+      (void) memmove (decompress_buffer,
+                      decompress_buffer + decompress_consumed,
+                      decompress_bytes - decompress_consumed);
+      decompress_bytes -= decompress_consumed;
+
+      if (bytes_written == 0)
+        {
+          break;
+        }
+
+      dest_data += bytes_written;
+      dest_data_len -= bytes_written;
+      *dest_data_written += bytes_written;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte *src_data,
+                                                                size_t src_data_len,
+                                                                size_t *src_data_consumed,
+                                                                SANE_Byte *dest_data,
+                                                                size_t dest_data_len,
+                                                                size_t *dest_data_written)
+{
+  DBG (DBG_EVENT,
+       "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: src_data_len=%zu dest_data_len=%zu\n",
+       src_data_len,
+       dest_data_len);
 
   /*
    * Initialise read buffer.
@@ -819,7 +908,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
 
   if (setjmp(my_env) != 0)
     {
-      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: setjmp error return\n");
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: setjmp error return\n");
       return DECODE_STATUS_ERROR;
     }
 
@@ -829,7 +918,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
    */
   if (!state.have_read_header)
     {
-      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Trying to read header.\n");
+      DBG (DBG_SERIOUS, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Trying to read header.\n");
 
       int read_status = jpeg_read_header(&state.cinfo, TRUE);
       if (read_status == JPEG_SUSPENDED)
@@ -842,7 +931,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
 	}
       state.have_read_header = true;
 
-      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Starting decompress.\n");
+      DBG (DBG_SERIOUS, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Starting decompress.\n");
 
       if (!jpeg_start_decompress(&state.cinfo))
 	{
@@ -863,6 +952,11 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
 	  return DECODE_STATUS_ERROR;
 	}
 
+      DBG (DBG_SERIOUS,
+           "BrotherJFIFDecoder::JPEG image parameters: width=%zu height=%zu\n",
+           (size_t)state.cinfo.image_width, (size_t)state.cinfo.image_height);
+
+
       /*
        * TODO: Perhaps also check the dimensions are what we are expecting.
        * Depending on the issues related to width alignment, we might
@@ -876,11 +970,16 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
    * Let's try to decompress some JPEG!
    *
    */
-  DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Converting data.\n");
-
   SANE_Byte *output_ptr = dest_data;
 
   const size_t line_size = sizeof(JSAMPLE) * state.cinfo.output_width * state.cinfo.out_color_components;
+
+  DBG (DBG_SERIOUS,
+       "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: "
+       "Converting data: line_size=%zu state->output_width=%zu components=%d\n",
+       line_size,
+       (size_t)state.cinfo.output_width,
+       state.cinfo.out_color_components);
 
   size_t output_size = dest_data_len;
 
@@ -890,22 +989,31 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
        * Estimate the number of lines we can generate from
        * the available output space.
        *
+       * We have to ask for single lines because I think that the jpeg_read_scanlines()
+       * function is expecting an array of line buffer pointers. We don't have that
+       * but we have a single contiguous buffer, so asking for a number of lines at
+       * once is *not* going to work, which is a shame because this is less efficient
+       * potentially. :(
+       *
        */
-//      JDIMENSION max_lines = dest_data_len / (state.cinfo.output_width * 3);
-
       JDIMENSION converted = jpeg_read_scanlines (&state.cinfo, &output_ptr, 1);
 
-      DBG (DBG_IMPORTANT,
-           "BrotherJFIFDecoder::DecodeScanData: Convert %u scanlines. Remaining scanlines: %u\n",
-           (unsigned int) converted, (unsigned int)(state.cinfo.output_height - state.cinfo.output_scanline));
+      if (converted == 0)
+        {
+          DBG (DBG_IMPORTANT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: converted none\n");
+          break;
+        }
 
       output_size -= line_size;
       output_ptr += converted * line_size;
 
-      if (converted == 0)
-        {
-          break;
-        }
+      DBG (DBG_IMPORTANT,
+           "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Converted %u scanlines. "
+           "Remaining scanlines: %u output_remaining=%zu\n",
+           (unsigned int) converted,
+           (unsigned int) (state.cinfo.output_height - state.cinfo.output_scanline),
+           output_size);
+
     }
 
   /*
@@ -920,7 +1028,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
   *src_data_consumed = src_data_len - state.src_mgr.bytes_in_buffer;
 
   DBG (DBG_IMPORTANT,
-       "BrotherJFIFDecoder::DecodeScanData: Finished: consumed %zu bytes, written %zu bytes\n",
+       "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Finished: consumed %zu bytes, written %zu bytes\n",
        *src_data_consumed,
        *dest_data_written);
 
@@ -930,10 +1038,12 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
    */
   if (state.cinfo.output_scanline >= state.cinfo.output_height)
     {
-      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData: Converted all scanlines. Finishing.\n");
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Converted all scanlines. Finishing.\n");
 
       if (!jpeg_finish_decompress(&state.cinfo))
         {
+          DBG (DBG_IMPORTANT,
+               "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Failed to finish JPEG decompress.\n");
           return DECODE_STATUS_ERROR;
         }
     }

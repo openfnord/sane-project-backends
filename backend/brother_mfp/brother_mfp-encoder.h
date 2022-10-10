@@ -214,7 +214,7 @@ class BrotherJFIFDecoder
 {
 public:
   BrotherJFIFDecoder():
-    is_running(false)
+    decompress_bytes(0)
   {
     /*
      * Not sure if this is a safe way to get the cinfo into
@@ -243,11 +243,7 @@ public:
     state.cinfo.src = &state.src_mgr;
   }
 
-  static void ErrorExitManager(j_common_ptr cinfo)
-  {
-    (void)cinfo;
-    longjmp(my_env, 1);
-  }
+  static void ErrorExitManager(j_common_ptr cinfo);
 
   ~BrotherJFIFDecoder()
   {
@@ -267,6 +263,11 @@ private:
   static void SkipInputData(j_decompress_ptr cinfo, long num_bytes);
   static void TermSource(j_decompress_ptr cinfo);
 
+  DecodeStatus DecodeScanData_CompressBuffer (const SANE_Byte *src_data, size_t src_data_len,
+                               size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
+                               size_t *dest_data_written);
+
+
   struct CompressionState
   {
     struct jpeg_decompress_struct cinfo;
@@ -275,7 +276,8 @@ private:
     bool have_read_header;
   } state;
 
-  bool is_running;
+  SANE_Byte decompress_buffer[1024 * 16];
+  size_t decompress_bytes;
 
 // TODO: Move me to the state.
   static jmp_buf my_env;
@@ -339,6 +341,10 @@ public:
   void NewPage() override
   {
     current_header.block_type = 0;
+
+    jfif_decoder.NewPage();
+    gray_decoder.NewPage();
+    gray_raw_decoder.NewPage();
   }
 
   SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,

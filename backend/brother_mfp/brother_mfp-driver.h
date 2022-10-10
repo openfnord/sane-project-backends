@@ -164,6 +164,8 @@ public:
 private:
   SANE_Status StartSession ();
   SANE_Status StopSession ();
+  SANE_Status ExecStartSession ();
+  SANE_Status ExecStopSession ();
   SANE_Status Init ();
 
   SANE_Status PollForReadFlush (useconds_t max_time);

@@ -967,6 +967,10 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
   params->lines = pixel_y_height;
   params->last_frame = SANE_TRUE;
 
+  DBG (DBG_IMPORTANT,
+        "sane_get_parameters: Selected image dimensions: width=%zu height=%zu\n",
+        (size_t)pixel_x_width, (size_t)pixel_y_height);
+
   rc = device->driver->SetScanDimensions (pixel_x_offset,
                                           pixel_x_width,
                                           pixel_y_offset,
