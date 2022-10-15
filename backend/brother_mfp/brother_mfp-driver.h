@@ -96,6 +96,8 @@ public:
 
   virtual SANE_Status CancelScan () = 0;
 
+  virtual SANE_Status CheckSensor(BrotherSensor &status) = 0;
+
   virtual SANE_Status ReadScanData (SANE_Byte *data, size_t data_len,
                                     size_t *bytes_read) = 0;
 
@@ -142,7 +144,6 @@ protected:
   BrotherEncoder *encoder;
 };
 
-
 class BrotherUSBDriver : public BrotherDriver
 {
 public:
@@ -157,6 +158,8 @@ public:
   SANE_Status StartScan () override;
 
   SANE_Status CancelScan () override;
+
+  SANE_Status CheckSensor(BrotherSensor &status) override;
 
   SANE_Status ReadScanData (SANE_Byte *data, size_t data_len,
                             size_t *bytes_read) override;

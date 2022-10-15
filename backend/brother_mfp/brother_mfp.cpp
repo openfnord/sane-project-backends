@@ -69,10 +69,31 @@
 #define CAP_MODE_GRAY_DITHER            (1u << 2)
 #define CAP_MODE_BW                     (1u << 3)
 
-#define CAP_ENCODE_JPEG                 (1u << 4)
-#define CAP_ENCODE_RLENCODE             (1u << 5)
+#define CAP_MODE_BUTTON_SCAN_EMAIL      (1u << 4)
+#define CAP_MODE_BUTTON_SCAN_OCR        (1u << 5)
+#define CAP_MODE_BUTTON_SCAN_FILE       (1u << 6)
+#define CAP_MODE_BUTTON_SCAN_IMAGE      (1u << 7)
 
+/*
+ * Messages.
+ *
+ */
 #define SANE_VALUE_SCAN_MODE_GRAY_DITHER           SANE_I18N("Gray (Dithered)")
+
+#define SANE_NAME_FILE_BUTTON                "file-sensor"
+#define SANE_NAME_EMAIL_BUTTON               "email-sensor"
+#define SANE_NAME_OCR_BUTTON                 "ocr-sensor"
+#define SANE_NAME_IMAGE_BUTTON               "image-sensor"
+
+#define SANE_TITLE_FILE_BUTTON               "File button"
+#define SANE_TITLE_EMAIL_BUTTON              "Email button"
+#define SANE_TITLE_OCR_BUTTON                "OCR button"
+#define SANE_TITLE_IMAGE_BUTTON              "Image button"
+
+#define SANE_DESC_FILE_BUTTON                SANE_I18N("File button")
+#define SANE_DESC_EMAIL_BUTTON               SANE_I18N("Email button")
+#define SANE_DESC_OCR_BUTTON                 SANE_I18N("OCR button")
+#define SANE_DESC_IMAGE_BUTTON               SANE_I18N("Image button")
 
 enum Brother_Option
   {
@@ -94,6 +115,12 @@ enum Brother_Option
     OPT_ENHANCEMENT_GROUP,
     OPT_BRIGHTNESS,
     OPT_CONTRAST,
+
+    OPT_SENSOR_GROUP,
+    OPT_SENSOR_EMAIL,
+    OPT_SENSOR_FILE,
+    OPT_SENSOR_IMAGE,
+    OPT_SENSOR_OCR,
 
     /* must come last: */
     NUM_OPTIONS
@@ -120,15 +147,19 @@ typedef struct Brother_Model
 
 static Brother_Model models[] =
   {
-//    { "Brother", "MFC-465CN", BROTHER_FAMILY_2, 0x04f9, 0x01d7,
-//      { 0, SANE_FIX(210), 0 },
-//      { 0, SANE_FIX(295), 0 },
-//      { 5, 100, 150, 200, 300, 600 },
-//      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
-//    CAP_MODE_COLOUR |
-//    CAP_MODE_GRAY |
-//    CAP_MODE_GRAY_DITHER |
-//    CAP_MODE_BW },
+    { "Brother", "MFC-465CN", BROTHER_FAMILY_2, 0x04f9, 0x01d7,
+      { 0, SANE_FIX(210), 0 },
+      { 0, SANE_FIX(295), 0 },
+      { 5, 100, 150, 200, 300, 600 },
+      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_MODE_BUTTON_SCAN_EMAIL |
+      CAP_MODE_BUTTON_SCAN_FILE |
+      CAP_MODE_BUTTON_SCAN_OCR |
+      CAP_MODE_BUTTON_SCAN_IMAGE },
 
     { "Brother", "MFC-J4320DW", BROTHER_FAMILY_4, 0x04f9, 0x033a,
       { 0, SANE_FIX(213.9), 0 },
@@ -138,9 +169,7 @@ static Brother_Model models[] =
     CAP_MODE_COLOUR |
     CAP_MODE_GRAY |
     CAP_MODE_GRAY_DITHER |
-    CAP_MODE_BW |
-    CAP_ENCODE_JPEG |
-    CAP_ENCODE_RLENCODE },
+    CAP_MODE_BW},
 
     {NULL, NULL, BROTHER_FAMILY_NONE, 0, 0, {0, 0, 0}, {0, 0, 0}, {0}, {0}, 0}
 };
@@ -160,7 +189,8 @@ struct BrotherDevice
 #ifdef BROTHER_ENABLE_SCAN_FILE
       scan_file (nullptr),
 #endif
-      driver (nullptr)
+      driver (nullptr),
+      current_sensor_states(BROTHER_SENSOR_NONE)
   {
         (void)memset(opt, 0, sizeof(opt));
   }
@@ -186,6 +216,7 @@ struct BrotherDevice
 
   BrotherDriver *driver;
 
+  BrotherSensor current_sensor_states;
 };
 
 static BrotherDevice *first_dev = NULL;
@@ -518,6 +549,75 @@ init_options (BrotherDevice *device)
   od->constraint_type = SANE_CONSTRAINT_RANGE;
   od->constraint.range = &constraint_brightness_contrast;
   device->val[OPT_CONTRAST].w = 0;
+
+  // Sensor group.
+  od = &device->opt[OPT_SENSOR_GROUP];
+  od->name = SANE_NAME_SENSORS;
+  od->title = SANE_TITLE_SENSORS;
+  od->desc = SANE_DESC_SENSORS;
+  od->type = SANE_TYPE_GROUP;
+  od->cap = SANE_CAP_ADVANCED;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 0;
+  od->constraint_type = SANE_CONSTRAINT_NONE;
+  od->constraint.range = 0;
+  device->val[OPT_SENSOR_GROUP].w = 0;
+
+  od = &device->opt[OPT_SENSOR_EMAIL];
+  od->name = SANE_NAME_EMAIL_BUTTON;
+  od->title = SANE_TITLE_EMAIL_BUTTON;
+  od->desc = SANE_DESC_EMAIL_BUTTON;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_EMAIL)
+    od->cap =
+      SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
+  else
+    od->cap = SANE_CAP_INACTIVE;
+  device->val[OPT_SENSOR_EMAIL].b = SANE_FALSE;
+
+  od = &device->opt[OPT_SENSOR_FILE];
+  od->name = SANE_NAME_FILE_BUTTON;
+  od->title = SANE_TITLE_FILE_BUTTON;
+  od->desc = SANE_DESC_FILE_BUTTON;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_FILE)
+    od->cap =
+      SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
+  else
+    od->cap = SANE_CAP_INACTIVE;
+  device->val[OPT_SENSOR_FILE].b = SANE_FALSE;
+
+  od = &device->opt[OPT_SENSOR_IMAGE];
+  od->name = SANE_NAME_IMAGE_BUTTON;
+  od->title = SANE_TITLE_IMAGE_BUTTON;
+  od->desc = SANE_DESC_IMAGE_BUTTON;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_IMAGE)
+    od->cap =
+      SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
+  else
+    od->cap = SANE_CAP_INACTIVE;
+  device->val[OPT_SENSOR_IMAGE].b = SANE_FALSE;
+
+  od = &device->opt[OPT_SENSOR_OCR];
+  od->name = SANE_NAME_OCR_BUTTON;
+  od->title = SANE_TITLE_OCR_BUTTON;
+  od->desc = SANE_DESC_OCR_BUTTON;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_OCR)
+    od->cap =
+      SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
+  else
+    od->cap = SANE_CAP_INACTIVE;
+  device->val[OPT_SENSOR_OCR].b = SANE_FALSE;
 
   DBG (2, "end init_options: dev=%s\n", device->name);
 
@@ -911,6 +1011,51 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
           *(SANE_Int *) value = device->val[option].w;
           DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%d\n",
                option, device->opt[option].name, *(SANE_Int *) value);
+          break;
+
+        case OPT_SENSOR_EMAIL:
+        case OPT_SENSOR_OCR:
+        case OPT_SENSOR_FILE:
+        case OPT_SENSOR_IMAGE:
+          /*
+           * Check the sensor value and update our status value.
+           *
+           */
+          {
+            BrotherSensor sensor = BROTHER_SENSOR_NONE;
+            if (device->driver->CheckSensor(sensor) == SANE_STATUS_GOOD)
+              {
+                device->current_sensor_states |= sensor;
+              }
+            switch (option)
+            {
+              case OPT_SENSOR_EMAIL:
+                *(SANE_Bool*) value =
+                    device->current_sensor_states & BROTHER_SENSOR_EMAIL ? SANE_TRUE : SANE_FALSE;
+                break;
+
+              case OPT_SENSOR_OCR:
+                *(SANE_Bool*) value =
+                    device->current_sensor_states & BROTHER_SENSOR_OCR ? SANE_TRUE : SANE_FALSE;
+                break;
+
+              case OPT_SENSOR_FILE:
+                *(SANE_Bool*) value =
+                    device->current_sensor_states & BROTHER_SENSOR_FILE ? SANE_TRUE : SANE_FALSE;
+                break;
+
+              case OPT_SENSOR_IMAGE:
+                *(SANE_Bool*) value =
+                    device->current_sensor_states & BROTHER_SENSOR_IMAGE ? SANE_TRUE : SANE_FALSE;
+                break;
+
+              default:
+                break;
+            }
+          }
+
+          DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
           break;
 
         default:

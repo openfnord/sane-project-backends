@@ -44,7 +44,7 @@ static void test_family4_decode_session_resp()
   ASSERT_TRUE(sess_resp.ready);
 
   // BUSY status
-  data = (const SANE_Byte *)"\x05" "\x10" "\x01" "\x02" "\x20";
+  data = (const SANE_Byte *)"\x05" "\x10" "\x01" "\x02" "\x80";
 
   sane_resp = encoder.DecodeSessionResp (data, 5, sess_resp);
 

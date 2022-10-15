@@ -50,6 +50,7 @@
  */
 #define BROTHER_USB_REQ_STARTSESSION       1
 #define BROTHER_USB_REQ_STOPSESSION        2
+#define BROTHER_USB_REQ_BUTTONSTATE        3
 
 #define BROTHER_READ_BUFFER_LEN (16 * 1024)
 
@@ -804,65 +805,68 @@ SANE_Status BrotherUSBDriver::StartScan ()
    */
   packet_len = 0;
   res = encoder->EncodeADFBlock (small_buffer, sizeof(small_buffer), &packet_len);
-  if (res != SANE_STATUS_GOOD)
+  if (res != SANE_STATUS_UNSUPPORTED)
     {
-      DBG (DBG_SERIOUS,
-           "BrotherUSBDriver::StartScan: failed to generate ADF block: %d\n",
-           res);
-      (void) CancelScan ();
-      return SANE_STATUS_INVAL;
-    }
+      if (res != SANE_STATUS_GOOD)
+        {
+          DBG (DBG_SERIOUS,
+               "BrotherUSBDriver::StartScan: failed to generate ADF block: %d\n",
+               res);
+          (void) CancelScan ();
+          return SANE_STATUS_INVAL;
+        }
 
-  buf_size = packet_len;
-  res = sanei_usb_write_bulk (fd, small_buffer, &buf_size);
-  if (res != SANE_STATUS_GOOD)
-    {
-      DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to send ADF block: %d\n", res);
-      (void)CancelScan();
-      return res;
-    }
+      buf_size = packet_len;
+      res = sanei_usb_write_bulk (fd, small_buffer, &buf_size);
+      if (res != SANE_STATUS_GOOD)
+        {
+          DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to send ADF block: %d\n", res);
+          (void)CancelScan();
+          return res;
+        }
 
-  if (buf_size != packet_len)
-    {
-      DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to write ADF block\n");
-      (void)CancelScan();
-      return SANE_STATUS_IO_ERROR;
-    }
+      if (buf_size != packet_len)
+        {
+          DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to write ADF block\n");
+          (void)CancelScan();
+          return SANE_STATUS_IO_ERROR;
+        }
 
-  /*
-   * Try to read the response.
-   *
-   */
-  buf_size = sizeof(small_buffer);
-  timeout = TIMEOUT_SECS(8);
+      /*
+       * Try to read the response.
+       *
+       */
+      buf_size = sizeof(small_buffer);
+      timeout = TIMEOUT_SECS(8);
 
-  res = PollForRead(small_buffer, &buf_size, &timeout);
-  if (res != SANE_STATUS_GOOD)
-    {
-      DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to read ADF block response: %d\n", res);
-      (void)CancelScan();
-      return res;
-    }
+      res = PollForRead(small_buffer, &buf_size, &timeout);
+      if (res != SANE_STATUS_GOOD)
+        {
+          DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to read ADF block response: %d\n", res);
+          (void)CancelScan();
+          return res;
+        }
 
-  BrotherADFResponse adf_resp;
+      BrotherADFResponse adf_resp;
 
-  res = encoder->DecodeADFBlockResp (small_buffer, buf_size, adf_resp);
-  if (res != SANE_STATUS_GOOD)
-    {
-      DBG (DBG_SERIOUS,
-          "BrotherUSBDriver::StartScan: ADF block response block invalid: %d\n",
-          res);
-      (void) CancelScan ();
-      return res;
-    }
+      res = encoder->DecodeADFBlockResp (small_buffer, buf_size, adf_resp);
+      if (res != SANE_STATUS_GOOD)
+        {
+          DBG (DBG_SERIOUS,
+              "BrotherUSBDriver::StartScan: ADF block response block invalid: %d\n",
+              res);
+          (void) CancelScan ();
+          return res;
+        }
 
-  if (adf_resp.resp_code != 0xc2)
-    {
-      DBG (DBG_SERIOUS,
-          "BrotherUSBDriver::StartScan: ADF block response invalid: %u\n",
-          (unsigned int)adf_resp.resp_code);
-      (void) CancelScan ();
-      return res;
+      if (adf_resp.resp_code != 0xc2)
+        {
+          DBG (DBG_SERIOUS,
+              "BrotherUSBDriver::StartScan: ADF block response invalid: %u\n",
+              (unsigned int)adf_resp.resp_code);
+          (void) CancelScan ();
+          return res;
+        }
     }
 
   /*
@@ -922,6 +926,102 @@ SANE_Status BrotherUSBDriver::StartScan ()
   return SANE_STATUS_GOOD;
 }
 
+SANE_Status BrotherUSBDriver::CheckSensor (BrotherSensor &status)
+{
+  SANE_Status res = sanei_usb_control_msg (fd, USB_DIR_IN | USB_TYPE_VENDOR,
+                                           BROTHER_USB_REQ_BUTTONSTATE,
+                                           0, 0, 255, small_buffer);
+
+ if (res != SANE_STATUS_GOOD)
+   {
+     DBG (DBG_WARN,
+         "BrotherUSBDriver::CheckSensor: failed to send check sensor sequence: %s.\n",
+         devicename);
+     return res;
+   }
+
+ /*
+  * Decode the response.
+  *
+  * TODO: How do we detect a short response?
+  *
+  */
+ BrotherButtonQueryResponse resp;
+
+ res = encoder->DecodeButtonQueryResp (small_buffer, 4, resp);
+ if (res != SANE_STATUS_GOOD)
+ {
+   DBG (DBG_WARN,
+       "BrotherUSBDriver::CheckSensor: button state response is invalid.\n");
+   return SANE_STATUS_IO_ERROR;
+ }
+
+ if (resp.has_button_press == BROTHER_SENSOR_NONE)
+   {
+     status = BROTHER_SENSOR_NONE;
+     return SANE_STATUS_GOOD;
+   }
+
+ DBG (DBG_DETAIL,
+     "BrotherUSBDriver::CheckSensor: scanner indicates a button was pushed.\n");
+
+ /*
+  * Now we query the button state.
+  * The request is the same apparently but we get a different response.
+  * Not really sure I understand because it seems stateful this but it is what we observe.
+  *
+  */
+  res = sanei_usb_control_msg (fd, USB_DIR_IN | USB_TYPE_VENDOR,
+                               BROTHER_USB_REQ_BUTTONSTATE,
+                               0, 0, 255, small_buffer);
+
+if (res != SANE_STATUS_GOOD)
+  {
+    DBG (DBG_WARN,
+        "BrotherUSBDriver::CheckSensor: failed to send check sensor sequence: %s.\n",
+        devicename);
+      return res;
+    }
+
+  /*
+   * And the second response is a bit longer and button specific.
+   *
+   */
+  BrotherButtonStateResponse state_resp;
+
+  res = encoder->DecodeButtonStateResp (small_buffer, 9, state_resp);
+  if (res != SANE_STATUS_GOOD)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: button info response is invalid.\n");
+      return SANE_STATUS_IO_ERROR;
+    }
+
+  switch (state_resp.button_value)
+  {
+    case 0x05:
+      status = BROTHER_SENSOR_FILE;
+      break;
+
+    case 0x02:
+      status = BROTHER_SENSOR_OCR;
+      break;
+
+    case 0x03:
+      status = BROTHER_SENSOR_IMAGE;
+      break;
+
+    case 0x08:
+      status = BROTHER_SENSOR_EMAIL;
+      break;
+
+    default:
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: unknown button code: %d.\n", state_resp.button_value);
+      break;
+  }
+
+ return SANE_STATUS_GOOD;
+}
+
 BrotherDriver::BrotherDriver (BrotherFamily family) :
     family (family),
     encoder(nullptr)
@@ -932,8 +1032,11 @@ BrotherDriver::BrotherDriver (BrotherFamily family) :
       encoder = new BrotherEncoderFamily4();
       break;
 
+    case BROTHER_FAMILY_2:
+      encoder = new BrotherEncoderFamily2();
+      break;
+
 //      case BROTHER_FAMILY_1:
-//      case BROTHER_FAMILY_2:
 //      case BROTHER_FAMILY_3:
 //      case BROTHER_FAMILY_5:
     case BROTHER_FAMILY_NONE:
