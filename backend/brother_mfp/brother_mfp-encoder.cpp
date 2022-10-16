@@ -425,6 +425,20 @@ SANE_Status BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, si
                                              dest_data_len,
                                              &bytes_written);
         }
+      else if (current_header.block_type == BROTHER_DATA_BLOCK_GRAY_RAW)
+        {
+          if (new_block)
+            {
+              gray_raw_decoder.NewBlock ();
+            }
+
+          res = gray_raw_decoder.DecodeScanData (src_data,
+                                             in_len,
+                                             &bytes_consumed,
+                                             dest_data,
+                                             dest_data_len,
+                                             &bytes_written);
+        }
       else
         {
           DBG (DBG_IMPORTANT,

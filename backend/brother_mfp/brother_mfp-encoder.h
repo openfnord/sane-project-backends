@@ -408,6 +408,7 @@ private:
 
   BrotherJFIFDecoder jfif_decoder;
   BrotherGrayRLengthDecoder gray_decoder;
+  BrotherGrayRawDecoder gray_raw_decoder;
 };
 
 class BrotherEncoderFamily4 : public BrotherEncoder
