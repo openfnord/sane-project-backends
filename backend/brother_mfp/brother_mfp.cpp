@@ -74,6 +74,9 @@
 #define CAP_MODE_BUTTON_SCAN_FILE       (1u << 6)
 #define CAP_MODE_BUTTON_SCAN_IMAGE      (1u << 7)
 
+#define CAP_MODE_HAS_ADF                (1u << 8)
+#define CAP_MODE_HAS_ADF_IS_DUPLEX      (1u << 9)
+
 /*
  * Messages.
  *
@@ -159,17 +162,51 @@ static Brother_Model models[] =
       CAP_MODE_BUTTON_SCAN_EMAIL |
       CAP_MODE_BUTTON_SCAN_FILE |
       CAP_MODE_BUTTON_SCAN_OCR |
-      CAP_MODE_BUTTON_SCAN_IMAGE },
+      CAP_MODE_BUTTON_SCAN_IMAGE |
+      CAP_MODE_HAS_ADF },
+
+      { "Brother", "DCP-7030", BROTHER_FAMILY_3, 0x04f9, 0x01ea,
+        { 0, SANE_FIX(210), 0 },
+        { 0, SANE_FIX(295), 0 },
+        { 5, 100, 150, 200, 300, 600 },
+        { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+        CAP_MODE_COLOUR |
+        CAP_MODE_GRAY |
+        CAP_MODE_GRAY_DITHER |
+        CAP_MODE_BW |
+        CAP_MODE_BUTTON_SCAN_EMAIL |
+        CAP_MODE_BUTTON_SCAN_FILE |
+        CAP_MODE_BUTTON_SCAN_OCR |
+        CAP_MODE_BUTTON_SCAN_IMAGE },
+
+        // TODO: check dimensions
+      { "Brother", "MFC-290C", BROTHER_FAMILY_3, 0x04f9, 0x01fd,
+        { 0, SANE_FIX(210), 0 },
+        { 0, SANE_FIX(295), 0 },
+        { 5, 100, 150, 200, 300, 600 },
+        { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+        CAP_MODE_COLOUR |
+        CAP_MODE_GRAY |
+        CAP_MODE_GRAY_DITHER |
+        CAP_MODE_BW |
+        CAP_MODE_BUTTON_SCAN_EMAIL |
+        CAP_MODE_BUTTON_SCAN_FILE |
+        CAP_MODE_BUTTON_SCAN_OCR |
+        CAP_MODE_BUTTON_SCAN_IMAGE },
 
     { "Brother", "MFC-J4320DW", BROTHER_FAMILY_4, 0x04f9, 0x033a,
       { 0, SANE_FIX(213.9), 0 },
       { 0, SANE_FIX(295), 0 },
       { 6, 100, 150, 200, 300, 600, 1200 },
       { 7, 100, 150, 200, 300, 600, 1200, 2400 },
-    CAP_MODE_COLOUR |
-    CAP_MODE_GRAY |
-    CAP_MODE_GRAY_DITHER |
-    CAP_MODE_BW},
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_MODE_BUTTON_SCAN_EMAIL |
+      CAP_MODE_BUTTON_SCAN_FILE |
+      CAP_MODE_BUTTON_SCAN_OCR |
+      CAP_MODE_BUTTON_SCAN_IMAGE },
 
     {NULL, NULL, BROTHER_FAMILY_NONE, 0, 0, {0, 0, 0}, {0, 0, 0}, {0}, {0}, 0}
 };

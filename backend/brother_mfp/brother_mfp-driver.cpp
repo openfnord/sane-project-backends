@@ -1037,7 +1037,11 @@ BrotherDriver::BrotherDriver (BrotherFamily family) :
       break;
 
 //      case BROTHER_FAMILY_1:
-//      case BROTHER_FAMILY_3:
+
+    case BROTHER_FAMILY_3:
+        encoder = new BrotherEncoderFamily3();
+        break;
+
 //      case BROTHER_FAMILY_5:
     case BROTHER_FAMILY_NONE:
     default:
