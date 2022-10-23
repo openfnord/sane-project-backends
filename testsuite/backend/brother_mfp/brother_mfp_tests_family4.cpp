@@ -33,7 +33,7 @@ static void test_family4_decode_session_resp()
   SANE_Status sane_resp;
   BrotherSessionResponse sess_resp;
 
-  BrotherEncoderFamily4 encoder;
+  BrotherEncoderFamily4 encoder(0);
 
   // SUCCESS status
   const SANE_Byte *data = (const SANE_Byte *)"\x05" "\x10" "\x01" "\x02" "\x00";
@@ -103,7 +103,7 @@ static void test_family4_decode_adf_resp()
   SANE_Status sane_resp;
   BrotherADFResponse adf_resp;
 
-  BrotherEncoderFamily4 encoder;
+  BrotherEncoderFamily4 encoder(0);
 
   // SUCCESS status
   const SANE_Byte *data = (const SANE_Byte *)"\xc2";
@@ -133,7 +133,7 @@ static void test_family4_encode_basic_param()
   SANE_Byte data_buffer[1024];
   size_t ret_length;
 
-  BrotherEncoderFamily4 encoder;
+  BrotherEncoderFamily4 encoder(0);
 
   // All defaults.
   sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
@@ -224,7 +224,7 @@ static void test_family4_encode_param()
   SANE_Byte data_buffer[1024];
   size_t ret_length;
 
-  BrotherEncoderFamily4 encoder;
+  BrotherEncoderFamily4 encoder(0);
 
   // All defaults.
   sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
@@ -370,7 +370,7 @@ static void test_family4_encode_adf()
   SANE_Byte data_buffer[1024];
   size_t ret_length;
 
-  BrotherEncoderFamily4 encoder;
+  BrotherEncoderFamily4 encoder(0);
 
   // Standard call.
   sane_resp = encoder.EncodeADFBlock (data_buffer, sizeof(data_buffer), &ret_length);

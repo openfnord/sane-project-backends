@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <algorithm>
 
 #include "../include/sane/sane.h"
 #include "../include/sane/sanei.h"
@@ -51,6 +52,7 @@
 #define BROTHER_DATA_BLOCK_NO_DATA              0x80
 #define BROTHER_DATA_BLOCK_MORE_FRAMES          0x81
 #define BROTHER_DATA_BLOCK_END_OF_FRAME         0x82
+#define BROTHER_DATA_BLOCK_CANCEL               0x86
 #define BROTHER_DATA_BLOCK_JPEG                 0x64
 #define BROTHER_DATA_BLOCK_GRAY_RAW             0x40
 #define BROTHER_DATA_BLOCK_GRAY_RLENGTH         0x42
@@ -108,6 +110,13 @@ SANE_Status BrotherEncoder::SetBrightness (SANE_Int brightness)
    * TODO: Perhaps check the validity of the parameter?
    */
   scan_params.param_brightness = brightness;
+
+  return SANE_STATUS_GOOD;
+}
+
+SANE_Status BrotherEncoder::SetCompression (SANE_Bool compression)
+{
+  scan_params.param_compression = compression;
 
   return SANE_STATUS_GOOD;
 }
@@ -264,7 +273,8 @@ SANE_Status BrotherEncoderFamily2::EncodeParameterBlock (SANE_Byte *data, size_t
                       (unsigned int) scan_params.param_y_res,
                       mode_text,
                       (scan_params.param_scan_mode == BROTHER_SCAN_MODE_COLOR) ?
-                          "C=JPEG\nJ=MID" : "C=RLENGTH",
+                          (scan_params.param_compression ? "C=JPEG\nJ=MID" : "C=NONE") :
+                          "C=RLENGTH",
                       (unsigned int) (scan_params.param_brightness + 50),
                       (unsigned int) (scan_params.param_contrast + 50),
                       (unsigned int) (scan_params.param_pixel_x_offset),
@@ -338,6 +348,13 @@ SANE_Status BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, si
               break;
             }
 
+          if (res == DECODE_STATUS_CANCEL)
+            {
+              DBG (DBG_IMPORTANT, "BrotherEncoderFamily2::DecodeScanData: end of data detected\n");
+              ret_status = SANE_STATUS_CANCELLED;
+              break;
+            }
+
           /*
            * Detect special case situations.
            *
@@ -395,9 +412,25 @@ SANE_Status BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, si
       DecodeStatus res;
       size_t bytes_consumed = 0;
       size_t bytes_written = 0;
-      size_t in_len = MIN(src_data_len, current_header.block_len);
+      size_t in_len = std::min(src_data_len, current_header.block_len);
 
-      if (current_header.block_type == BROTHER_DATA_BLOCK_JPEG)
+      if ((current_header.block_type == BROTHER_DATA_BLOCK_RED_RAW)
+          || (current_header.block_type == BROTHER_DATA_BLOCK_GREEN_RAW)
+          || (current_header.block_type == BROTHER_DATA_BLOCK_BLUE_RAW))
+        {
+          if (new_block)
+            {
+              colour_decoder.NewBlock ();
+            }
+
+          res = colour_decoder.DecodeScanData (src_data,
+                                             in_len,
+                                             &bytes_consumed,
+                                             dest_data,
+                                             dest_data_len,
+                                             &bytes_written);
+        }
+      else if (current_header.block_type == BROTHER_DATA_BLOCK_JPEG)
         {
           if (new_block)
             {
@@ -531,6 +564,12 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanDataHeader (const SANE_Byte *src_d
     {
       *src_data_consumed = 1;
       return DECODE_STATUS_ENDOFDATA;
+    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_CANCEL)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_CANCEL;
     }
 
   if (header.block_type == BROTHER_DATA_BLOCK_END_OF_FRAME)
@@ -714,10 +753,9 @@ SANE_Status BrotherEncoderFamily3::EncodeParameterBlock (SANE_Byte *data, size_t
                       (unsigned int) scan_params.param_x_res,
                       (unsigned int) scan_params.param_y_res,
                       mode_text,
-//                      (scan_params.param_scan_mode == BROTHER_SCAN_MODE_COLOR) ?
-//                          "C=JPEG\nJ=MID" : "C=RLENGTH",
                       (scan_params.param_scan_mode == BROTHER_SCAN_MODE_COLOR) ?
-                          "C=NONE" : "C=RLENGTH",
+                          (scan_params.param_compression ? "C=JPEG\nJ=MID" : "C=NONE") :
+                          "C=RLENGTH",
                       (unsigned int) (scan_params.param_brightness + 50),
                       (unsigned int) (scan_params.param_contrast + 50),
                       (unsigned int) (scan_params.param_pixel_x_offset),
@@ -791,6 +829,13 @@ SANE_Status BrotherEncoderFamily3::DecodeScanData (const SANE_Byte *src_data, si
               break;
             }
 
+          if (res == DECODE_STATUS_CANCEL)
+            {
+              DBG (DBG_IMPORTANT, "BrotherEncoderFamily3::DecodeScanData: end of data detected\n");
+              ret_status = SANE_STATUS_CANCELLED;
+              break;
+            }
+
           /*
            * Detect special case situations.
            *
@@ -848,7 +893,7 @@ SANE_Status BrotherEncoderFamily3::DecodeScanData (const SANE_Byte *src_data, si
       DecodeStatus res;
       size_t bytes_consumed = 0;
       size_t bytes_written = 0;
-      size_t in_len = MIN(src_data_len, current_header.block_len);
+      size_t in_len = std::min(src_data_len, current_header.block_len);
 
       if ((current_header.block_type == BROTHER_DATA_BLOCK_RED_RAW)
           || (current_header.block_type == BROTHER_DATA_BLOCK_GREEN_RAW)
@@ -1000,6 +1045,12 @@ DecodeStatus BrotherEncoderFamily3::DecodeScanDataHeader (const SANE_Byte *src_d
     {
       *src_data_consumed = 1;
       return DECODE_STATUS_ENDOFDATA;
+    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_CANCEL)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_CANCEL;
     }
 
   if (header.block_type == BROTHER_DATA_BLOCK_END_OF_FRAME)
@@ -1281,7 +1332,14 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
 	      break;
 	    }
 
-	  /*
+          if (res == DECODE_STATUS_CANCEL)
+            {
+              DBG (DBG_IMPORTANT, "BrotherEncoderFamily2::DecodeScanData: end of data detected\n");
+              ret_status = SANE_STATUS_CANCELLED;
+              break;
+            }
+
+          /*
            * Detect special case situations.
            *
            * TODO: We need to be able to alert the difference between these
@@ -1338,7 +1396,7 @@ SANE_Status BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, si
       DecodeStatus res;
       size_t bytes_consumed = 0;
       size_t bytes_written = 0;
-      size_t in_len = MIN(src_data_len, current_header.block_len);
+      size_t in_len = std::min(src_data_len, current_header.block_len);
 
       if (current_header.block_type == BROTHER_DATA_BLOCK_JPEG)
         {
@@ -1472,6 +1530,12 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanDataHeader (const SANE_Byte *src_d
     {
       *src_data_consumed = 1;
       return DECODE_STATUS_ENDOFDATA;
+    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_CANCEL)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_CANCEL;
     }
 
   if (header.block_type == BROTHER_DATA_BLOCK_END_OF_FRAME)
@@ -1691,6 +1755,23 @@ void BrotherInterleavedRGBColourDecoder::NewPage(const BrotherParameters &params
   scanline_buffer_size = 0;
 }
 
+void BrotherInterleavedRGBColourDecoder::ConvertYCbCrToRGB (SANE_Byte y, SANE_Byte cb, SANE_Byte cr,
+                                                            SANE_Byte *red, SANE_Byte *green,
+                                                            SANE_Byte *blue)
+{
+  double y_double = (double) y;
+  double cb_double = (double) cb;
+  double cr_double = (double) cr;
+
+  double red_chan = y_double + 1.40200 * (cr_double - 0x80);
+  double green_chan = y_double - 0.34414 * (cb_double - 0x80) - 0.71414 * (cr_double - 0x80);
+  double blue_chan = y_double + 1.77200 * (cb_double - 0x80);
+
+  *red = std::max (0.0, std::min (255.0, red_chan));
+  *green = std::max (0.0, std::min (255.0, green_chan));
+  *blue = std::max (0.0, std::min (255.0, blue_chan));
+}
+
 /*
  * Returns:
  *
@@ -1748,7 +1829,7 @@ DecodeStatus BrotherInterleavedRGBColourDecoder::DecodeScanData (const SANE_Byte
    */
   while (in_buffer_len && (out_buffer_len > scanline_length))
     {
-      size_t bytes_avail = MIN(in_buffer_len, scanline_length - scanline_buffer_data);
+      size_t bytes_avail = std::min(in_buffer_len, scanline_length - scanline_buffer_data);
       (void)memcpy(scanline_buffer + scanline_buffer_data, in_buffer, bytes_avail);
 
       scanline_buffer_data += bytes_avail;
@@ -1770,9 +1851,32 @@ DecodeStatus BrotherInterleavedRGBColourDecoder::DecodeScanData (const SANE_Byte
           for (size_t col_index = 0; col_index < (size_t) decode_params.param_pixel_x_width;
               col_index++)
             {
-              *out_buffer++ = *red++;
-              *out_buffer++ = *green++;
-              *out_buffer++ = *blue++;
+              /*
+               * Sort out the raw encoding format.
+               *
+               */
+              if (capabilities & CAP_MODE_RAW_IS_CrYCb)
+                {
+                  SANE_Byte R;
+                  SANE_Byte G;
+                  SANE_Byte B;
+
+                  ConvertYCbCrToRGB(*green++, *blue++, *red++, &R, &G, &B);
+
+                  *out_buffer++ = R;
+                  *out_buffer++ = G;
+                  *out_buffer++ = B;
+                }
+              else
+                {
+                  /*
+                   * Must be just plain RBG.
+                   *
+                   */
+                  *out_buffer++ = *red++;
+                  *out_buffer++ = *green++;
+                  *out_buffer++ = *blue++;
+                }
             }
           scanline_buffer_data = 0;
           out_buffer_len -= scanline_length;
@@ -1892,7 +1996,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData (const SANE_Byte *src_data, size
        * Append what we can to the decompress buffer.
        *
        */
-      size_t bytes_to_copy = MIN(sizeof(decompress_buffer) - decompress_bytes, src_data_len);
+      size_t bytes_to_copy = std::min(sizeof(decompress_buffer) - decompress_bytes, src_data_len);
 
       (void) memcpy (decompress_buffer + decompress_bytes, src_data, bytes_to_copy);
       decompress_bytes += bytes_to_copy;
@@ -2140,7 +2244,7 @@ DecodeStatus BrotherGrayRawDecoder::DecodeScanData (const SANE_Byte *src_data, s
    * It's just raw data.
    *
    */
-  size_t copy_len = MIN(src_data_len, dest_data_len);
+  size_t copy_len = std::min(src_data_len, dest_data_len);
 
   (void)memcpy(dest_data, src_data, copy_len);
   *dest_data_written = copy_len;

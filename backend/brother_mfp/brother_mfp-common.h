@@ -24,8 +24,34 @@
 
 #pragma once
 
-#define BACKEND_NAME        brother_mfp
+#define BACKEND_NAME            brother_mfp
 #define BROTHER_MFP_CONFIG_FILE "brother_mfp.conf"
+
+/*
+ * Model capabilities.
+ *
+ * TODO: Some of these capabilities might be redundant if all models possess them.
+ * E.g. MODE_GRAY
+ *
+ */
+#define CAP_MODE_COLOUR                 (1u << 0)
+#define CAP_MODE_GRAY                   (1u << 1)
+#define CAP_MODE_GRAY_DITHER            (1u << 2)
+#define CAP_MODE_BW                     (1u << 3)
+
+#define CAP_MODE_BUTTON_SCAN_EMAIL      (1u << 4)
+#define CAP_MODE_BUTTON_SCAN_OCR        (1u << 5)
+#define CAP_MODE_BUTTON_SCAN_FILE       (1u << 6)
+#define CAP_MODE_BUTTON_SCAN_IMAGE      (1u << 7)
+
+#define CAP_MODE_HAS_ADF                (1u << 8)
+#define CAP_MODE_HAS_ADF_IS_DUPLEX      (1u << 9)
+
+#define CAP_MODE_HAS_RAW                (1u << 10)
+#define CAP_MODE_HAS_JPEG               (1u << 11)
+
+// Oddities of particular models.
+#define CAP_MODE_RAW_IS_CrYCb           (1u << 12)
 
 /*
  * Diagnostic levels.
@@ -37,5 +63,3 @@
 #define DBG_EVENT       4
 #define DBG_DETAIL      5
 #define DBG_DEBUG       6
-
-#define MIN(x,y)        ((x)>(y)?(y):(x))

@@ -61,23 +61,6 @@
 /*-----------------------------------------------------------------*/
 
 /*
- * Model capabilities.
- *
- */
-#define CAP_MODE_COLOUR                 (1u << 0)
-#define CAP_MODE_GRAY                   (1u << 1)
-#define CAP_MODE_GRAY_DITHER            (1u << 2)
-#define CAP_MODE_BW                     (1u << 3)
-
-#define CAP_MODE_BUTTON_SCAN_EMAIL      (1u << 4)
-#define CAP_MODE_BUTTON_SCAN_OCR        (1u << 5)
-#define CAP_MODE_BUTTON_SCAN_FILE       (1u << 6)
-#define CAP_MODE_BUTTON_SCAN_IMAGE      (1u << 7)
-
-#define CAP_MODE_HAS_ADF                (1u << 8)
-#define CAP_MODE_HAS_ADF_IS_DUPLEX      (1u << 9)
-
-/*
  * Messages.
  *
  */
@@ -87,16 +70,19 @@
 #define SANE_NAME_EMAIL_BUTTON               "email-sensor"
 #define SANE_NAME_OCR_BUTTON                 "ocr-sensor"
 #define SANE_NAME_IMAGE_BUTTON               "image-sensor"
+#define SANE_NAME_COMPRESSION                "compression"
 
 #define SANE_TITLE_FILE_BUTTON               "File button"
 #define SANE_TITLE_EMAIL_BUTTON              "Email button"
 #define SANE_TITLE_OCR_BUTTON                "OCR button"
 #define SANE_TITLE_IMAGE_BUTTON              "Image button"
+#define SANE_TITLE_COMPRESSION               "Compress data"
 
 #define SANE_DESC_FILE_BUTTON                SANE_I18N("File button")
 #define SANE_DESC_EMAIL_BUTTON               SANE_I18N("Email button")
 #define SANE_DESC_OCR_BUTTON                 SANE_I18N("OCR button")
 #define SANE_DESC_IMAGE_BUTTON               SANE_I18N("Image button")
+#define SANE_DESC_COMPRESSION                SANE_I18N("Compress scan data with JPEG")
 
 enum Brother_Option
   {
@@ -118,6 +104,7 @@ enum Brother_Option
     OPT_ENHANCEMENT_GROUP,
     OPT_BRIGHTNESS,
     OPT_CONTRAST,
+    OPT_COMPRESSION,
 
     OPT_SENSOR_GROUP,
     OPT_SENSOR_EMAIL,
@@ -163,36 +150,44 @@ static Brother_Model models[] =
       CAP_MODE_BUTTON_SCAN_FILE |
       CAP_MODE_BUTTON_SCAN_OCR |
       CAP_MODE_BUTTON_SCAN_IMAGE |
-      CAP_MODE_HAS_ADF },
+      CAP_MODE_HAS_ADF |
+      CAP_MODE_RAW_IS_CrYCb |
+      CAP_MODE_HAS_RAW |
+      CAP_MODE_HAS_JPEG },
 
-      { "Brother", "DCP-7030", BROTHER_FAMILY_3, 0x04f9, 0x01ea,
-        { 0, SANE_FIX(210), 0 },
-        { 0, SANE_FIX(295), 0 },
-        { 5, 100, 150, 200, 300, 600 },
-        { 7, 100, 150, 200, 300, 600, 1200, 2400 },
-        CAP_MODE_COLOUR |
-        CAP_MODE_GRAY |
-        CAP_MODE_GRAY_DITHER |
-        CAP_MODE_BW |
-        CAP_MODE_BUTTON_SCAN_EMAIL |
-        CAP_MODE_BUTTON_SCAN_FILE |
-        CAP_MODE_BUTTON_SCAN_OCR |
-        CAP_MODE_BUTTON_SCAN_IMAGE },
+    { "Brother", "DCP-7030", BROTHER_FAMILY_3, 0x04f9, 0x01ea,
+      { 0, SANE_FIX(210), 0 },
+      { 0, SANE_FIX(295), 0 },
+      { 5, 100, 150, 200, 300, 600 },
+      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_MODE_BUTTON_SCAN_EMAIL |
+      CAP_MODE_BUTTON_SCAN_FILE |
+      CAP_MODE_BUTTON_SCAN_OCR |
+      CAP_MODE_BUTTON_SCAN_IMAGE |
+      CAP_MODE_HAS_RAW |
+      CAP_MODE_HAS_JPEG},
 
-        // TODO: check dimensions
-      { "Brother", "MFC-290C", BROTHER_FAMILY_3, 0x04f9, 0x01fd,
-        { 0, SANE_FIX(210), 0 },
-        { 0, SANE_FIX(295), 0 },
-        { 5, 100, 150, 200, 300, 600 },
-        { 7, 100, 150, 200, 300, 600, 1200, 2400 },
-        CAP_MODE_COLOUR |
-        CAP_MODE_GRAY |
-        CAP_MODE_GRAY_DITHER |
-        CAP_MODE_BW |
-        CAP_MODE_BUTTON_SCAN_EMAIL |
-        CAP_MODE_BUTTON_SCAN_FILE |
-        CAP_MODE_BUTTON_SCAN_OCR |
-        CAP_MODE_BUTTON_SCAN_IMAGE },
+      // TODO: check dimensions
+    { "Brother", "MFC-290C", BROTHER_FAMILY_3, 0x04f9, 0x01fd,
+      { 0, SANE_FIX(210), 0 },
+      { 0, SANE_FIX(295), 0 },
+      { 5, 100, 150, 200, 300, 600 },
+      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_MODE_BUTTON_SCAN_EMAIL |
+      CAP_MODE_BUTTON_SCAN_FILE |
+      CAP_MODE_BUTTON_SCAN_OCR |
+      CAP_MODE_BUTTON_SCAN_IMAGE |
+      CAP_MODE_RAW_IS_CrYCb |
+      CAP_MODE_HAS_RAW |
+      CAP_MODE_HAS_JPEG},
 
     { "Brother", "MFC-J4320DW", BROTHER_FAMILY_4, 0x04f9, 0x033a,
       { 0, SANE_FIX(213.9), 0 },
@@ -206,7 +201,8 @@ static Brother_Model models[] =
       CAP_MODE_BUTTON_SCAN_EMAIL |
       CAP_MODE_BUTTON_SCAN_FILE |
       CAP_MODE_BUTTON_SCAN_OCR |
-      CAP_MODE_BUTTON_SCAN_IMAGE },
+      CAP_MODE_BUTTON_SCAN_IMAGE |
+      CAP_MODE_HAS_JPEG },
 
     {NULL, NULL, BROTHER_FAMILY_NONE, 0, 0, {0, 0, 0}, {0, 0, 0}, {0}, {0}, 0}
 };
@@ -343,7 +339,7 @@ attach_with_ret (const char *devicename, BrotherDevice **dev)
    * Generate a driver for this device.
    *
    */
-  device->driver = new BrotherUSBDriver(devicename, model->family);
+  device->driver = new BrotherUSBDriver(devicename, model->family, model->capabilities);
   if (nullptr == device->driver)
     {
       DBG (DBG_SERIOUS, "attach_with_ret: failed to create Brother driver: %s\n", devicename);
@@ -586,6 +582,22 @@ init_options (BrotherDevice *device)
   od->constraint_type = SANE_CONSTRAINT_RANGE;
   od->constraint.range = &constraint_brightness_contrast;
   device->val[OPT_CONTRAST].w = 0;
+
+  od = &device->opt[OPT_COMPRESSION];
+  od->name = SANE_NAME_COMPRESSION;
+  od->title = SANE_TITLE_COMPRESSION;
+  od->desc = SANE_DESC_COMPRESSION;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  od->constraint_type = SANE_CONSTRAINT_RANGE;
+  od->constraint.range = &constraint_brightness_contrast;
+  if ((device->model->capabilities & CAP_MODE_HAS_JPEG)
+      && (device->model->capabilities & CAP_MODE_HAS_RAW))
+    od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_ADVANCED;
+  else
+    od->cap = SANE_CAP_INACTIVE;
+  device->val[OPT_COMPRESSION].b = SANE_TRUE;
 
   // Sensor group.
   od = &device->opt[OPT_SENSOR_GROUP];
@@ -973,6 +985,20 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
           status = SANE_STATUS_GOOD;
           break;
 
+        case OPT_COMPRESSION:
+          if (device->val[option].b == *(SANE_Bool *) value)
+            {
+              DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
+                   option, device->opt[option].name);
+              break;
+            }
+          device->val[option].b = *(SANE_Bool *) value;
+          DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
+
+          status = SANE_STATUS_GOOD;
+          break;
+
 	case OPT_MODE:
 	  if (strcmp (device->val[option].s, (SANE_String)value) == 0)
 	    {
@@ -1048,6 +1074,12 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
           *(SANE_Int *) value = device->val[option].w;
           DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%d\n",
                option, device->opt[option].name, *(SANE_Int *) value);
+          break;
+
+        case OPT_COMPRESSION:
+          *(SANE_Bool *) value = device->val[option].b;
+          DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
           break;
 
         case OPT_SENSOR_EMAIL:
@@ -1179,6 +1211,12 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
     }
 
   rc = device->driver->SetBrightness((SANE_Int)device->val[OPT_BRIGHTNESS].w);
+  if (rc != SANE_STATUS_GOOD)
+    {
+      return rc;
+    }
+
+  rc = device->driver->SetCompression(device->val[OPT_COMPRESSION].b);
   if (rc != SANE_STATUS_GOOD)
     {
       return rc;
@@ -1333,15 +1371,14 @@ sane_read (SANE_Handle handle, SANE_Byte * data,
   fwrite(data, *length, 1, device->scan_file);
 #endif
 
-  if (res == SANE_STATUS_EOF)
+  if ((res == SANE_STATUS_EOF) || (res == SANE_STATUS_CANCELLED ))
     {
-      DBG (DBG_EVENT, "sane_read: read receives EOF.\n");
+      DBG (DBG_EVENT, "sane_read: read receives %s.\n", res == SANE_STATUS_EOF? "EOF": "CANCEL");
 #ifdef BROTHER_ENABLE_SCAN_FILE
       fclose(device->scan_file);
       device->scan_file = NULL;
 #endif
     }
-
 
   return res;
 }

@@ -65,11 +65,11 @@
 typedef enum
 {
   BROTHER_FAMILY_NONE,
-//  BROTHER_FAMILY_1,
+  BROTHER_FAMILY_1,
   BROTHER_FAMILY_2,
   BROTHER_FAMILY_3,
   BROTHER_FAMILY_4,
-//  BROTHER_FAMILY_5
+  BROTHER_FAMILY_5
 } BrotherFamily;
 
 
@@ -110,6 +110,7 @@ struct BrotherParameters
   BrotherParameters():
     param_brightness (0),
     param_contrast (0),
+    param_compression (SANE_TRUE),
     param_pixel_x_offset (0),
     param_pixel_x_width (0),
     param_pixel_y_offset (0),
@@ -121,6 +122,7 @@ struct BrotherParameters
   }
   SANE_Int param_brightness;
   SANE_Int param_contrast;
+  SANE_Bool param_compression;
 
   SANE_Int param_pixel_x_offset;
   SANE_Int param_pixel_x_width;
@@ -162,6 +164,7 @@ enum DecodeStatus
   DECODE_STATUS_TRUNCATED,
   DECODE_STATUS_ENDOFDATA,
   DECODE_STATUS_ENDOFFRAME,
+  DECODE_STATUS_CANCEL,
   DECODE_STATUS_ERROR,
   DECODE_STATUS_MEMORY
 };
@@ -194,6 +197,7 @@ public:
   SANE_Status SetRes (SANE_Int x, SANE_Int y);
   SANE_Status SetContrast (SANE_Int contrast);
   SANE_Status SetBrightness (SANE_Int brightness);
+  SANE_Status SetCompression (SANE_Bool compression);
 
   SANE_Status SetScanDimensions (SANE_Int pixel_x_offset, SANE_Int pixel_x_width, SANE_Int pixel_y_offset,
                                  SANE_Int pixel_y_height);
@@ -333,7 +337,8 @@ private:
 class BrotherInterleavedRGBColourDecoder
 {
 public:
-  BrotherInterleavedRGBColourDecoder():
+  BrotherInterleavedRGBColourDecoder(SANE_Word capabilities):
+    capabilities(capabilities),
     scanline_buffer(nullptr),
     scanline_buffer_size(0),
     scanline_length(0),
@@ -353,8 +358,17 @@ public:
                                size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
                                size_t *dest_data_written);
 
+  enum ChannelEncoding
+  {
+    CHANNELS_RGB,       // RGB
+    CHANNELS_CrYCb      // YCrCb
+  };
 private:
+  void ConvertYCbCrToRGB (SANE_Byte y, SANE_Byte cb, SANE_Byte cr, SANE_Byte *red, SANE_Byte *green,
+                          SANE_Byte *blue);
+
   BrotherParameters decode_params;
+  SANE_Word capabilities;
 
   SANE_Byte *scanline_buffer;
   size_t scanline_buffer_size;
@@ -384,6 +398,12 @@ private:
 class BrotherEncoderFamily2 : public BrotherEncoder
 {
 public:
+  BrotherEncoderFamily2(SANE_Word capabilities):
+    capabilities(capabilities),
+    colour_decoder(capabilities)
+  {
+  }
+
   ~BrotherEncoderFamily2 ()
   {
   }
@@ -395,6 +415,7 @@ public:
     jfif_decoder.NewPage(scan_params);
     gray_decoder.NewPage(scan_params);
     gray_raw_decoder.NewPage(scan_params);
+    colour_decoder.NewPage(scan_params);
   }
 
   SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,
@@ -440,15 +461,23 @@ private:
                                      size_t *src_data_consumed, ScanDataHeader &header);
 
   ScanDataHeader current_header;
+  SANE_Word capabilities;
 
   BrotherJFIFDecoder jfif_decoder;
   BrotherGrayRLengthDecoder gray_decoder;
   BrotherGrayRawDecoder gray_raw_decoder;
+  BrotherInterleavedRGBColourDecoder colour_decoder;
 };
 
 class BrotherEncoderFamily3 : public BrotherEncoder
 {
 public:
+  BrotherEncoderFamily3(SANE_Word capabilities):
+    capabilities(capabilities),
+    colour_decoder(capabilities)
+  {
+  }
+
   ~BrotherEncoderFamily3 ()
   {
   }
@@ -506,6 +535,7 @@ private:
                                      size_t *src_data_consumed, ScanDataHeader &header);
 
   ScanDataHeader current_header;
+  SANE_Word capabilities;
 
   BrotherGrayRawDecoder gray_raw_decoder;
   BrotherGrayRLengthDecoder gray_decoder;
@@ -516,6 +546,11 @@ private:
 class BrotherEncoderFamily4 : public BrotherEncoder
 {
 public:
+  BrotherEncoderFamily4(SANE_Word capabilities):
+    capabilities(capabilities)
+  {
+  }
+
   ~BrotherEncoderFamily4 ()
   {
   }
@@ -563,6 +598,7 @@ private:
                                      size_t *src_data_consumed, ScanDataHeader &header);
 
   ScanDataHeader current_header;
+  SANE_Word capabilities;
 
   BrotherJFIFDecoder jfif_decoder;
   BrotherGrayRLengthDecoder gray_decoder;

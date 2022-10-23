@@ -69,7 +69,7 @@
 class BrotherDriver
 {
 public:
-  explicit BrotherDriver (BrotherFamily family);
+  explicit BrotherDriver (BrotherFamily family, SANE_Word capabilities);
 
   BrotherDriver(const BrotherDriver &) = delete;
   BrotherDriver &operator=(const BrotherDriver &) = delete;
@@ -125,6 +125,11 @@ public:
     return encoder->SetBrightness(brightness);
   }
 
+  SANE_Status SetCompression (SANE_Bool compression)
+  {
+    return encoder->SetCompression(compression);
+  }
+
   SANE_Status SetScanDimensions (SANE_Int pixel_x_offset,
                                  SANE_Int pixel_x_width,
                                  SANE_Int pixel_y_offset,
@@ -140,6 +145,7 @@ protected:
   static const char *ScanModeToText(BrotherScanMode scan_mode);
 
   BrotherFamily family;
+  SANE_Word capabilities;
   BrotherParameters scan_params;
   BrotherEncoder *encoder;
 };
@@ -147,7 +153,7 @@ protected:
 class BrotherUSBDriver : public BrotherDriver
 {
 public:
-  BrotherUSBDriver (const char *devicename, BrotherFamily family);
+  BrotherUSBDriver (const char *devicename, BrotherFamily family, SANE_Word capabilities);
 
   ~BrotherUSBDriver ();
 

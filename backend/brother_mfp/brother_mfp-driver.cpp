@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <algorithm>
 
 #include "../include/sane/sane.h"
 #include "../include/sane/sanei.h"
@@ -478,7 +479,7 @@ SANE_Status BrotherUSBDriver::PollForReadFlush (useconds_t max_time)
        * Update the hard limit timeout.
        *
        */
-      hard_time_limit -= MIN(hard_time_limit, start_time - max_time);
+      hard_time_limit -= std::min(hard_time_limit, start_time - max_time);
 
       /*
        * If we read some data, reset the timeout timer,
@@ -1022,27 +1023,27 @@ if (res != SANE_STATUS_GOOD)
  return SANE_STATUS_GOOD;
 }
 
-BrotherDriver::BrotherDriver (BrotherFamily family) :
+BrotherDriver::BrotherDriver (BrotherFamily family, SANE_Word capabilities) :
     family (family),
+    capabilities(capabilities),
     encoder(nullptr)
 {
   switch (family)
   {
     case BROTHER_FAMILY_4:
-      encoder = new BrotherEncoderFamily4();
+      encoder = new BrotherEncoderFamily4(capabilities);
       break;
 
     case BROTHER_FAMILY_2:
-      encoder = new BrotherEncoderFamily2();
+      encoder = new BrotherEncoderFamily2(capabilities);
       break;
 
-//      case BROTHER_FAMILY_1:
-
     case BROTHER_FAMILY_3:
-        encoder = new BrotherEncoderFamily3();
+        encoder = new BrotherEncoderFamily3(capabilities);
         break;
 
-//      case BROTHER_FAMILY_5:
+    case BROTHER_FAMILY_1:
+    case BROTHER_FAMILY_5:
     case BROTHER_FAMILY_NONE:
     default:
       DBG (DBG_SERIOUS,
@@ -1062,8 +1063,9 @@ BrotherDriver::~BrotherDriver ()
   delete encoder;
 }
 
-BrotherUSBDriver::BrotherUSBDriver (const char *devicename, BrotherFamily family) :
-     BrotherDriver (family),
+BrotherUSBDriver::BrotherUSBDriver (const char *devicename, BrotherFamily family,
+                                    SANE_Word capabilities) :
+     BrotherDriver (family, capabilities),
      is_open (false),
      in_session (false),
      is_scanning (false),
