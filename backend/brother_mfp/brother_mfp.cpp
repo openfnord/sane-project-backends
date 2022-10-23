@@ -71,18 +71,21 @@
 #define SANE_NAME_OCR_BUTTON                 "ocr-sensor"
 #define SANE_NAME_IMAGE_BUTTON               "image-sensor"
 #define SANE_NAME_COMPRESSION                "compression"
+#define SANE_NAME_SPLIT_RESOLUTION           "split-resolution"
 
 #define SANE_TITLE_FILE_BUTTON               "File button"
 #define SANE_TITLE_EMAIL_BUTTON              "Email button"
 #define SANE_TITLE_OCR_BUTTON                "OCR button"
 #define SANE_TITLE_IMAGE_BUTTON              "Image button"
 #define SANE_TITLE_COMPRESSION               "Compress data"
+#define SANE_TITLE_SPLIT_RESOLUTION          "Split resolution"
 
 #define SANE_DESC_FILE_BUTTON                SANE_I18N("File button")
 #define SANE_DESC_EMAIL_BUTTON               SANE_I18N("Email button")
 #define SANE_DESC_OCR_BUTTON                 SANE_I18N("OCR button")
 #define SANE_DESC_IMAGE_BUTTON               SANE_I18N("Image button")
 #define SANE_DESC_COMPRESSION                SANE_I18N("Compress scan data with JPEG")
+#define SANE_DESC_SPLIT_RESOLUTION           SANE_I18N("Enable split x and y resolution")
 
 enum Brother_Option
   {
@@ -90,6 +93,8 @@ enum Brother_Option
 
     OPT_MODE_GROUP,
     OPT_MODE,
+    OPT_SPLIT_RESOLUTION,
+    OPT_RESOLUTION,
     OPT_X_RESOLUTION,
     OPT_Y_RESOLUTION,
     OPT_PREVIEW,
@@ -455,7 +460,41 @@ init_options (BrotherDevice *device)
     }
   (void)strcpy(device->val[OPT_MODE].s, device->modes[0]);
 
-  /* opt_resolution */
+  od = &device->opt[OPT_SPLIT_RESOLUTION];
+  od->name = SANE_NAME_SPLIT_RESOLUTION;
+  od->title = SANE_TITLE_SPLIT_RESOLUTION;
+  od->desc = SANE_DESC_SPLIT_RESOLUTION;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  od->constraint_type = SANE_CONSTRAINT_NONE;
+  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_ADVANCED;
+  device->val[OPT_SPLIT_RESOLUTION].b = SANE_FALSE;
+
+  od = &device->opt[OPT_RESOLUTION];
+  od->name = SANE_NAME_SCAN_RESOLUTION;
+  od->title = SANE_TITLE_SCAN_RESOLUTION;
+  od->desc = SANE_DESC_SCAN_RESOLUTION;
+  od->type = SANE_TYPE_INT;
+  od->unit = SANE_UNIT_DPI;
+  od->size = sizeof (SANE_Word);
+  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT;
+  od->constraint_type = SANE_CONSTRAINT_WORD_LIST;
+
+  /*
+   * Pick the list with the fewer resolutions.
+   *
+   */
+  if (device->model->x_res_list[0] > device->model->y_res_list[0])
+    {
+      od->constraint.word_list = device->model->y_res_list;
+    }
+  else
+    {
+      od->constraint.word_list = device->model->x_res_list;
+    }
+  device->val[OPT_RESOLUTION].w = od->constraint.word_list[1];
+
   od = &device->opt[OPT_X_RESOLUTION];
   od->name = SANE_NAME_SCAN_X_RESOLUTION;
   od->title = SANE_TITLE_SCAN_X_RESOLUTION;
@@ -463,9 +502,9 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_INT;
   od->unit = SANE_UNIT_DPI;
   od->size = sizeof (SANE_Word);
-  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT;
   od->constraint_type = SANE_CONSTRAINT_WORD_LIST;
   od->constraint.word_list = device->model->x_res_list;
+  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_INACTIVE;
   device->val[OPT_X_RESOLUTION].w = device->model->x_res_list[1];
 
   od = &device->opt[OPT_Y_RESOLUTION];
@@ -475,9 +514,9 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_INT;
   od->unit = SANE_UNIT_DPI;
   od->size = sizeof (SANE_Word);
-  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT;
   od->constraint_type = SANE_CONSTRAINT_WORD_LIST;
   od->constraint.word_list = device->model->y_res_list;
+  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_INACTIVE;
   device->val[OPT_Y_RESOLUTION].w = device->model->y_res_list[1];
 
   od = &device->opt[OPT_PREVIEW];
@@ -964,6 +1003,7 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
 	       device->opt[option].unit == SANE_UNIT_MM ? "mm" : "dpi");
 	  break;
 
+        case OPT_RESOLUTION:
         case OPT_X_RESOLUTION:
         case OPT_Y_RESOLUTION:
           if (device->val[option].w == *(SANE_Int *) value)
@@ -1002,6 +1042,36 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
               break;
             }
           device->val[option].b = *(SANE_Bool *) value;
+          DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
+
+          status = SANE_STATUS_GOOD;
+          break;
+
+        case OPT_SPLIT_RESOLUTION:
+          if (device->val[option].b == *(SANE_Bool *) value)
+            {
+              DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
+                   option, device->opt[option].name);
+              break;
+            }
+          device->val[option].b = *(SANE_Bool *) value;
+          myinfo |= SANE_INFO_RELOAD_PARAMS;
+          myinfo |= SANE_INFO_RELOAD_OPTIONS;
+
+          if (device->val[option].b)
+            {
+              device->opt[OPT_RESOLUTION].cap |= SANE_CAP_INACTIVE;
+              device->opt[OPT_X_RESOLUTION].cap &= ~SANE_CAP_INACTIVE;
+              device->opt[OPT_Y_RESOLUTION].cap &= ~SANE_CAP_INACTIVE;
+            }
+          else
+            {
+              device->opt[OPT_RESOLUTION].cap &= ~SANE_CAP_INACTIVE;
+              device->opt[OPT_X_RESOLUTION].cap |= SANE_CAP_INACTIVE;
+              device->opt[OPT_Y_RESOLUTION].cap |= SANE_CAP_INACTIVE;
+            }
+
           DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
                option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
 
@@ -1090,7 +1160,8 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
 	       option, device->opt[option].name, (SANE_String) value);
 	  break;
 
-	case OPT_X_RESOLUTION:
+        case OPT_RESOLUTION:
+        case OPT_X_RESOLUTION:
         case OPT_Y_RESOLUTION:
         case OPT_BRIGHTNESS:
         case OPT_CONTRAST:
@@ -1100,6 +1171,12 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
           break;
 
         case OPT_COMPRESSION:
+          *(SANE_Bool *) value = device->val[option].b;
+          DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
+          break;
+
+        case OPT_SPLIT_RESOLUTION:
           *(SANE_Bool *) value = device->val[option].b;
           DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%s\n",
                option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
@@ -1183,18 +1260,27 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
   /*
    * Determine the resolutions to use.
    * If --preview is selected, then just pick the lowest configured res.
+   * Also need to take into account whether we have split or combine resolution.
    *
    */
-  SANE_Word x_res = device->val[OPT_X_RESOLUTION].w;
-  SANE_Word y_res = device->val[OPT_Y_RESOLUTION].w;
+  SANE_Word x_res = device->val[OPT_RESOLUTION].w;
+  SANE_Word y_res = device->val[OPT_RESOLUTION].w;
 
   if (device->val[OPT_PREVIEW].b)
     {
       x_res = device->model->x_res_list[1];
       y_res = device->model->y_res_list[1];
     }
+  else
+    {
+      if (device->val[OPT_SPLIT_RESOLUTION].b)
+        {
+          x_res = device->val[OPT_X_RESOLUTION].w;
+          y_res = device->val[OPT_Y_RESOLUTION].w;
+        }
+    }
 
- /*
+  /*
    * Compute the geometry in terms of pixels at the selected resolution.
    * This is how the scanner wants it.
    *
