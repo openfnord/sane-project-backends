@@ -399,7 +399,6 @@ class BrotherEncoderFamily2 : public BrotherEncoder
 {
 public:
   BrotherEncoderFamily2(SANE_Word capabilities):
-    capabilities(capabilities),
     colour_decoder(capabilities)
   {
   }
@@ -461,7 +460,6 @@ private:
                                      size_t *src_data_consumed, ScanDataHeader &header);
 
   ScanDataHeader current_header;
-  SANE_Word capabilities;
 
   BrotherJFIFDecoder jfif_decoder;
   BrotherGrayRLengthDecoder gray_decoder;
@@ -473,7 +471,6 @@ class BrotherEncoderFamily3 : public BrotherEncoder
 {
 public:
   BrotherEncoderFamily3(SANE_Word capabilities):
-    capabilities(capabilities),
     colour_decoder(capabilities)
   {
   }
@@ -535,7 +532,6 @@ private:
                                      size_t *src_data_consumed, ScanDataHeader &header);
 
   ScanDataHeader current_header;
-  SANE_Word capabilities;
 
   BrotherGrayRawDecoder gray_raw_decoder;
   BrotherGrayRLengthDecoder gray_decoder;
@@ -546,9 +542,9 @@ private:
 class BrotherEncoderFamily4 : public BrotherEncoder
 {
 public:
-  BrotherEncoderFamily4(SANE_Word capabilities):
-    capabilities(capabilities)
+  BrotherEncoderFamily4(SANE_Word capabilities)
   {
+    (void)capabilities;
   }
 
   ~BrotherEncoderFamily4 ()
@@ -598,7 +594,6 @@ private:
                                      size_t *src_data_consumed, ScanDataHeader &header);
 
   ScanDataHeader current_header;
-  SANE_Word capabilities;
 
   BrotherJFIFDecoder jfif_decoder;
   BrotherGrayRLengthDecoder gray_decoder;

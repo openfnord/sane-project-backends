@@ -92,8 +92,7 @@ enum Brother_Option
     OPT_MODE,
     OPT_X_RESOLUTION,
     OPT_Y_RESOLUTION,
-//    OPT_PREVIEW,
-//    OPT_ENCODING,
+    OPT_PREVIEW,
 
     OPT_GEOMETRY_GROUP,
     OPT_TL_X,                   /* top-left x */
@@ -481,6 +480,17 @@ init_options (BrotherDevice *device)
   od->constraint.word_list = device->model->y_res_list;
   device->val[OPT_Y_RESOLUTION].w = device->model->y_res_list[1];
 
+  od = &device->opt[OPT_PREVIEW];
+  od->name = SANE_NAME_PREVIEW;
+  od->title = SANE_TITLE_PREVIEW;
+  od->desc = SANE_DESC_PREVIEW;
+  od->type = SANE_TYPE_BOOL;
+  od->unit = SANE_UNIT_NONE;
+  od->size = 1 * sizeof(SANE_Bool);
+  od->constraint_type = SANE_CONSTRAINT_NONE;
+  od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_ADVANCED;
+  device->val[OPT_PREVIEW].b = SANE_FALSE;
+
   /* opt_geometry_group */
   od = &device->opt[OPT_GEOMETRY_GROUP];
   od->name = "";
@@ -590,8 +600,7 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_BOOL;
   od->unit = SANE_UNIT_NONE;
   od->size = 1 * sizeof(SANE_Bool);
-  od->constraint_type = SANE_CONSTRAINT_RANGE;
-  od->constraint.range = &constraint_brightness_contrast;
+  od->constraint_type = SANE_CONSTRAINT_NONE;
   if ((device->model->capabilities & CAP_MODE_HAS_JPEG)
       && (device->model->capabilities & CAP_MODE_HAS_RAW))
     od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_ADVANCED;
@@ -999,6 +1008,20 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
           status = SANE_STATUS_GOOD;
           break;
 
+        case OPT_PREVIEW:
+          if (device->val[option].b == *(SANE_Bool *) value)
+            {
+              DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
+                   option, device->opt[option].name);
+              break;
+            }
+          device->val[option].b = *(SANE_Bool *) value;
+          DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
+
+          status = SANE_STATUS_GOOD;
+          break;
+
 	case OPT_MODE:
 	  if (strcmp (device->val[option].s, (SANE_String)value) == 0)
 	    {
@@ -1082,6 +1105,12 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
                option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
           break;
 
+        case OPT_PREVIEW:
+          *(SANE_Bool *) value = device->val[option].b;
+          DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=%s\n",
+               option, device->opt[option].name, *(SANE_Bool *) value? "TRUE": "FALSE");
+          break;
+
         case OPT_SENSOR_EMAIL:
         case OPT_SENSOR_OCR:
         case OPT_SENSOR_FILE:
@@ -1151,14 +1180,28 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
 
   DBG (DBG_EVENT, "sane_get_parameters\n");
 
+  /*
+   * Determine the resolutions to use.
+   * If --preview is selected, then just pick the lowest configured res.
+   *
+   */
+  SANE_Word x_res = device->val[OPT_X_RESOLUTION].w;
+  SANE_Word y_res = device->val[OPT_Y_RESOLUTION].w;
+
+  if (device->val[OPT_PREVIEW].b)
+    {
+      x_res = device->model->x_res_list[1];
+      y_res = device->model->y_res_list[1];
+    }
+
  /*
    * Compute the geometry in terms of pixels at the selected resolution.
    * This is how the scanner wants it.
    *
    */
   SANE_Int pixel_x_width = SANE_UNFIX (device->val[OPT_BR_X].w -
-                                      device->val[OPT_TL_X].w) / MM_IN_INCH *
-                                         device->val[OPT_X_RESOLUTION].w;
+                                       device->val[OPT_TL_X].w) / MM_IN_INCH *
+                                           x_res;
 
   /*
    * X coords must be a multiple of 8.
@@ -1170,13 +1213,13 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
 
   SANE_Int pixel_y_height = SANE_UNFIX (device->val[OPT_BR_Y].w -
                                         device->val[OPT_TL_Y].w) / MM_IN_INCH *
-                                        device->val[OPT_Y_RESOLUTION].w;
+                                        y_res;
 
   SANE_Int pixel_x_offset = SANE_UNFIX (device->val[OPT_TL_X].w) / MM_IN_INCH *
-                                        device->val[OPT_X_RESOLUTION].w;
+                                        x_res;
 
   SANE_Int pixel_y_offset = SANE_UNFIX (device->val[OPT_TL_Y].w) / MM_IN_INCH *
-                                        device->val[OPT_Y_RESOLUTION].w;
+                                        y_res;
 
   params->lines = pixel_y_height;
   params->last_frame = SANE_TRUE;
@@ -1194,7 +1237,7 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
       return rc;
     }
 
-  rc = device->driver->SetRes ((int)device->val[OPT_X_RESOLUTION].w, (int)device->val[OPT_Y_RESOLUTION].w);
+  rc = device->driver->SetRes ((SANE_Int)x_res, (SANE_Int)y_res);
   if (rc != SANE_STATUS_GOOD)
     {
       return rc;
