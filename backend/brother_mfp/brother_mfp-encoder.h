@@ -163,10 +163,13 @@ enum DecodeStatus
   DECODE_STATUS_GOOD,
   DECODE_STATUS_TRUNCATED,
   DECODE_STATUS_ENDOFDATA,
-  DECODE_STATUS_ENDOFFRAME,
+  DECODE_STATUS_ENDOFFRAME_NO_MORE,
+  DECODE_STATUS_ENDOFFRAME_WITH_MORE,
   DECODE_STATUS_CANCEL,
   DECODE_STATUS_ERROR,
-  DECODE_STATUS_MEMORY
+  DECODE_STATUS_MEMORY,
+  DECODE_STATUS_INVAL,
+  DECODE_STATUS_UNSUPPORTED
 };
 
 struct ScanDataHeader
@@ -191,46 +194,67 @@ public:
   {
   }
 
-  virtual void NewPage() = 0;
+  virtual void NewPage () = 0;
 
-  SANE_Status SetScanMode (BrotherScanMode scan_mode);
-  SANE_Status SetRes (SANE_Int x, SANE_Int y);
-  SANE_Status SetContrast (SANE_Int contrast);
-  SANE_Status SetBrightness (SANE_Int brightness);
-  SANE_Status SetCompression (SANE_Bool compression);
+  DecodeStatus SetScanMode (BrotherScanMode scan_mode);
+  DecodeStatus SetRes (SANE_Int x, SANE_Int y);
+  DecodeStatus SetContrast (SANE_Int contrast);
+  DecodeStatus SetBrightness (SANE_Int brightness);
+  DecodeStatus SetCompression (SANE_Bool compression);
 
-  SANE_Status SetScanDimensions (SANE_Int pixel_x_offset, SANE_Int pixel_x_width, SANE_Int pixel_y_offset,
-                                 SANE_Int pixel_y_height);
+  DecodeStatus SetScanDimensions (SANE_Int pixel_x_offset, SANE_Int pixel_x_width,
+                                  SANE_Int pixel_y_offset, SANE_Int pixel_y_height);
+
+  SANE_Status DecodeStatusToSaneStatus(DecodeStatus dec_ret)
+  {
+    static SANE_Status status_lookup[] =
+        {
+            SANE_STATUS_GOOD,
+            SANE_STATUS_GOOD,
+            SANE_STATUS_EOF,
+            SANE_STATUS_EOF,
+            SANE_STATUS_EOF,
+            SANE_STATUS_CANCELLED,
+            SANE_STATUS_IO_ERROR,
+            SANE_STATUS_NO_MEM,
+            SANE_STATUS_INVAL,
+            SANE_STATUS_UNSUPPORTED
+      };
+
+    return status_lookup[dec_ret];
+  }
+
 
   static const char* ScanModeToText (BrotherScanMode scan_mode);
 
-  virtual SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,
-                                         BrotherSessionResponse &response) = 0;
+  virtual DecodeStatus DecodeSessionResp (const SANE_Byte *data, size_t data_len,
+                                          BrotherSessionResponse &response) = 0;
 
-  virtual SANE_Status DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherButtonQueryResponse &response) = 0;
+  virtual DecodeStatus DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
+                                              BrotherButtonQueryResponse &response) = 0;
 
-  virtual SANE_Status DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherButtonStateResponse &response) = 0;
+  virtual DecodeStatus DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
+                                              BrotherButtonStateResponse &response) = 0;
 
-  virtual SANE_Status EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len,
-                                                 size_t *length) = 0;
+  virtual DecodeStatus EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len,
+                                                  size_t *length) = 0;
 
-  virtual SANE_Status DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
-                                                     BrotherBasicParamResponse &response) = 0;
+  virtual DecodeStatus DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
+                                                      BrotherBasicParamResponse &response) = 0;
 
-  virtual SANE_Status EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) = 0;
+  virtual DecodeStatus EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) = 0;
 
-  virtual SANE_Status DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                          BrotherADFResponse &response) = 0;
+  virtual DecodeStatus DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
+                                           BrotherADFResponse &response) = 0;
 
-  virtual SANE_Status EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) = 0;
+  virtual DecodeStatus EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) = 0;
 
-  virtual SANE_Status DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
-                                      size_t *src_data_consumed, SANE_Byte *dst_data,
-                                      size_t dest_data_len, size_t *dest_data_written) = 0;
+  virtual DecodeStatus EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len,
+                                                  size_t *length) = 0;
 
-//  virtual SANE_Status CheckSensor(BrotherSensor &status) = 0;
+  virtual DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
+                                       size_t *src_data_consumed, SANE_Byte *dst_data,
+                                       size_t dest_data_len, size_t *dest_data_written) = 0;
 
 protected:
   BrotherParameters scan_params;
@@ -407,53 +431,57 @@ public:
   {
   }
 
-  void NewPage() override
+  void NewPage () override
   {
     current_header.block_type = 0;
 
-    jfif_decoder.NewPage(scan_params);
-    gray_decoder.NewPage(scan_params);
-    gray_raw_decoder.NewPage(scan_params);
-    colour_decoder.NewPage(scan_params);
+    jfif_decoder.NewPage (scan_params);
+    gray_decoder.NewPage (scan_params);
+    gray_raw_decoder.NewPage (scan_params);
+    colour_decoder.NewPage (scan_params);
   }
 
-  SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,
-                                 BrotherSessionResponse &response) override;
+  DecodeStatus DecodeSessionResp (const SANE_Byte *data, size_t data_len,
+                                  BrotherSessionResponse &response) override;
 
-  SANE_Status EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
 
-  SANE_Status DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherBasicParamResponse &response) override;
+  DecodeStatus DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
+                                              BrotherBasicParamResponse &response) override;
 
-  SANE_Status EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override
+  DecodeStatus EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override
   {
-    (void)data;
-    (void)data_len;
-    (void)length;
-    return SANE_STATUS_UNSUPPORTED;
+    (void) data;
+    (void) data_len;
+    (void) length;
+    return DECODE_STATUS_UNSUPPORTED;
   }
 
-  SANE_Status DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                  BrotherADFResponse &response) override
+  DecodeStatus DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
+                                   BrotherADFResponse &response) override
   {
-    (void)data;
-    (void)data_len;
-    (void)response;
+    (void) data;
+    (void) data_len;
+    (void) response;
 
-    return SANE_STATUS_UNSUPPORTED;
+    return DECODE_STATUS_UNSUPPORTED;
   }
 
-  SANE_Status EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
-  SANE_Status DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
-                                      size_t *src_data_consumed, SANE_Byte *dst_data,
-                                      size_t dest_data_len, size_t *dest_data_written) override;
+  DecodeStatus EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
 
-  SANE_Status DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
-                                     BrotherButtonQueryResponse &response) override;
+  DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
+                               size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
+                               size_t *dest_data_written) override;
 
-  SANE_Status DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
-                                     BrotherButtonStateResponse &response) override;
+  DecodeStatus DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonQueryResponse &response) override;
+
+  DecodeStatus DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonStateResponse &response) override;
 
 private:
   DecodeStatus DecodeScanDataHeader (const SANE_Byte *src_data, size_t src_data_len,
@@ -489,43 +517,47 @@ public:
     jfif_decoder.NewPage(scan_params);
   }
 
-  SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,
-                                 BrotherSessionResponse &response) override;
+  DecodeStatus DecodeSessionResp (const SANE_Byte *data, size_t data_len,
+                                  BrotherSessionResponse &response) override;
 
-  SANE_Status EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
 
-  SANE_Status DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherBasicParamResponse &response) override;
+  DecodeStatus DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
+                                              BrotherBasicParamResponse &response) override;
 
-  SANE_Status EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override
+  DecodeStatus EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override
   {
-    (void)data;
-    (void)data_len;
-    (void)length;
-    return SANE_STATUS_UNSUPPORTED;
+    (void) data;
+    (void) data_len;
+    (void) length;
+    return DECODE_STATUS_UNSUPPORTED;
   }
 
-  SANE_Status DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                  BrotherADFResponse &response) override
+  DecodeStatus DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
+                                   BrotherADFResponse &response) override
   {
-    (void)data;
-    (void)data_len;
-    (void)response;
+    (void) data;
+    (void) data_len;
+    (void) response;
 
-    return SANE_STATUS_UNSUPPORTED;
+    return DECODE_STATUS_UNSUPPORTED;
   }
 
-  SANE_Status EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
-  SANE_Status DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
-                                      size_t *src_data_consumed, SANE_Byte *dst_data,
-                                      size_t dest_data_len, size_t *dest_data_written) override;
+  DecodeStatus EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
 
-  SANE_Status DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
-                                     BrotherButtonQueryResponse &response) override;
+  DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
+                               size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
+                               size_t *dest_data_written) override;
 
-  SANE_Status DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
-                                     BrotherButtonStateResponse &response) override;
+  DecodeStatus DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonQueryResponse &response) override;
+
+  DecodeStatus DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonStateResponse &response) override;
 
 private:
   DecodeStatus DecodeScanDataHeader (const SANE_Byte *src_data, size_t src_data_len,
@@ -556,38 +588,38 @@ public:
     current_header.block_type = 0;
 
     jfif_decoder.NewPage(scan_params);
-    gray_decoder.NewPage(scan_params);
-    gray_raw_decoder.NewPage(scan_params);
+    gray_decoder.NewPage (scan_params);
+    gray_raw_decoder.NewPage (scan_params);
   }
 
-  SANE_Status DecodeSessionResp (const SANE_Byte *data, size_t data_len,
-                                 BrotherSessionResponse &response) override;
+  DecodeStatus DecodeSessionResp (const SANE_Byte *data, size_t data_len,
+                                  BrotherSessionResponse &response) override;
 
-  SANE_Status EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
 
-  SANE_Status DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherBasicParamResponse &response) override;
+  DecodeStatus DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
+                                              BrotherBasicParamResponse &response) override;
 
-  SANE_Status EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
-  SANE_Status DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                  BrotherADFResponse &response) override;
+  DecodeStatus DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
+                                   BrotherADFResponse &response) override;
 
-  SANE_Status EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+  DecodeStatus EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
 
-  SANE_Status DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
-                                      size_t *src_data_consumed, SANE_Byte *dst_data,
-                                      size_t dest_data_len, size_t *dest_data_written) override;
+  DecodeStatus EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
 
-  SANE_Status DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherButtonQueryResponse &response) override;
+  DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
+                               size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
+                               size_t *dest_data_written) override;
 
-  SANE_Status DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
-                                             BrotherButtonStateResponse &response) override;
+  DecodeStatus DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonQueryResponse &response) override;
 
-
-
-//  SANE_Status CheckSensor(BrotherSensor &status) override;
+  DecodeStatus DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonStateResponse &response) override;
 
 private:
   DecodeStatus DecodeScanDataHeader (const SANE_Byte *src_data, size_t src_data_len,

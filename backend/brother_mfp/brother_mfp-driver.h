@@ -107,38 +107,36 @@ public:
    */
   SANE_Status SetScanMode (BrotherScanMode scan_mode)
   {
-    return encoder->SetScanMode(scan_mode);
+    return encoder->DecodeStatusToSaneStatus (encoder->SetScanMode (scan_mode));
   }
 
   SANE_Status SetRes (SANE_Int x, SANE_Int y)
   {
-    return encoder->SetRes(x, y);
+    return encoder->DecodeStatusToSaneStatus (encoder->SetRes (x, y));
   }
 
   SANE_Status SetContrast (SANE_Int contrast)
   {
-    return encoder->SetContrast(contrast);
+    return encoder->DecodeStatusToSaneStatus (encoder->SetContrast (contrast));
   }
 
   SANE_Status SetBrightness (SANE_Int brightness)
   {
-    return encoder->SetBrightness(brightness);
+    return encoder->DecodeStatusToSaneStatus (encoder->SetBrightness (brightness));
   }
 
   SANE_Status SetCompression (SANE_Bool compression)
   {
-    return encoder->SetCompression(compression);
+    return encoder->DecodeStatusToSaneStatus (encoder->SetCompression (compression));
   }
 
-  SANE_Status SetScanDimensions (SANE_Int pixel_x_offset,
-                                 SANE_Int pixel_x_width,
-                                 SANE_Int pixel_y_offset,
-                                 SANE_Int pixel_y_height)
+  SANE_Status SetScanDimensions (SANE_Int pixel_x_offset, SANE_Int pixel_x_width,
+                                 SANE_Int pixel_y_offset, SANE_Int pixel_y_height)
   {
-    return encoder->SetScanDimensions (pixel_x_offset,
-                                       pixel_x_width,
-                                       pixel_y_offset,
-                                       pixel_y_height);
+    return encoder->DecodeStatusToSaneStatus (encoder->SetScanDimensions (pixel_x_offset,
+                                                                          pixel_x_width,
+                                                                          pixel_y_offset,
+                                                                          pixel_y_height));
   }
 
 protected:
@@ -185,10 +183,13 @@ private:
   bool is_scanning;
   bool was_cancelled;
   char *devicename;
+  SANE_Int next_frame_number;
   SANE_Int fd;
 
   SANE_Byte small_buffer[1024];
   SANE_Byte *data_buffer;
   size_t data_buffer_bytes;
+
+  bool out_of_docs;
 
 };

@@ -1295,7 +1295,7 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
    * TODO: refine this. It's still not really right.
    *
    */
-  pixel_x_width &= ~0x7;
+//  pixel_x_width += 16;
 
   SANE_Int pixel_y_height = SANE_UNFIX (device->val[OPT_BR_Y].w -
                                         device->val[OPT_TL_Y].w) / MM_IN_INCH *
