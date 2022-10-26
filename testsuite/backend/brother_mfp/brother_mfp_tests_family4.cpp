@@ -30,7 +30,7 @@
  */
 static void test_family4_decode_session_resp()
 {
-  SANE_Status sane_resp;
+  DecodeStatus decode_resp;
   BrotherSessionResponse sess_resp;
 
   BrotherEncoderFamily4 encoder(0);
@@ -38,30 +38,30 @@ static void test_family4_decode_session_resp()
   // SUCCESS status
   const SANE_Byte *data = (const SANE_Byte *)"\x05" "\x10" "\x01" "\x02" "\x00";
 
-  sane_resp = encoder.DecodeSessionResp (data, 5, sess_resp);
+  decode_resp = encoder.DecodeSessionResp (data, 5, sess_resp);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
   ASSERT_TRUE(sess_resp.ready);
 
   // BUSY status
   data = (const SANE_Byte *)"\x05" "\x10" "\x01" "\x02" "\x80";
 
-  sane_resp = encoder.DecodeSessionResp (data, 5, sess_resp);
+  decode_resp = encoder.DecodeSessionResp (data, 5, sess_resp);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
   ASSERT_FALSE(sess_resp.ready);
 
   // Length issues
   data = (const SANE_Byte *)"\x05" "\x10" "\x01" "\x02" "\x20" "\x32";
 
-  sane_resp = encoder.DecodeSessionResp (data, 6, sess_resp);
-  ASSERT_EQ(sane_resp, SANE_STATUS_IO_ERROR);
+  decode_resp = encoder.DecodeSessionResp (data, 6, sess_resp);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
 
-  sane_resp = encoder.DecodeSessionResp (data, 4, sess_resp);
-  ASSERT_EQ(sane_resp, SANE_STATUS_IO_ERROR);
+  decode_resp = encoder.DecodeSessionResp (data, 4, sess_resp);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
 
-  sane_resp = encoder.DecodeSessionResp (data, 0, sess_resp);
-  ASSERT_EQ(sane_resp, SANE_STATUS_IO_ERROR);
+  decode_resp = encoder.DecodeSessionResp (data, 0, sess_resp);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
 
   // Content problems.
   const char *content_problems[] = {
@@ -75,8 +75,8 @@ static void test_family4_decode_session_resp()
 
   for (size_t test = 0; test; test++)
     {
-      sane_resp = encoder.DecodeSessionResp ((const SANE_Byte *)content_problems[test], 5, sess_resp);
-      ASSERT_EQ(sane_resp, SANE_STATUS_IO_ERROR);
+      decode_resp = encoder.DecodeSessionResp ((const SANE_Byte *)content_problems[test], 5, sess_resp);
+      ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
     }
 }
 
@@ -100,7 +100,7 @@ static void test_family4_decode_basic_param_resp()
  */
 static void test_family4_decode_adf_resp()
 {
-  SANE_Status sane_resp;
+  DecodeStatus decode_resp;
   BrotherADFResponse adf_resp;
 
   BrotherEncoderFamily4 encoder(0);
@@ -108,18 +108,18 @@ static void test_family4_decode_adf_resp()
   // SUCCESS status
   const SANE_Byte *data = (const SANE_Byte *)"\xc2";
 
-  sane_resp = encoder.DecodeADFBlockResp (data, 1, adf_resp);
+  decode_resp = encoder.DecodeADFBlockResp (data, 1, adf_resp);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
   ASSERT_EQ(adf_resp.resp_code, (SANE_Byte)0xc2);
 
   // Wrong length.
-  sane_resp = encoder.DecodeADFBlockResp (data, 0, adf_resp);
-  ASSERT_EQ(sane_resp, SANE_STATUS_IO_ERROR);
+  decode_resp = encoder.DecodeADFBlockResp (data, 0, adf_resp);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
   ASSERT_EQ(adf_resp.resp_code, (SANE_Byte)0xc2);
 
-  sane_resp = encoder.DecodeADFBlockResp (data, 20, adf_resp);
-  ASSERT_EQ(sane_resp, SANE_STATUS_IO_ERROR);
+  decode_resp = encoder.DecodeADFBlockResp (data, 20, adf_resp);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
   ASSERT_EQ(adf_resp.resp_code, (SANE_Byte)0xc2);
 }
 
@@ -129,16 +129,16 @@ static void test_family4_decode_adf_resp()
  */
 static void test_family4_encode_basic_param()
 {
-  SANE_Status sane_resp;
+  DecodeStatus decode_resp;
   SANE_Byte data_buffer[1024];
   size_t ret_length;
 
   BrotherEncoderFamily4 encoder(0);
 
   // All defaults.
-  sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "I\nR=100,100\nM=CGRAY\n" "\x80";
@@ -149,9 +149,9 @@ static void test_family4_encode_basic_param()
   // Different resolutions.
   encoder.SetRes(200,300);
 
-  sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "I\nR=200,300\nM=CGRAY\n" "\x80";
@@ -161,9 +161,9 @@ static void test_family4_encode_basic_param()
 
   // GRAY mode.
   encoder.SetScanMode (BROTHER_SCAN_MODE_GRAY);
-  sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
     {
       const char test_ret[] = "\x1b" "I\nR=200,300\nM=GRAY64\n" "\x80";
@@ -173,9 +173,9 @@ static void test_family4_encode_basic_param()
 
   // COLOR mode
   encoder.SetScanMode (BROTHER_SCAN_MODE_COLOR);
-  sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
     {
       const char test_ret[] = "\x1b" "I\nR=200,300\nM=CGRAY\n" "\x80";
@@ -185,9 +185,9 @@ static void test_family4_encode_basic_param()
 
   // GRAY DITHERED mode
   encoder.SetScanMode (BROTHER_SCAN_MODE_GRAY_DITHERED);
-  sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
     {
       const char test_ret[] = "\x1b" "I\nR=200,300\nM=ERRDIF\n" "\x80";
@@ -197,9 +197,9 @@ static void test_family4_encode_basic_param()
 
     // TEXT mode
     encoder.SetScanMode (BROTHER_SCAN_MODE_TEXT);
-    sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+    decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-    ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+    ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
       {
         const char test_ret[] = "\x1b" "I\nR=200,300\nM=TEXT\n" "\x80";
@@ -209,9 +209,9 @@ static void test_family4_encode_basic_param()
 
       // Buffer too short.
       encoder.SetScanMode (BROTHER_SCAN_MODE_TEXT);
-      sane_resp = encoder.EncodeBasicParameterBlock (data_buffer, 15, &ret_length);
+      decode_resp = encoder.EncodeBasicParameterBlock (data_buffer, 15, &ret_length);
 
-      ASSERT_EQ(sane_resp, SANE_STATUS_INVAL);
+      ASSERT_EQ(decode_resp, DECODE_STATUS_INVAL);
 }
 
 /*
@@ -220,16 +220,16 @@ static void test_family4_encode_basic_param()
  */
 static void test_family4_encode_param()
 {
-  SANE_Status sane_resp;
+  DecodeStatus decode_resp;
   SANE_Byte data_buffer[1024];
   size_t ret_length;
 
   BrotherEncoderFamily4 encoder(0);
 
   // All defaults.
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=100,100\nM=CGRAY\nC=JPEG\nJ=MID\n"
@@ -242,9 +242,9 @@ static void test_family4_encode_param()
   // Different resolutions.
   encoder.SetRes(200,300);
 
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=CGRAY\nC=JPEG\nJ=MID\n"
@@ -257,9 +257,9 @@ static void test_family4_encode_param()
   // Different modes:
   // GRAY mode.
   encoder.SetScanMode (BROTHER_SCAN_MODE_GRAY);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=GRAY64\nC=RLENGTH\n"
@@ -271,9 +271,9 @@ static void test_family4_encode_param()
 
   // COLOR mode
   encoder.SetScanMode (BROTHER_SCAN_MODE_COLOR);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=CGRAY\nC=JPEG\nJ=MID\n"
@@ -285,9 +285,9 @@ static void test_family4_encode_param()
 
   // GRAY DITHERED mode
   encoder.SetScanMode (BROTHER_SCAN_MODE_GRAY_DITHERED);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=ERRDIF\nC=RLENGTH\n"
@@ -299,9 +299,9 @@ static void test_family4_encode_param()
 
   // TEXT mode
   encoder.SetScanMode (BROTHER_SCAN_MODE_TEXT);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
@@ -314,9 +314,9 @@ static void test_family4_encode_param()
   // Different brightness and contrast, positive and negative.
   encoder.SetBrightness (-20);
   encoder.SetContrast (-30);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
@@ -328,9 +328,9 @@ static void test_family4_encode_param()
 
   encoder.SetBrightness (50);
   encoder.SetContrast (40);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
@@ -342,9 +342,9 @@ static void test_family4_encode_param()
 
   // Different dimensions
   encoder.SetScanDimensions (0, 10, 50, 100);
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
@@ -355,9 +355,9 @@ static void test_family4_encode_param()
   }
 
   // Buffer too short.
-  sane_resp = encoder.EncodeParameterBlock (data_buffer, 15, &ret_length);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, 15, &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_INVAL);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_INVAL);
 }
 
 /*
@@ -366,16 +366,16 @@ static void test_family4_encode_param()
  */
 static void test_family4_encode_adf()
 {
-  SANE_Status sane_resp;
+  DecodeStatus decode_resp;
   SANE_Byte data_buffer[1024];
   size_t ret_length;
 
   BrotherEncoderFamily4 encoder(0);
 
   // Standard call.
-  sane_resp = encoder.EncodeADFBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeADFBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
-  ASSERT_EQ(sane_resp, SANE_STATUS_GOOD);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
   {
     const char test_ret[] = "\x1b" "D\nADF\n" "\x80";
@@ -384,8 +384,8 @@ static void test_family4_encode_adf()
   }
 
   // Buffer too short.
-  sane_resp = encoder.EncodeADFBlock (data_buffer, 5, &ret_length);
-  ASSERT_EQ(sane_resp, SANE_STATUS_INVAL);
+  decode_resp = encoder.EncodeADFBlock (data_buffer, 5, &ret_length);
+  ASSERT_EQ(decode_resp, DECODE_STATUS_INVAL);
 }
 
 /*
