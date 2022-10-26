@@ -585,33 +585,42 @@ SANE_Status BrotherUSBDriver::Init ()
     }
 
   /*
-   * First prep parameter block.
-   *
-   * TODO: Move this block construction to common code.
+   * Execute Query request.
    *
    */
-  (void) memcpy (small_buffer, "\x1b" "\x51" "\x0a" "\x80", 4);
-  size_t buf_size = 4;
+  size_t packet_len = 0;
+  DecodeStatus dec_ret = encoder->EncodeQueryBlock (small_buffer,
+                                                    sizeof(small_buffer),
+                                                    &packet_len);
+  if (dec_ret != DECODE_STATUS_GOOD)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherUSBDriver::Init: failed to generate query block: %d\n",
+           dec_ret);
+      (void) CancelScan ();
+      return SANE_STATUS_INVAL;
+    }
 
+  size_t buf_size = packet_len;
   res = sanei_usb_write_bulk (fd, small_buffer, &buf_size);
   if (res != SANE_STATUS_GOOD)
     {
       DBG (DBG_SERIOUS,
-           "BrotherUSBDriver::Init: failed to send first prep block: %d\n",
+           "BrotherUSBDriver::Init: failed to send query block: %d\n",
            res);
+      (void) CancelScan ();
       return res;
     }
 
-  if (buf_size != 4)
+  if (buf_size != packet_len)
     {
-      DBG (DBG_SERIOUS, "BrotherUSBDriver::Init: failed to write init block\n");
+      DBG (DBG_SERIOUS, "BrotherUSBDriver::Init: failed to write query block\n");
+      (void) CancelScan ();
       return SANE_STATUS_IO_ERROR;
     }
 
   /*
    * Try to read the response.
-   *
-   * TODO: Check response.
    *
    */
   buf_size = sizeof(small_buffer);
@@ -620,9 +629,22 @@ SANE_Status BrotherUSBDriver::Init ()
   res = PollForRead (small_buffer, &buf_size, &timeout);
   if (res != SANE_STATUS_GOOD)
     {
+      DBG (
+      DBG_SERIOUS,
+           "BrotherUSBDriver::Init: failed to read query block response: %d\n", res);
+      (void) CancelScan ();
+      return res;
+    }
+
+  BrotherQueryResponse query_resp;
+
+  dec_ret = encoder->DecodeQueryBlockResp (small_buffer, buf_size, query_resp);
+  if (dec_ret != DECODE_STATUS_GOOD)
+    {
       DBG (DBG_SERIOUS,
-          "BrotherUSBDriver::Init: failed to receive first prep block response: %d\n",
-          res);
+           "BrotherUSBDriver::Init: failed to read query block response: %d\n",
+           dec_ret);
+      (void) CancelScan ();
       return res;
     }
 
@@ -842,6 +864,12 @@ SANE_Status BrotherUSBDriver::StartScan ()
       /*
        * Construct the "ADF" block.
        *
+       * This is a query to see if the ADF contains documents.
+       * TBH I don't really know why we would do this because the source
+       * (flatbed/ADF) selection seems to be automatic. Perhaps there is a way
+       * to select the source that we haven't seen to override that behaviour?
+       * I add it here for completeness though.
+       *
        */
       packet_len = 0;
       dec_ret = encoder->EncodeADFBlock (small_buffer, sizeof(small_buffer), &packet_len);
@@ -898,17 +926,12 @@ SANE_Status BrotherUSBDriver::StartScan ()
                    "BrotherUSBDriver::StartScan: ADF block response block invalid: %d\n",
                    dec_ret);
               (void) CancelScan ();
-              return res;
+              return encoder->DecodeStatusToSaneStatus(dec_ret);
             }
 
-          if (adf_resp.resp_code != 0xc2)
-            {
-              DBG (DBG_SERIOUS,
-                   "BrotherUSBDriver::StartScan: ADF block response invalid: %u\n",
-                   (unsigned int) adf_resp.resp_code);
-              (void) CancelScan ();
-              return SANE_STATUS_IO_ERROR;
-            }
+          DBG (DBG_DETAIL,
+               "BrotherUSBDriver::StartScan: ADF reports readiness?: %s\n",
+               adf_resp.adf_ready? "Yes": "No");
         }
 
       /*

@@ -107,20 +107,23 @@ static void test_family4_decode_adf_resp()
 
   // SUCCESS status
   const SANE_Byte *data = (const SANE_Byte *)"\xc2";
-
   decode_resp = encoder.DecodeADFBlockResp (data, 1, adf_resp);
 
   ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
-  ASSERT_EQ(adf_resp.resp_code, (SANE_Byte)0xc2);
+  ASSERT_FALSE(adf_resp.adf_ready);
+
+  data = (const SANE_Byte *)"\x80";
+  decode_resp = encoder.DecodeADFBlockResp (data, 1, adf_resp);
+
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
+  ASSERT_TRUE(adf_resp.adf_ready);
 
   // Wrong length.
   decode_resp = encoder.DecodeADFBlockResp (data, 0, adf_resp);
   ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
-  ASSERT_EQ(adf_resp.resp_code, (SANE_Byte)0xc2);
 
   decode_resp = encoder.DecodeADFBlockResp (data, 20, adf_resp);
   ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
-  ASSERT_EQ(adf_resp.resp_code, (SANE_Byte)0xc2);
 }
 
 /*

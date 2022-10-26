@@ -48,17 +48,37 @@
 /*
  * Block header identifiers.
  *
+ * Scan data codes.
+ *
  */
-#define BROTHER_DATA_BLOCK_SCAN_FINISHED        0x80
-#define BROTHER_DATA_BLOCK_END_OF_FRAME_MORE    0x81
-#define BROTHER_DATA_BLOCK_END_OF_FRAME_NO_MORE 0x82
-#define BROTHER_DATA_BLOCK_CANCEL               0x86
-#define BROTHER_DATA_BLOCK_JPEG                 0x64
 #define BROTHER_DATA_BLOCK_GRAY_RAW             0x40
 #define BROTHER_DATA_BLOCK_GRAY_RLENGTH         0x42
 #define BROTHER_DATA_BLOCK_RED_RAW              0x44
 #define BROTHER_DATA_BLOCK_GREEN_RAW            0x48
 #define BROTHER_DATA_BLOCK_BLUE_RAW             0x4c
+
+#define BROTHER_DATA_BLOCK_JPEG                 0x64
+
+/*
+ * Termination codes.
+ */
+#define BROTHER_DATA_BLOCK_SCAN_FINISHED        0x80
+#define BROTHER_DATA_BLOCK_END_OF_FRAME_MORE    0x81
+#define BROTHER_DATA_BLOCK_END_OF_FRAME_NO_MORE 0x82
+#define BROTHER_DATA_BLOCK_CANCEL               0x86
+
+/*
+ * Error condition codes.
+ *
+ */
+#define BROTHER_DATA_QUERY_RESPONSE             0xc1
+// Seen references to this code elsewhere but I have not seen it from a device.
+#define BROTHER_DATA_BLOCK_NO_DOCS              0xc2
+#define BROTHER_DATA_BLOCK_PAPER_JAM            0xc3
+#define BROTHER_DATA_BLOCK_COVER_OPEN           0xc4
+// unsure as to the meaning of this or how to get it again.
+#define BROTHER_DATA_BLOCK_CLEARING_PAPER       0xc5
+
 
 const char* BrotherEncoder::ScanModeToText (BrotherScanMode scan_mode)
 {
@@ -67,7 +87,6 @@ const char* BrotherEncoder::ScanModeToText (BrotherScanMode scan_mode)
 
   return scan_mode_text[scan_mode];
 }
-
 
 DecodeStatus BrotherEncoder::SetScanMode (BrotherScanMode scan_mode)
 {
@@ -149,6 +168,102 @@ DecodeStatus BrotherEncoder::SetScanDimensions (SANE_Int pixel_x_offset, SANE_In
  * --------------------------------------------
  *
  */
+DecodeStatus BrotherEncoderFamily2::EncodeQueryBlock (SANE_Byte *data, size_t data_len,
+                                                      size_t *length)
+{
+  *length = snprintf ((char*) data, data_len, "\x1b" "\x51" "\x0a" "\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::EncodeBasicParameterBlock: query block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+
+}
+
+DecodeStatus BrotherEncoderFamily2::DecodeQueryBlockResp (const SANE_Byte *data, size_t data_len,
+                                                          BrotherQueryResponse &response)
+{
+
+  /*
+   * Formatting and content checks.
+   *
+   */
+  if ((data_len != 16) || (data[0] != BROTHER_DATA_QUERY_RESPONSE))
+
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::DecodeSessionResp: invalid query response block: len = %zu\n",
+           data_len);
+
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * TODO: decode the response block to fill in the details.
+   *
+   */
+  response.dummy = 0;
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily2::EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::EncodeBasicParameterBlock: ADF block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily2::DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
+                                                        BrotherADFResponse &response)
+{
+  if (data_len != 1)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::DecodeADFBlockResp: ADF block response invalid: %zu\n",
+           data_len);
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * We can get error condition codes from this block.
+   *
+   */
+  switch (data[0])
+  {
+    case BROTHER_DATA_BLOCK_PAPER_JAM:
+      return DECODE_STATUS_PAPER_JAM;
+
+    case BROTHER_DATA_BLOCK_COVER_OPEN:
+      return DECODE_STATUS_COVER_OPEN;
+
+    case BROTHER_DATA_BLOCK_NO_DOCS:
+      response.adf_ready = SANE_FALSE;
+      return DECODE_STATUS_GOOD;
+
+    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+      response.adf_ready = SANE_TRUE;
+      return DECODE_STATUS_GOOD;
+
+    default:
+      return DECODE_STATUS_ERROR;
+  }
+}
+
+
 DecodeStatus BrotherEncoderFamily2::DecodeSessionResp (const SANE_Byte *data, size_t data_len,
                                                       BrotherSessionResponse &response)
 {
@@ -585,6 +700,19 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanDataHeader (const SANE_Byte *src_d
       return DECODE_STATUS_CANCEL;
     }
 
+  if ((header.block_type == BROTHER_DATA_BLOCK_PAPER_JAM)
+      || (header.block_type == BROTHER_DATA_BLOCK_CLEARING_PAPER))
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_PAPER_JAM;
+    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_COVER_OPEN)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_COVER_OPEN;
+    }
+
   /*
    * Other data-carrying packets.
    *
@@ -634,6 +762,100 @@ DecodeStatus BrotherEncoderFamily2::DecodeButtonStateResp (const SANE_Byte *data
  * --------------------------------------------
  *
  */
+DecodeStatus BrotherEncoderFamily3::EncodeQueryBlock (SANE_Byte *data, size_t data_len,
+                                                      size_t *length)
+{
+  *length = snprintf ((char*) data, data_len, "\x1b" "\x51" "\x0a" "\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::EncodeBasicParameterBlock: query block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+
+}
+
+DecodeStatus BrotherEncoderFamily3::DecodeQueryBlockResp (const SANE_Byte *data, size_t data_len,
+                                                          BrotherQueryResponse &response)
+{
+
+  /*
+   * Formatting and content checks.
+   *
+   */
+  if ((data_len != 20) || (data[0] != BROTHER_DATA_QUERY_RESPONSE))
+
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily3::DecodeSessionResp: invalid query response block: len = %zu\n",
+           data_len);
+
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * TODO: decode the response block to fill in the details.
+   *
+   */
+  response.dummy = 0;
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily3::EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily3::EncodeBasicParameterBlock: ADF block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily3::DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
+                                                        BrotherADFResponse &response)
+{
+  if (data_len != 1)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::DecodeADFBlockResp: ADF block response invalid: %zu\n",
+           data_len);
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * We can get error condition codes from this block.
+   *
+   */
+  switch (data[0])
+  {
+    case BROTHER_DATA_BLOCK_PAPER_JAM:
+      return DECODE_STATUS_PAPER_JAM;
+
+    case BROTHER_DATA_BLOCK_COVER_OPEN:
+      return DECODE_STATUS_COVER_OPEN;
+
+    case BROTHER_DATA_BLOCK_NO_DOCS:
+      response.adf_ready = SANE_FALSE;
+      return DECODE_STATUS_GOOD;
+
+    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+      response.adf_ready = SANE_TRUE;
+      return DECODE_STATUS_GOOD;
+
+    default:
+      return DECODE_STATUS_ERROR;
+  }
+}
 
 DecodeStatus BrotherEncoderFamily3::DecodeSessionResp (const SANE_Byte *data, size_t data_len,
                                                        BrotherSessionResponse &response)
@@ -1081,6 +1303,19 @@ DecodeStatus BrotherEncoderFamily3::DecodeScanDataHeader (const SANE_Byte *src_d
       return DECODE_STATUS_CANCEL;
     }
 
+  if ((header.block_type == BROTHER_DATA_BLOCK_PAPER_JAM)
+      || (header.block_type == BROTHER_DATA_BLOCK_CLEARING_PAPER))
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_PAPER_JAM;
+    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_COVER_OPEN)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_COVER_OPEN;
+    }
+
   if (header.block_type == BROTHER_DATA_BLOCK_END_OF_FRAME_NO_MORE)
     {
       if (src_data_len < 10)
@@ -1140,6 +1375,50 @@ DecodeStatus BrotherEncoderFamily3::DecodeButtonStateResp (const SANE_Byte *data
  * --------------------------------------------
  *
  */
+DecodeStatus BrotherEncoderFamily4::EncodeQueryBlock (SANE_Byte *data, size_t data_len,
+                                                      size_t *length)
+{
+  *length = snprintf ((char*) data, data_len, "\x1b" "\x51" "\x0a" "\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily4::EncodeBasicParameterBlock: query block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+
+}
+
+DecodeStatus BrotherEncoderFamily4::DecodeQueryBlockResp (const SANE_Byte *data, size_t data_len,
+                                                          BrotherQueryResponse &response)
+{
+
+  /*
+   * Formatting and content checks.
+   *
+   */
+  if ((data_len != 72) || (data[0] != BROTHER_DATA_QUERY_RESPONSE))
+
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily4::DecodeSessionResp: invalid query response block: len = %zu\n",
+           data_len);
+
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * TODO: decode the response block to fill in the details.
+   *
+   */
+  response.dummy = 0;
+
+  return DECODE_STATUS_GOOD;
+}
+
 DecodeStatus BrotherEncoderFamily4::DecodeSessionResp (const SANE_Byte *data, size_t data_len,
                                                        BrotherSessionResponse &response)
 {
@@ -1241,7 +1520,7 @@ DecodeStatus BrotherEncoderFamily4::EncodeADFBlock (SANE_Byte *data, size_t data
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily4::EncodeBasicParameterBlock: parameter block too long for buffer: %zu\n",
+           "BrotherEncoderFamily4::EncodeBasicParameterBlock: ADF block too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -1252,14 +1531,37 @@ DecodeStatus BrotherEncoderFamily4::EncodeADFBlock (SANE_Byte *data, size_t data
 DecodeStatus BrotherEncoderFamily4::DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
                                                         BrotherADFResponse &response)
 {
-  if ((data_len != 1))
+  if (data_len != 1)
     {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::DecodeADFBlockResp: ADF block response invalid: %zu\n",
+           data_len);
       return DECODE_STATUS_ERROR;
     }
 
-  response.resp_code = data[0];
+  /*
+   * We can get error condition codes from this block.
+   *
+   */
+  switch (data[0])
+  {
+    case BROTHER_DATA_BLOCK_PAPER_JAM:
+      return DECODE_STATUS_PAPER_JAM;
 
-  return DECODE_STATUS_GOOD;
+    case BROTHER_DATA_BLOCK_COVER_OPEN:
+      return DECODE_STATUS_COVER_OPEN;
+
+    case BROTHER_DATA_BLOCK_NO_DOCS:
+      response.adf_ready = SANE_FALSE;
+      return DECODE_STATUS_GOOD;
+
+    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+      response.adf_ready = SANE_TRUE;
+      return DECODE_STATUS_GOOD;
+
+    default:
+      return DECODE_STATUS_ERROR;
+  }
 }
 
 DecodeStatus BrotherEncoderFamily4::EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len,
@@ -1589,6 +1891,19 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanDataHeader (const SANE_Byte *src_d
     {
       *src_data_consumed = 1;
       return DECODE_STATUS_CANCEL;
+    }
+
+  if ((header.block_type == BROTHER_DATA_BLOCK_PAPER_JAM)
+      || (header.block_type == BROTHER_DATA_BLOCK_CLEARING_PAPER))
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_PAPER_JAM;
+    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_COVER_OPEN)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_COVER_OPEN;
     }
 
   if (header.block_type == BROTHER_DATA_BLOCK_END_OF_FRAME_NO_MORE)
