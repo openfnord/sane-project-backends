@@ -50,17 +50,6 @@
 #include "brother_mfp-driver.h"
 
 /*
- * Define me to add the temporary debugging file output
- * of scan data.
- *
- * TODO: I will remove this shortly anyway. For dev only.
- *
- */
-#define BROTHER_ENABLE_SCAN_FILE	1
-
-/*-----------------------------------------------------------------*/
-
-/*
  * Messages.
  *
  */
@@ -134,8 +123,8 @@ typedef struct Brother_Model
   SANE_Word usb_product;
   SANE_Range width_range_mm;
   SANE_Range height_range_mm;
-  SANE_Int x_res_list[50];
-  SANE_Int y_res_list[50];
+  SANE_Word x_res_list[50];
+  SANE_Word y_res_list[50];
   SANE_Word capabilities;
 } Brother_Model;
 
@@ -194,8 +183,8 @@ static Brother_Model models[] =
       CAP_MODE_HAS_JPEG},
 
     { "Brother", "MFC-J4320DW", BROTHER_FAMILY_4, 0x04f9, 0x033a,
-      { 0, SANE_FIX(213.9), 0 },
-      { 0, SANE_FIX(295), 0 },
+      { 0, SANE_FIX(211.5), 0 },
+      { 0, SANE_FIX(297), 0 },
       { 6, 100, 150, 200, 300, 600, 1200 },
       { 7, 100, 150, 200, 300, 600, 1200, 2400 },
       CAP_MODE_COLOUR |
@@ -223,9 +212,6 @@ struct BrotherDevice
       internal_scan_mode(nullptr),
       x_res (0),
       y_res (0),
-#ifdef BROTHER_ENABLE_SCAN_FILE
-      scan_file (nullptr),
-#endif
       driver (nullptr),
       current_sensor_states(BROTHER_SENSOR_NONE)
   {
@@ -246,10 +232,6 @@ struct BrotherDevice
   const char *internal_scan_mode;
   SANE_Int x_res;
   SANE_Int y_res;
-
-#ifdef BROTHER_ENABLE_SCAN_FILE
-  FILE *scan_file;
-#endif
 
   BrotherDriver *driver;
 
@@ -550,11 +532,11 @@ init_options (BrotherDevice *device)
   od->desc = SANE_DESC_SCAN_TL_X;
   od->type = SANE_TYPE_FIXED;
   od->unit = SANE_UNIT_MM;
-  od->size = sizeof (SANE_Word);
+  od->size = sizeof (SANE_Fixed);
   od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT;
   od->constraint_type = SANE_CONSTRAINT_RANGE;
   od->constraint.range = &device->model->width_range_mm;
-  device->val[OPT_TL_X].w = 0;
+  device->val[OPT_TL_X].w = SANE_FIX(0);
 
   /* opt_tl_y */
   od = &device->opt[OPT_TL_Y];
@@ -563,11 +545,11 @@ init_options (BrotherDevice *device)
   od->desc = SANE_DESC_SCAN_TL_Y;
   od->type = SANE_TYPE_FIXED;
   od->unit = SANE_UNIT_MM;
-  od->size = sizeof (SANE_Word);
+  od->size = sizeof (SANE_Fixed);
   od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT;
   od->constraint_type = SANE_CONSTRAINT_RANGE;
   od->constraint.range = &device->model->height_range_mm;
-  device->val[OPT_TL_Y].w = 0;
+  device->val[OPT_TL_Y].w = SANE_FIX(0);
 
   /* opt_br_x */
   od = &device->opt[OPT_BR_X];
@@ -741,7 +723,11 @@ SANE_Status sane_init (SANE_Int * version_code, SANE_Auth_Callback authorize)
   sanei_usb_init ();
 
   /*
-   * Probe for supported devices.
+   * Probe for supported USB devices.
+   * This is achieved by iterating the
+   *
+   * TODO; We probably should not be doing this here.
+   * Let's wait until someone asks for a device list before doing the probe.
    *
    */
   for (Brother_Model *model = models; model->model; model++)
@@ -1021,15 +1007,15 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
 
         case OPT_CONTRAST:
         case OPT_BRIGHTNESS:
-          if (device->val[option].w == *(SANE_Int *) value)
+          if (device->val[option].w == *(SANE_Word *) value)
             {
               DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
                    option, device->opt[option].name);
               break;
             }
-          device->val[option].w = *(SANE_Int *) value;
+          device->val[option].w = *(SANE_Word *) value;
           DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %d\n",
-               option, device->opt[option].name, *(SANE_Int *) value);
+               option, device->opt[option].name, *(SANE_Word *) value);
 
           status = SANE_STATUS_GOOD;
           break;
@@ -1263,13 +1249,15 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
    * Also need to take into account whether we have split or combine resolution.
    *
    */
-  SANE_Word x_res = device->val[OPT_RESOLUTION].w;
-  SANE_Word y_res = device->val[OPT_RESOLUTION].w;
+  SANE_Int x_res = device->val[OPT_RESOLUTION].w;
+  SANE_Int y_res = device->val[OPT_RESOLUTION].w;
+  DBG (DBG_EVENT, "sane_get_parameters: XXXX default of %u/%u\n", (unsigned int)x_res, (unsigned int)y_res);
 
   if (device->val[OPT_PREVIEW].b)
     {
       x_res = device->model->x_res_list[1];
       y_res = device->model->y_res_list[1];
+      DBG (DBG_EVENT, "sane_get_parameters: XXXX preview of %u/%u\n", (unsigned int)x_res, (unsigned int)y_res);
     }
   else
     {
@@ -1277,6 +1265,11 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
         {
           x_res = device->val[OPT_X_RESOLUTION].w;
           y_res = device->val[OPT_Y_RESOLUTION].w;
+          DBG (DBG_EVENT, "sane_get_parameters: XXXX split of %u/%u\n", (unsigned int)x_res, (unsigned int)y_res);
+        }
+      else
+        {
+          DBG (DBG_EVENT, "sane_get_parameters: XXXX no change of %u/%u\n", (unsigned int)x_res, (unsigned int)y_res);
         }
     }
 
@@ -1286,8 +1279,7 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
    *
    */
   SANE_Int pixel_x_width = SANE_UNFIX (device->val[OPT_BR_X].w -
-                                       device->val[OPT_TL_X].w) / MM_IN_INCH *
-                                           x_res;
+                                        device->val[OPT_TL_X].w) / MM_IN_INCH * x_res;
 
   /*
    * X coords must be a multiple of 8.
@@ -1298,14 +1290,11 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
 //  pixel_x_width += 16;
 
   SANE_Int pixel_y_height = SANE_UNFIX (device->val[OPT_BR_Y].w -
-                                        device->val[OPT_TL_Y].w) / MM_IN_INCH *
-                                        y_res;
+                                        device->val[OPT_TL_Y].w) / MM_IN_INCH * y_res;
 
-  SANE_Int pixel_x_offset = SANE_UNFIX (device->val[OPT_TL_X].w) / MM_IN_INCH *
-                                        x_res;
+  SANE_Int pixel_x_offset = SANE_UNFIX (device->val[OPT_TL_X].w) / MM_IN_INCH * x_res;
 
-  SANE_Int pixel_y_offset = SANE_UNFIX (device->val[OPT_TL_Y].w) / MM_IN_INCH *
-                                        y_res;
+  SANE_Int pixel_y_offset = SANE_UNFIX (device->val[OPT_TL_Y].w) / MM_IN_INCH * y_res;
 
   params->lines = pixel_y_height;
   params->last_frame = SANE_TRUE;
@@ -1323,7 +1312,7 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
       return rc;
     }
 
-  rc = device->driver->SetRes ((SANE_Int)x_res, (SANE_Int)y_res);
+  rc = device->driver->SetRes (x_res, y_res);
   if (rc != SANE_STATUS_GOOD)
     {
       return rc;
@@ -1451,21 +1440,6 @@ sane_start (SANE_Handle handle)
       return res;
     }
 
-  /*
-   * Open a file to write the scan data.
-   * TODO: This is temporary for testing.
-   * We are only doing this because we need to add JPEG decoding.
-   *
-   */
-#ifdef BROTHER_ENABLE_SCAN_FILE
-  device->scan_file = fopen("/home/ralph/scandata.out", "w");
-  if (device->scan_file == NULL)
-    {
-      DBG (DBG_SERIOUS, "sane_start: failed to open scan data file.\n");
-      return SANE_STATUS_INVAL;
-    }
-#endif
-
   return device->driver->StartScan();
 }
 
@@ -1480,34 +1454,9 @@ sane_read (SANE_Handle handle, SANE_Byte * data,
 
   *length = 0;
 
-#ifdef BROTHER_ENABLE_SCAN_FILE
-  if (!device->scan_file)
-    {
-      DBG (DBG_SERIOUS, "sane_read: no scan data file.\n");
-      return SANE_STATUS_EOF;
-    }
-#endif
-
   size_t scan_len = 0;
   SANE_Status res = device->driver->ReadScanData(data, (size_t)max_length, &scan_len);
   *length = (SANE_Int)scan_len;
-
-  /*
-   * TODO: remove me! For test only.
-   *
-   */
-#ifdef BROTHER_ENABLE_SCAN_FILE
-  fwrite(data, *length, 1, device->scan_file);
-#endif
-
-  if ((res == SANE_STATUS_EOF) || (res == SANE_STATUS_CANCELLED ))
-    {
-      DBG (DBG_EVENT, "sane_read: read receives %s.\n", res == SANE_STATUS_EOF? "EOF": "CANCEL");
-#ifdef BROTHER_ENABLE_SCAN_FILE
-      fclose(device->scan_file);
-      device->scan_file = NULL;
-#endif
-    }
 
   return res;
 }
@@ -1526,14 +1475,6 @@ sane_cancel (SANE_Handle handle)
     {
       DBG (DBG_EVENT, "sane_cancel: scan failed to cancel.\n");
     }
-
-#ifdef BROTHER_ENABLE_SCAN_FILE
-  if (device->scan_file)
-    {
-      fclose(device->scan_file);
-      device->scan_file = NULL;
-    }
-#endif
 }
 
 

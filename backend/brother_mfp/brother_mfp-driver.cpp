@@ -266,12 +266,6 @@ SANE_Status BrotherUSBDriver::ExecStartSession ()
       return res;
     }
 
-  /*
-   * Decode the response.
-   *
-   * TODO: How do we detect a short response?
-   *
-   */
   BrotherSessionResponse resp;
 
   if (encoder->DecodeSessionResp (small_buffer, 5, resp) != DECODE_STATUS_GOOD)
@@ -306,12 +300,6 @@ SANE_Status BrotherUSBDriver::ExecStopSession ()
       return res;
     }
 
-  /*
-   * Decode the response.
-   *
-   * TODO: How do we detect a short response?
-   *
-   */
   BrotherSessionResponse resp;
 
   if (encoder->DecodeSessionResp (small_buffer, 5, resp) != DECODE_STATUS_GOOD)
@@ -372,12 +360,12 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
    * First, see if we need to do a read from the device to satisfy the read.
    * Only if we have space to read though. Obviously.
    *
-   * TODO: Perhaps we might put some lower limit to the amount of space available.
-   * No point in doing a "tiny" read because we don't have much space available.
+   * We will place a lower bound on the amount of space. BROTHER_READ_BUFFER_LEN is set to 16k
+   * so there's really no need to read if we already have 15k to work on.
    *
    */
   size_t bytes_to_read = (BROTHER_READ_BUFFER_LEN - data_buffer_bytes) & ~(1024 - 1);
-  if (bytes_to_read > 0)
+  if (bytes_to_read > 1024)
     {
 
       /*
@@ -541,8 +529,8 @@ SANE_Status BrotherUSBDriver::PollForRead (SANE_Byte *buffer, size_t *buf_len,
        * TODO: Is this a reasonable time?
        *
        */
-      usleep(50 * 1000);
-      timeout += (50 * 1000);
+      usleep(100 * 1000);
+      timeout += (100 * 1000);
     } while (timeout < *max_time);
 
   /*
@@ -1064,12 +1052,6 @@ SANE_Status BrotherUSBDriver::CheckSensor (BrotherSensor &status)
      return res;
    }
 
- /*
-  * Decode the response.
-  *
-  * TODO: How do we detect a short response?
-  *
-  */
  BrotherButtonQueryResponse resp;
 
  if (encoder->DecodeButtonQueryResp (small_buffer, 4, resp) != DECODE_STATUS_GOOD)
@@ -1112,37 +1094,16 @@ if (res != SANE_STATUS_GOOD)
    */
   BrotherButtonStateResponse state_resp;
 
-  if (encoder->DecodeButtonStateResp (small_buffer, 9, state_resp) != DECODE_STATUS_GOOD)
+  DecodeStatus dec_ret = encoder->DecodeButtonStateResp (small_buffer, 9, state_resp);
+  if (dec_ret != DECODE_STATUS_GOOD)
     {
       DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: button info response is invalid.\n");
-      return SANE_STATUS_IO_ERROR;
+      return encoder->DecodeStatusToSaneStatus (dec_ret);;
     }
 
-  // TODO: Move this into encoder. Seems to be the same for all devices.
-  switch (state_resp.button_value)
-  {
-    case 0x05:
-      status = BROTHER_SENSOR_FILE;
-      break;
+  status = state_resp.button_value;
 
-    case 0x02:
-      status = BROTHER_SENSOR_OCR;
-      break;
-
-    case 0x03:
-      status = BROTHER_SENSOR_IMAGE;
-      break;
-
-    case 0x08:
-      status = BROTHER_SENSOR_EMAIL;
-      break;
-
-    default:
-      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: unknown button code: %d.\n", state_resp.button_value);
-      break;
-  }
-
- return SANE_STATUS_GOOD;
+  return SANE_STATUS_GOOD;
 }
 
 BrotherDriver::BrotherDriver (BrotherFamily family, SANE_Word capabilities) :

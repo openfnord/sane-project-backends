@@ -72,7 +72,6 @@
  *
  */
 #define BROTHER_DATA_QUERY_RESPONSE             0xc1
-// Seen references to this code elsewhere but I have not seen it from a device.
 #define BROTHER_DATA_BLOCK_NO_DOCS              0xc2
 #define BROTHER_DATA_BLOCK_PAPER_JAM            0xc3
 #define BROTHER_DATA_BLOCK_COVER_OPEN           0xc4
@@ -101,6 +100,7 @@ DecodeStatus BrotherEncoder::SetScanMode (BrotherScanMode scan_mode)
 
 DecodeStatus BrotherEncoder::SetRes (SANE_Int x, SANE_Int y)
 {
+  DBG (DBG_EVENT, "BrotherEncoder::SetRes: XXXX res set to %d/%d\n", x, y);
 
   /*
    * TODO: Perhaps check the validity of the parameter?
@@ -750,7 +750,34 @@ DecodeStatus BrotherEncoderFamily2::DecodeButtonStateResp (const SANE_Byte *data
     {
       return DECODE_STATUS_ERROR;
     }
-  response.button_value = data[4];
+
+  response.button_value = 0;
+
+  switch (data[4])
+  {
+    case 0x05:
+      response.button_value = BROTHER_SENSOR_FILE;
+      break;
+
+    case 0x02:
+      response.button_value = BROTHER_SENSOR_OCR;
+      break;
+
+    case 0x03:
+      response.button_value = BROTHER_SENSOR_IMAGE;
+      break;
+
+    case 0x08:
+      response.button_value = BROTHER_SENSOR_EMAIL;
+      break;
+
+    case 0x00:
+      break;
+
+    default:
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: unknown button code: %d.\n", data[4]);
+      return DECODE_STATUS_UNSUPPORTED;
+  }
 
   return DECODE_STATUS_GOOD;
 }
@@ -1364,7 +1391,34 @@ DecodeStatus BrotherEncoderFamily3::DecodeButtonStateResp (const SANE_Byte *data
     {
       return DECODE_STATUS_ERROR;
     }
-  response.button_value = data[4];
+
+  response.button_value = 0;
+
+  switch (data[4])
+  {
+    case 0x05:
+      response.button_value = BROTHER_SENSOR_FILE;
+      break;
+
+    case 0x02:
+      response.button_value = BROTHER_SENSOR_OCR;
+      break;
+
+    case 0x03:
+      response.button_value = BROTHER_SENSOR_IMAGE;
+      break;
+
+    case 0x08:
+      response.button_value = BROTHER_SENSOR_EMAIL;
+      break;
+
+    case 0x00:
+      break;
+
+    default:
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: unknown button code: %d.\n", data[4]);
+      return DECODE_STATUS_UNSUPPORTED;
+  }
 
   return DECODE_STATUS_GOOD;
 }
@@ -1953,7 +2007,34 @@ DecodeStatus BrotherEncoderFamily4::DecodeButtonStateResp (const SANE_Byte *data
     {
       return DECODE_STATUS_ERROR;
     }
-  response.button_value = data[4];
+
+  response.button_value = 0;
+
+  switch (data[4])
+  {
+    case 0x05:
+      response.button_value = BROTHER_SENSOR_FILE;
+      break;
+
+    case 0x02:
+      response.button_value = BROTHER_SENSOR_OCR;
+      break;
+
+    case 0x03:
+      response.button_value = BROTHER_SENSOR_IMAGE;
+      break;
+
+    case 0x08:
+      response.button_value = BROTHER_SENSOR_EMAIL;
+      break;
+
+    case 0x00:
+      break;
+
+    default:
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: unknown button code: %d.\n", data[4]);
+      return DECODE_STATUS_UNSUPPORTED;
+  }
 
   return DECODE_STATUS_GOOD;
 }
@@ -2328,16 +2409,14 @@ void BrotherJFIFDecoder::TermSource(j_decompress_ptr cinfo)
 
 }
 
-jmp_buf BrotherJFIFDecoder::my_env;
-
-
 void BrotherJFIFDecoder::ErrorExitManager(j_common_ptr cinfo)
 {
   char jpegLastErrorMsg[JMSG_LENGTH_MAX];
   ( *(cinfo->err->format_message) ) (cinfo, jpegLastErrorMsg);
   DBG (DBG_SERIOUS, "BrotherJFIFDecoder::ErrorExitManager: libjpeg error=[%s]\n", jpegLastErrorMsg);
 
-  longjmp(my_env, 1);
+  CompressionState *state = reinterpret_cast<CompressionState *>(cinfo);
+  longjmp(state->my_env, 1);
 }
 
 
@@ -2434,7 +2513,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
   state.src_mgr.bytes_in_buffer = src_data_len;
   state.src_mgr.next_input_byte = src_data;
 
-  if (setjmp(my_env) != 0)
+  if (setjmp(state.my_env) != 0)
     {
       DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: setjmp error return\n");
       return DECODE_STATUS_ERROR;

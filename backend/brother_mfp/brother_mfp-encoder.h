@@ -289,8 +289,6 @@ public:
      */
     (void)memset(&state.cinfo, 0, sizeof(state.cinfo));
 
-    // TODO: override error stuff to avoid exit on error.
-    // Also provide a mechanism to check for errors.
     state.cinfo.err = jpeg_std_error(&state.jerr);
     state.cinfo.err->error_exit = ErrorExitManager;
 
@@ -333,23 +331,19 @@ private:
                                size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
                                size_t *dest_data_written);
 
-
   struct CompressionState
   {
     struct jpeg_decompress_struct cinfo;
     struct jpeg_error_mgr jerr;
     struct jpeg_source_mgr src_mgr;
     bool have_read_header;
+    jmp_buf my_env;
   } state;
 
   SANE_Byte decompress_buffer[1024 * 16];
   size_t decompress_bytes;
 
-// TODO: Move me to the state.
-  static jmp_buf my_env;
-
   BrotherParameters decode_params;
-
 };
 
 class BrotherGrayRLengthDecoder
