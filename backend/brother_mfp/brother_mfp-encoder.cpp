@@ -78,6 +78,11 @@
 // unsure as to the meaning of this or how to get it again.
 #define BROTHER_DATA_BLOCK_CLEARING_PAPER       0xc5
 
+/*
+ * Other protocol error?
+ *
+ */
+#define BROTHER_DATA_BLOCK_PROTOCOL_ERROR       0xd0
 
 const char* BrotherEncoder::ScanModeToText (BrotherScanMode scan_mode)
 {
@@ -85,6 +90,14 @@ const char* BrotherEncoder::ScanModeToText (BrotherScanMode scan_mode)
     { "CGRAY", "GRAY64", "ERRDIF", "TEXT" };
 
   return scan_mode_text[scan_mode];
+}
+
+
+DecodeStatus BrotherEncoder::SetSource (BrotherSource source)
+{
+  scan_params.param_source = source;
+
+  return DECODE_STATUS_GOOD;
 }
 
 DecodeStatus BrotherEncoder::SetScanMode (BrotherScanMode scan_mode)
@@ -212,14 +225,14 @@ DecodeStatus BrotherEncoderFamily2::DecodeQueryBlockResp (const SANE_Byte *data,
   return DECODE_STATUS_GOOD;
 }
 
-DecodeStatus BrotherEncoderFamily2::EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length)
+DecodeStatus BrotherEncoderFamily2::EncodeSourceStatusBlock (SANE_Byte *data, size_t data_len, size_t *length)
 {
   *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
 
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::EncodeBasicParameterBlock: ADF block too long for buffer: %zu\n",
+           "BrotherEncoderFamily2::EncodeBasicParameterBlock: source status too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -227,13 +240,13 @@ DecodeStatus BrotherEncoderFamily2::EncodeADFBlock (SANE_Byte *data, size_t data
   return DECODE_STATUS_GOOD;
 }
 
-DecodeStatus BrotherEncoderFamily2::DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                                        BrotherADFResponse &response)
+DecodeStatus BrotherEncoderFamily2::DecodeSourceStatusBlockResp (const SANE_Byte *data, size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
 {
   if (data_len != 1)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::DecodeADFBlockResp: ADF block response invalid: %zu\n",
+           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source status response invalid: %zu\n",
            data_len);
       return DECODE_STATUS_ERROR;
     }
@@ -251,11 +264,11 @@ DecodeStatus BrotherEncoderFamily2::DecodeADFBlockResp (const SANE_Byte *data, s
       return DECODE_STATUS_COVER_OPEN;
 
     case BROTHER_DATA_BLOCK_NO_DOCS:
-      response.adf_ready = SANE_FALSE;
+      response.source_ready = SANE_FALSE;
       return DECODE_STATUS_GOOD;
 
     case BROTHER_DATA_BLOCK_SCAN_FINISHED:
-      response.adf_ready = SANE_TRUE;
+      response.source_ready = SANE_TRUE;
       return DECODE_STATUS_GOOD;
 
     default:
@@ -263,6 +276,54 @@ DecodeStatus BrotherEncoderFamily2::DecodeADFBlockResp (const SANE_Byte *data, s
   }
 }
 
+DecodeStatus BrotherEncoderFamily2::EncodeSourceSelectBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  *length = snprintf ((char*) data,
+                      data_len,
+                      "\x1b" "S\n%s\n" "\x80",
+                      scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::EncodeSourceSelectBlock: Source select block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily2::DecodeSourceSelectBlockResp (const SANE_Byte *data,
+                                                                 size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
+{
+  if (data_len != 1)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source select response invalid: %zu\n",
+           data_len);
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * We can get error condition codes from this block.
+   *
+   */
+  switch (data[0])
+  {
+    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+      response.source_ready = SANE_TRUE;
+      return DECODE_STATUS_GOOD;
+
+    case BROTHER_DATA_BLOCK_PROTOCOL_ERROR:
+      response.source_ready = SANE_FALSE;
+      return DECODE_STATUS_INVAL;
+
+    default:
+      return DECODE_STATUS_ERROR;
+  }
+}
 
 DecodeStatus BrotherEncoderFamily2::DecodeSessionResp (const SANE_Byte *data, size_t data_len,
                                                       BrotherSessionResponse &response)
@@ -493,12 +554,11 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
            * Detect special case situations.
            *
            */
-          if ((ret_status == DECODE_STATUS_ENDOFDATA)
-              || (ret_status == DECODE_STATUS_ENDOFFRAME_WITH_MORE))
+          if (ret_status != DECODE_STATUS_GOOD)
             {
               DBG (DBG_IMPORTANT,
-                   "BrotherEncoderFamily2::DecodeScanData: %s detected.\n",
-                   ret_status == DECODE_STATUS_ENDOFDATA ? "ENDOFDATA" : "ENDOFFRAME_WITH_MORE");
+                   "BrotherEncoderFamily2::DecodeScanData: %s.\n",
+                   DecodeStatusToString (ret_status));
 
               current_header.block_type = 0;
 
@@ -682,6 +742,12 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanDataHeader (const SANE_Byte *src_d
 
   header.block_len = 0;
 
+  if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_NO_DOCS;
+    }
+
   if (header.block_type == BROTHER_DATA_BLOCK_SCAN_FINISHED)
     {
       *src_data_consumed = 1;
@@ -833,14 +899,14 @@ DecodeStatus BrotherEncoderFamily3::DecodeQueryBlockResp (const SANE_Byte *data,
   return DECODE_STATUS_GOOD;
 }
 
-DecodeStatus BrotherEncoderFamily3::EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length)
+DecodeStatus BrotherEncoderFamily3::EncodeSourceStatusBlock (SANE_Byte *data, size_t data_len, size_t *length)
 {
   *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
 
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily3::EncodeBasicParameterBlock: ADF block too long for buffer: %zu\n",
+           "BrotherEncoderFamily3::EncodeBasicParameterBlock: source status too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -848,13 +914,13 @@ DecodeStatus BrotherEncoderFamily3::EncodeADFBlock (SANE_Byte *data, size_t data
   return DECODE_STATUS_GOOD;
 }
 
-DecodeStatus BrotherEncoderFamily3::DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                                        BrotherADFResponse &response)
+DecodeStatus BrotherEncoderFamily3::DecodeSourceStatusBlockResp (const SANE_Byte *data, size_t data_len,
+                                                        BrotherSourceStatusResponse &response)
 {
   if (data_len != 1)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::DecodeADFBlockResp: ADF block response invalid: %zu\n",
+           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source status response invalid: %zu\n",
            data_len);
       return DECODE_STATUS_ERROR;
     }
@@ -872,12 +938,61 @@ DecodeStatus BrotherEncoderFamily3::DecodeADFBlockResp (const SANE_Byte *data, s
       return DECODE_STATUS_COVER_OPEN;
 
     case BROTHER_DATA_BLOCK_NO_DOCS:
-      response.adf_ready = SANE_FALSE;
+      response.source_ready = SANE_FALSE;
       return DECODE_STATUS_GOOD;
 
     case BROTHER_DATA_BLOCK_SCAN_FINISHED:
-      response.adf_ready = SANE_TRUE;
+      response.source_ready = SANE_TRUE;
       return DECODE_STATUS_GOOD;
+
+    default:
+      return DECODE_STATUS_ERROR;
+  }
+}
+
+DecodeStatus BrotherEncoderFamily3::EncodeSourceSelectBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  *length = snprintf ((char*) data,
+                      data_len,
+                      "\x1b" "S\n%s\n" "\x80",
+                      scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily3::EncodeSourceSelectBlock: Source select block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily3::DecodeSourceSelectBlockResp (const SANE_Byte *data,
+                                                                 size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
+{
+  if (data_len != 1)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily3::DecodeSourceStatusBlockResp: source select response invalid: %zu\n",
+           data_len);
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * We can get error condition codes from this block.
+   *
+   */
+  switch (data[0])
+  {
+    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+      response.source_ready = SANE_TRUE;
+      return DECODE_STATUS_GOOD;
+
+    case BROTHER_DATA_BLOCK_PROTOCOL_ERROR:
+      response.source_ready = SANE_FALSE;
+      return DECODE_STATUS_INVAL;
 
     default:
       return DECODE_STATUS_ERROR;
@@ -1113,12 +1228,11 @@ DecodeStatus BrotherEncoderFamily3::DecodeScanData (const SANE_Byte *src_data, s
             * Detect special case situations.
             *
             */
-          if ((ret_status == DECODE_STATUS_ENDOFDATA)
-              || (ret_status == DECODE_STATUS_ENDOFFRAME_WITH_MORE))
+          if (ret_status != DECODE_STATUS_GOOD)
             {
               DBG (DBG_IMPORTANT,
-                   "BrotherEncoderFamily3::DecodeScanData: %s.\n",
-                   ret_status == DECODE_STATUS_ENDOFDATA ? "ENDOFDATA" : "ENDOFFRAME_WITH_MORE");
+                   "BrotherEncoderFamily2::DecodeScanData: %s.\n",
+                   DecodeStatusToString (ret_status));
 
               current_header.block_type = 0;
 
@@ -1311,6 +1425,12 @@ DecodeStatus BrotherEncoderFamily3::DecodeScanDataHeader (const SANE_Byte *src_d
   header.block_type = src_data[0];
 
   header.block_len = 0;
+
+  if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_NO_DOCS;
+    }
 
   if (header.block_type == BROTHER_DATA_BLOCK_SCAN_FINISHED)
     {
@@ -1567,14 +1687,14 @@ DecodeStatus BrotherEncoderFamily4::DecodeBasicParameterBlockResp (const SANE_By
   return DECODE_STATUS_GOOD;
 }
 
-DecodeStatus BrotherEncoderFamily4::EncodeADFBlock (SANE_Byte *data, size_t data_len, size_t *length)
+DecodeStatus BrotherEncoderFamily4::EncodeSourceStatusBlock (SANE_Byte *data, size_t data_len, size_t *length)
 {
   *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
 
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily4::EncodeBasicParameterBlock: ADF block too long for buffer: %zu\n",
+           "BrotherEncoderFamily4::EncodeSourceStatusBlock: Source status block too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -1582,13 +1702,14 @@ DecodeStatus BrotherEncoderFamily4::EncodeADFBlock (SANE_Byte *data, size_t data
   return DECODE_STATUS_GOOD;
 }
 
-DecodeStatus BrotherEncoderFamily4::DecodeADFBlockResp (const SANE_Byte *data, size_t data_len,
-                                                        BrotherADFResponse &response)
+DecodeStatus BrotherEncoderFamily4::DecodeSourceStatusBlockResp (const SANE_Byte *data,
+                                                                 size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
 {
   if (data_len != 1)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::DecodeADFBlockResp: ADF block response invalid: %zu\n",
+           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source status response invalid: %zu\n",
            data_len);
       return DECODE_STATUS_ERROR;
     }
@@ -1606,12 +1727,61 @@ DecodeStatus BrotherEncoderFamily4::DecodeADFBlockResp (const SANE_Byte *data, s
       return DECODE_STATUS_COVER_OPEN;
 
     case BROTHER_DATA_BLOCK_NO_DOCS:
-      response.adf_ready = SANE_FALSE;
+      response.source_ready = SANE_FALSE;
       return DECODE_STATUS_GOOD;
 
     case BROTHER_DATA_BLOCK_SCAN_FINISHED:
-      response.adf_ready = SANE_TRUE;
+      response.source_ready = SANE_TRUE;
       return DECODE_STATUS_GOOD;
+
+    default:
+      return DECODE_STATUS_ERROR;
+  }
+}
+
+DecodeStatus BrotherEncoderFamily4::EncodeSourceSelectBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  *length = snprintf ((char*) data,
+                      data_len,
+                      "\x1b" "S\n%s\n" "\x80",
+                      scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily4::EncodeSourceSelectBlock: Source select block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily4::DecodeSourceSelectBlockResp (const SANE_Byte *data,
+                                                                 size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
+{
+  if (data_len != 1)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source select response invalid: %zu\n",
+           data_len);
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * We can get error condition codes from this block.
+   *
+   */
+  switch (data[0])
+  {
+    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+      response.source_ready = SANE_TRUE;
+      return DECODE_STATUS_GOOD;
+
+    case BROTHER_DATA_BLOCK_PROTOCOL_ERROR:
+      response.source_ready = SANE_FALSE;
+      return DECODE_STATUS_INVAL;
 
     default:
       return DECODE_STATUS_ERROR;
@@ -1753,15 +1923,11 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, s
             * Detect special case situations.
             *
             */
-          if ((ret_status == DECODE_STATUS_ENDOFDATA)
-              || (ret_status == DECODE_STATUS_ENDOFFRAME_NO_MORE)
-              || (ret_status == DECODE_STATUS_ENDOFFRAME_WITH_MORE))
+          if (ret_status != DECODE_STATUS_GOOD)
             {
               DBG (DBG_IMPORTANT,
-                   "BrotherEncoderFamily4::DecodeScanData: %s.\n",
-                   ret_status == DECODE_STATUS_ENDOFDATA ? "ENDOFDATA" :
-                   ret_status == DECODE_STATUS_ENDOFFRAME_NO_MORE ?
-                       "ENDOFFRAME_NO_MORE" : "ENDOFFRAME_WITH_MORE");
+                   "BrotherEncoderFamily2::DecodeScanData: %s.\n",
+                   DecodeStatusToString (ret_status));
 
               current_header.block_type = 0;
 
@@ -1934,6 +2100,12 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanDataHeader (const SANE_Byte *src_d
   header.block_type = src_data[0];
 
   header.block_len = 0;
+
+  if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
+    {
+      *src_data_consumed = 1;
+      return DECODE_STATUS_NO_DOCS;
+    }
 
   if (header.block_type == BROTHER_DATA_BLOCK_SCAN_FINISHED)
     {
@@ -2304,7 +2476,7 @@ DecodeStatus BrotherInterleavedRGBColourDecoder::DecodeScanData (const SANE_Byte
                * Sort out the raw encoding format.
                *
                */
-              if (capabilities & CAP_MODE_RAW_IS_CrYCb)
+              if (capabilities & CAP_ENCODING_RAW_IS_CrYCb)
                 {
                   SANE_Byte R;
                   SANE_Byte G;

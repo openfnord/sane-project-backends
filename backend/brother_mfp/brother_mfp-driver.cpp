@@ -418,7 +418,8 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
 
   res = encoder->DecodeStatusToSaneStatus(dec_ret);
 
-  if ((dec_ret == DECODE_STATUS_ENDOFDATA) || (dec_ret == DECODE_STATUS_ENDOFFRAME_NO_MORE))
+  if ((dec_ret == DECODE_STATUS_ENDOFDATA) || (dec_ret == DECODE_STATUS_ENDOFFRAME_NO_MORE)
+      || (dec_ret == DECODE_STATUS_NO_DOCS))
     {
       next_frame_number++;
       out_of_docs = true;
@@ -850,23 +851,17 @@ SANE_Status BrotherUSBDriver::StartScan ()
         }
 
       /*
-       * Construct the "ADF" block.
-       *
-       * This is a query to see if the ADF contains documents.
-       * TBH I don't really know why we would do this because the source
-       * (flatbed/ADF) selection seems to be automatic. Perhaps there is a way
-       * to select the source that we haven't seen to override that behaviour?
-       * I add it here for completeness though.
+       * Construct the Source select block.
        *
        */
       packet_len = 0;
-      dec_ret = encoder->EncodeADFBlock (small_buffer, sizeof(small_buffer), &packet_len);
+      dec_ret = encoder->EncodeSourceSelectBlock (small_buffer, sizeof(small_buffer), &packet_len);
       if (dec_ret != DECODE_STATUS_UNSUPPORTED)
         {
           if (dec_ret != DECODE_STATUS_GOOD)
             {
               DBG (DBG_SERIOUS,
-                   "BrotherUSBDriver::StartScan: failed to generate ADF block: %d\n",
+                   "BrotherUSBDriver::StartScan: failed to generate source select block: %d\n",
                    dec_ret);
               (void) CancelScan ();
               return SANE_STATUS_INVAL;
@@ -876,14 +871,14 @@ SANE_Status BrotherUSBDriver::StartScan ()
           res = sanei_usb_write_bulk (fd, small_buffer, &buf_size);
           if (res != SANE_STATUS_GOOD)
             {
-              DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to send ADF block: %d\n", res);
+              DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to send source select block: %d\n", res);
               (void) CancelScan ();
               return res;
             }
 
           if (buf_size != packet_len)
             {
-              DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to write ADF block\n");
+              DBG (DBG_SERIOUS, "BrotherUSBDriver::StartScan: failed to write source select block\n");
               (void) CancelScan ();
               return SANE_STATUS_IO_ERROR;
             }
@@ -899,27 +894,27 @@ SANE_Status BrotherUSBDriver::StartScan ()
           if (res != SANE_STATUS_GOOD)
             {
               DBG (DBG_SERIOUS,
-                   "BrotherUSBDriver::StartScan: failed to read ADF block response: %d\n",
+                   "BrotherUSBDriver::StartScan: failed to read source select block response: %d\n",
                    res);
               (void) CancelScan ();
               return res;
             }
 
-          BrotherADFResponse adf_resp;
+          BrotherSourceStatusResponse source_resp;
 
-          dec_ret = encoder->DecodeADFBlockResp (small_buffer, buf_size, adf_resp);
+          dec_ret = encoder->DecodeSourceStatusBlockResp (small_buffer, buf_size, source_resp);
           if (dec_ret != DECODE_STATUS_GOOD)
             {
               DBG (DBG_SERIOUS,
-                   "BrotherUSBDriver::StartScan: ADF block response block invalid: %d\n",
+                   "BrotherUSBDriver::StartScan: source select response block invalid: %d\n",
                    dec_ret);
               (void) CancelScan ();
               return encoder->DecodeStatusToSaneStatus(dec_ret);
             }
 
           DBG (DBG_DETAIL,
-               "BrotherUSBDriver::StartScan: ADF reports readiness?: %s\n",
-               adf_resp.adf_ready? "Yes": "No");
+               "BrotherUSBDriver::StartScan: Source reports readiness?: %s\n",
+               source_resp.source_ready? "Yes": "No");
         }
 
       /*

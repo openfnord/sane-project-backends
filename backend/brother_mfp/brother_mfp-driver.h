@@ -105,6 +105,11 @@ public:
    * Parameter setting.
    *
    */
+  SANE_Status SetSource (BrotherSource source)
+  {
+    return encoder->DecodeStatusToSaneStatus (encoder->SetSource (source));
+  }
+
   SANE_Status SetScanMode (BrotherScanMode scan_mode)
   {
     return encoder->DecodeStatusToSaneStatus (encoder->SetScanMode (scan_mode));
@@ -144,7 +149,6 @@ protected:
 
   BrotherFamily family;
   SANE_Word capabilities;
-  BrotherParameters scan_params;
   BrotherEncoder *encoder;
 };
 

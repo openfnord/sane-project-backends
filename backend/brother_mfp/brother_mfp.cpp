@@ -53,7 +53,10 @@
  * Messages.
  *
  */
-#define SANE_VALUE_SCAN_MODE_GRAY_DITHER           SANE_I18N("Gray (Dithered)")
+#define SANE_VALUE_SCAN_MODE_GRAY_DITHER      SANE_I18N("Gray (Dithered)")
+
+#define SANE_VALUE_SOURCE_FLATBED             SANE_I18N("Flatbed")
+#define SANE_VALUE_SOURCE_ADF                 SANE_I18N("Automatic Document Feeder")
 
 #define SANE_NAME_FILE_BUTTON                "file-sensor"
 #define SANE_NAME_EMAIL_BUTTON               "email-sensor"
@@ -81,6 +84,7 @@ enum Brother_Option
     OPT_NUM_OPTS = 0,
 
     OPT_MODE_GROUP,
+    OPT_SOURCE,
     OPT_MODE,
     OPT_SPLIT_RESOLUTION,
     OPT_RESOLUTION,
@@ -139,14 +143,15 @@ static Brother_Model models[] =
       CAP_MODE_GRAY |
       CAP_MODE_GRAY_DITHER |
       CAP_MODE_BW |
-      CAP_MODE_BUTTON_SCAN_EMAIL |
-      CAP_MODE_BUTTON_SCAN_FILE |
-      CAP_MODE_BUTTON_SCAN_OCR |
-      CAP_MODE_BUTTON_SCAN_IMAGE |
-      CAP_MODE_HAS_ADF |
-      CAP_MODE_RAW_IS_CrYCb |
-      CAP_MODE_HAS_RAW |
-      CAP_MODE_HAS_JPEG },
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_SOURCE_HAS_ADF |
+      CAP_SOURCE_HAS_FLATBED |
+      CAP_ENCODING_RAW_IS_CrYCb |
+      CAP_ENCODING_HAS_RAW |
+      CAP_ENCODING_HAS_JPEG },
 
     { "Brother", "DCP-7030", BROTHER_FAMILY_3, 0x04f9, 0x01ea,
       { 0, SANE_FIX(210), 0 },
@@ -157,12 +162,13 @@ static Brother_Model models[] =
       CAP_MODE_GRAY |
       CAP_MODE_GRAY_DITHER |
       CAP_MODE_BW |
-      CAP_MODE_BUTTON_SCAN_EMAIL |
-      CAP_MODE_BUTTON_SCAN_FILE |
-      CAP_MODE_BUTTON_SCAN_OCR |
-      CAP_MODE_BUTTON_SCAN_IMAGE |
-      CAP_MODE_HAS_RAW |
-      CAP_MODE_HAS_JPEG},
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_SOURCE_HAS_FLATBED |
+      CAP_ENCODING_HAS_RAW |
+      CAP_ENCODING_HAS_JPEG},
 
       // TODO: check dimensions
     { "Brother", "MFC-290C", BROTHER_FAMILY_3, 0x04f9, 0x01fd,
@@ -174,13 +180,15 @@ static Brother_Model models[] =
       CAP_MODE_GRAY |
       CAP_MODE_GRAY_DITHER |
       CAP_MODE_BW |
-      CAP_MODE_BUTTON_SCAN_EMAIL |
-      CAP_MODE_BUTTON_SCAN_FILE |
-      CAP_MODE_BUTTON_SCAN_OCR |
-      CAP_MODE_BUTTON_SCAN_IMAGE |
-      CAP_MODE_RAW_IS_CrYCb |
-      CAP_MODE_HAS_RAW |
-      CAP_MODE_HAS_JPEG},
+      CAP_SOURCE_HAS_FLATBED |
+      CAP_SOURCE_HAS_ADF |
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_ENCODING_RAW_IS_CrYCb |
+      CAP_ENCODING_HAS_RAW |
+      CAP_ENCODING_HAS_JPEG},
 
     { "Brother", "MFC-J4320DW", BROTHER_FAMILY_4, 0x04f9, 0x033a,
       { 0, SANE_FIX(211.5), 0 },
@@ -191,11 +199,46 @@ static Brother_Model models[] =
       CAP_MODE_GRAY |
       CAP_MODE_GRAY_DITHER |
       CAP_MODE_BW |
-      CAP_MODE_BUTTON_SCAN_EMAIL |
-      CAP_MODE_BUTTON_SCAN_FILE |
-      CAP_MODE_BUTTON_SCAN_OCR |
-      CAP_MODE_BUTTON_SCAN_IMAGE |
-      CAP_MODE_HAS_JPEG },
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_ENCODING_HAS_JPEG |
+      CAP_SOURCE_HAS_FLATBED},
+
+      { "Brother", "MFC-J4620DW", BROTHER_FAMILY_4, 0x04f9, 0x0340,
+        { 0, SANE_FIX(211.881), 0 },
+        { 0, SANE_FIX(355.567), 0 },
+        { 6, 100, 150, 200, 300, 600, 1200 },
+        { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+        CAP_MODE_COLOUR |
+        CAP_MODE_GRAY |
+        CAP_MODE_GRAY_DITHER |
+        CAP_MODE_BW |
+        CAP_SOURCE_HAS_FLATBED |
+        CAP_SOURCE_HAS_ADF |
+        CAP_BUTTON_HAS_SCAN_EMAIL |
+        CAP_BUTTON_HAS_SCAN_FILE |
+        CAP_BUTTON_HAS_SCAN_OCR |
+        CAP_BUTTON_HAS_SCAN_IMAGE |
+        CAP_ENCODING_HAS_JPEG },
+
+      { "Brother", "ADS-2800W", BROTHER_FAMILY_4, 0x04f9, 0x0340,
+        { 0, SANE_FIX(215.000), 0 },
+        { 0, SANE_FIX(355.000), 0 },
+        { 6, 100, 150, 200, 300, 600 },
+        { 6, 100, 150, 200, 300, 600 },
+        CAP_MODE_COLOUR |
+        CAP_MODE_GRAY |
+        CAP_MODE_GRAY_DITHER |
+        CAP_MODE_BW |
+        CAP_SOURCE_HAS_FLATBED |
+        CAP_SOURCE_HAS_ADF |
+        CAP_BUTTON_HAS_SCAN_EMAIL |
+        CAP_BUTTON_HAS_SCAN_FILE |
+        CAP_BUTTON_HAS_SCAN_OCR |
+        CAP_BUTTON_HAS_SCAN_IMAGE |
+        CAP_ENCODING_HAS_JPEG },
 
     {NULL, NULL, BROTHER_FAMILY_NONE, 0, 0, {0, 0, 0}, {0, 0, 0}, {0}, {0}, 0}
 };
@@ -208,6 +251,7 @@ struct BrotherDevice
       sane_device {nullptr, nullptr, nullptr, nullptr},
       name (nullptr),
       modes {0},
+      sources {0},
       params {SANE_FRAME_GRAY, SANE_FALSE, 0, 0, 0, 0},
       internal_scan_mode(nullptr),
       x_res (0),
@@ -228,6 +272,7 @@ struct BrotherDevice
   Option_Value val[NUM_OPTIONS];
 
   SANE_String_Const modes[10];
+  SANE_String_Const sources[10];
   SANE_Parameters params;
   const char *internal_scan_mode;
   SANE_Int x_res;
@@ -354,6 +399,20 @@ attach_with_ret (const char *devicename, BrotherDevice **dev)
       device->modes[num_modes++] = SANE_VALUE_SCAN_MODE_LINEART;
     }
 
+  /*
+   * Create the sources list.
+   *
+   */
+  size_t num_sources = 0;
+  if (model->capabilities & CAP_SOURCE_HAS_FLATBED)
+    {
+      device->sources[num_sources++] = SANE_VALUE_SOURCE_FLATBED;
+    }
+  if (model->capabilities & CAP_SOURCE_HAS_ADF)
+    {
+      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF;
+    }
+
   ++num_devices;
   device->next = first_dev;
   first_dev = device;
@@ -422,6 +481,39 @@ init_options (BrotherDevice *device)
   od->constraint_type = SANE_CONSTRAINT_NONE;
   od->constraint.range = 0;
   device->val[OPT_MODE_GROUP].w = 0;
+
+  /* opt_source */
+  od = &device->opt[OPT_SOURCE];
+  od->name = SANE_NAME_SCAN_SOURCE;
+  od->title = SANE_TITLE_SCAN_SOURCE;
+  od->desc = SANE_DESC_SCAN_SOURCE;
+  od->type = SANE_TYPE_STRING;
+  od->unit = SANE_UNIT_NONE;
+  od->size = max_string_size (device->sources);
+  od->constraint_type = SANE_CONSTRAINT_STRING_LIST;
+  od->constraint.string_list = device->sources;
+  if (!device->sources[0])
+    {
+      od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_INACTIVE;
+      device->val[OPT_SOURCE].s = new char[1];
+      if (NULL == device->val[OPT_SOURCE].s)
+        {
+          DBG (DBG_SERIOUS, "init_options: failed to allocate source storage %zu\n", (size_t) od->size);
+          return SANE_STATUS_NO_MEM;
+        }
+      (void) strcpy (device->val[OPT_SOURCE].s, "");
+    }
+  else
+    {
+      od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT;
+      device->val[OPT_SOURCE].s = new char[od->size];
+      if (NULL == device->val[OPT_SOURCE].s)
+        {
+          DBG (DBG_SERIOUS, "init_options: failed to allocate source storage %zu\n", (size_t) od->size);
+          return SANE_STATUS_NO_MEM;
+        }
+      (void) strcpy (device->val[OPT_SOURCE].s, device->sources[0]);
+    }
 
   /* opt_mode */
   od = &device->opt[OPT_MODE];
@@ -622,8 +714,8 @@ init_options (BrotherDevice *device)
   od->unit = SANE_UNIT_NONE;
   od->size = 1 * sizeof(SANE_Bool);
   od->constraint_type = SANE_CONSTRAINT_NONE;
-  if ((device->model->capabilities & CAP_MODE_HAS_JPEG)
-      && (device->model->capabilities & CAP_MODE_HAS_RAW))
+  if ((device->model->capabilities & CAP_ENCODING_HAS_JPEG)
+      && (device->model->capabilities & CAP_ENCODING_HAS_RAW))
     od->cap = SANE_CAP_SOFT_DETECT | SANE_CAP_SOFT_SELECT | SANE_CAP_ADVANCED;
   else
     od->cap = SANE_CAP_INACTIVE;
@@ -649,7 +741,7 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_BOOL;
   od->unit = SANE_UNIT_NONE;
   od->size = 1 * sizeof(SANE_Bool);
-  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_EMAIL)
+  if (device->model->capabilities & CAP_BUTTON_HAS_SCAN_EMAIL)
     od->cap =
       SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
   else
@@ -663,7 +755,7 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_BOOL;
   od->unit = SANE_UNIT_NONE;
   od->size = 1 * sizeof(SANE_Bool);
-  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_FILE)
+  if (device->model->capabilities & CAP_BUTTON_HAS_SCAN_FILE)
     od->cap =
       SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
   else
@@ -677,7 +769,7 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_BOOL;
   od->unit = SANE_UNIT_NONE;
   od->size = 1 * sizeof(SANE_Bool);
-  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_IMAGE)
+  if (device->model->capabilities & CAP_BUTTON_HAS_SCAN_IMAGE)
     od->cap =
       SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
   else
@@ -691,7 +783,7 @@ init_options (BrotherDevice *device)
   od->type = SANE_TYPE_BOOL;
   od->unit = SANE_UNIT_NONE;
   od->size = 1 * sizeof(SANE_Bool);
-  if (device->model->capabilities & CAP_MODE_BUTTON_SCAN_OCR)
+  if (device->model->capabilities & CAP_BUTTON_HAS_SCAN_OCR)
     od->cap =
       SANE_CAP_SOFT_DETECT | SANE_CAP_HARD_SELECT | SANE_CAP_ADVANCED;
   else
@@ -1078,39 +1170,54 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
           status = SANE_STATUS_GOOD;
           break;
 
-	case OPT_MODE:
-	  if (strcmp (device->val[option].s, (SANE_String)value) == 0)
-	    {
-	      DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
-		   option, device->opt[option].name);
-	      break;
-	    }
-	  strcpy (device->val[option].s, (SANE_String) value);
+        case OPT_MODE:
+          if (strcmp (device->val[option].s, (SANE_String)value) == 0)
+            {
+              DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
+                   option, device->opt[option].name);
+              break;
+            }
+          strcpy (device->val[option].s, (SANE_String) value);
 
-	  myinfo |= SANE_INFO_RELOAD_PARAMS;
-	  myinfo |= SANE_INFO_RELOAD_OPTIONS;
-	  DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
-	       option, device->opt[option].name, (SANE_String) value);
+          myinfo |= SANE_INFO_RELOAD_PARAMS;
+          myinfo |= SANE_INFO_RELOAD_OPTIONS;
+          DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
+               option, device->opt[option].name, (SANE_String) value);
 
-	  /*
-	   * Mode affects other options:
-	   *
-	   * OPT_CONTRAST
-	   * OPT_BRIGHTNESS
-	   *
-	   */
-	  if ((strcmp((SANE_String)value, SANE_VALUE_SCAN_MODE_COLOR) == 0) ||
-	      (strcmp((SANE_String)value, SANE_VALUE_SCAN_MODE_GRAY) == 0))
-	    {
+          /*
+           * Mode affects other options:
+           *
+           * OPT_CONTRAST
+           * OPT_BRIGHTNESS
+           *
+           */
+          if ((strcmp((SANE_String)value, SANE_VALUE_SCAN_MODE_COLOR) == 0) ||
+              (strcmp((SANE_String)value, SANE_VALUE_SCAN_MODE_GRAY) == 0))
+            {
               device->opt[OPT_CONTRAST].cap |= SANE_CAP_INACTIVE;
               device->opt[OPT_BRIGHTNESS].cap |= SANE_CAP_INACTIVE;
-	    }
-	  else
-	    {
+            }
+          else
+            {
               device->opt[OPT_CONTRAST].cap &= ~SANE_CAP_INACTIVE;
               device->opt[OPT_BRIGHTNESS].cap &= ~SANE_CAP_INACTIVE;
-	    }
-	  break;
+            }
+          break;
+
+        case OPT_SOURCE:
+          if (strcmp (device->val[option].s, (SANE_String)value) == 0)
+            {
+              DBG (DBG_DETAIL, "sane_control_option: option %d (%s) not changed\n",
+                   option, device->opt[option].name);
+              break;
+            }
+          strcpy (device->val[option].s, (SANE_String) value);
+
+          myinfo |= SANE_INFO_RELOAD_PARAMS;
+          myinfo |= SANE_INFO_RELOAD_OPTIONS;
+          DBG (DBG_DETAIL, "sane_control_option: set option %d (%s) to %s\n",
+               option, device->opt[option].name, (SANE_String) value);
+          break;
 
 	default:
 	  DBG (DBG_SERIOUS, "sane_control_option: trying to set unexpected option\n");
@@ -1140,11 +1247,12 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
                  (device->opt[option].unit == SANE_UNIT_DPI ? "dpi" : ""));
             break;
           }
-	case OPT_MODE:		/* String (list) options */
-	  strcpy ((SANE_String)value, device->val[option].s);
-	  DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=`%s'\n",
-	       option, device->opt[option].name, (SANE_String) value);
-	  break;
+        case OPT_MODE:          /* String (list) options */
+        case OPT_SOURCE:
+          strcpy ((SANE_String)value, device->val[option].s);
+          DBG (DBG_DETAIL, "sane_control_option: get option %d (%s), value=`%s'\n",
+               option, device->opt[option].name, (SANE_String) value);
+          break;
 
         case OPT_RESOLUTION:
         case OPT_X_RESOLUTION:
@@ -1273,6 +1381,29 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
         }
     }
 
+
+  /*
+   * Get the source from the option.
+   * Also note if we are doing centered geometry.
+   *
+   */
+  if (strcmp(device->val[OPT_SOURCE].s, SANE_VALUE_SOURCE_FLATBED) == 0)
+    {
+      rc = device->driver->SetSource(BROTHER_SOURCE_FLATBED);
+      if (rc != SANE_STATUS_GOOD)
+        {
+          return rc;
+        }
+    }
+  else if (strcmp(device->val[OPT_SOURCE].s, SANE_VALUE_SOURCE_ADF) == 0)
+    {
+      rc = device->driver->SetSource(BROTHER_SOURCE_ADF);
+      if (rc != SANE_STATUS_GOOD)
+        {
+          return rc;
+        }
+    }
+
   /*
    * Compute the geometry in terms of pixels at the selected resolution.
    * This is how the scanner wants it.
@@ -1289,12 +1420,13 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
    */
 //  pixel_x_width += 16;
 
+  SANE_Int pixel_x_offset = SANE_UNFIX (device->val[OPT_TL_X].w) / MM_IN_INCH * x_res;
+
   SANE_Int pixel_y_height = SANE_UNFIX (device->val[OPT_BR_Y].w -
                                         device->val[OPT_TL_Y].w) / MM_IN_INCH * y_res;
 
-  SANE_Int pixel_x_offset = SANE_UNFIX (device->val[OPT_TL_X].w) / MM_IN_INCH * x_res;
-
   SANE_Int pixel_y_offset = SANE_UNFIX (device->val[OPT_TL_Y].w) / MM_IN_INCH * y_res;
+
 
   params->lines = pixel_y_height;
   params->last_frame = SANE_TRUE;

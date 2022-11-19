@@ -101,28 +101,28 @@ static void test_family4_decode_basic_param_resp()
 static void test_family4_decode_adf_resp()
 {
   DecodeStatus decode_resp;
-  BrotherADFResponse adf_resp;
+  BrotherSourceStatusResponse adf_resp;
 
   BrotherEncoderFamily4 encoder(0);
 
   // SUCCESS status
   const SANE_Byte *data = (const SANE_Byte *)"\xc2";
-  decode_resp = encoder.DecodeADFBlockResp (data, 1, adf_resp);
+  decode_resp = encoder.DecodeSourceStatusBlockResp (data, 1, adf_resp);
 
   ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
-  ASSERT_FALSE(adf_resp.adf_ready);
+  ASSERT_FALSE(adf_resp.source_ready);
 
   data = (const SANE_Byte *)"\x80";
-  decode_resp = encoder.DecodeADFBlockResp (data, 1, adf_resp);
+  decode_resp = encoder.DecodeSourceStatusBlockResp (data, 1, adf_resp);
 
   ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
-  ASSERT_TRUE(adf_resp.adf_ready);
+  ASSERT_TRUE(adf_resp.source_ready);
 
   // Wrong length.
-  decode_resp = encoder.DecodeADFBlockResp (data, 0, adf_resp);
+  decode_resp = encoder.DecodeSourceStatusBlockResp (data, 0, adf_resp);
   ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
 
-  decode_resp = encoder.DecodeADFBlockResp (data, 20, adf_resp);
+  decode_resp = encoder.DecodeSourceStatusBlockResp (data, 20, adf_resp);
   ASSERT_EQ(decode_resp, DECODE_STATUS_ERROR);
 }
 
@@ -376,7 +376,7 @@ static void test_family4_encode_adf()
   BrotherEncoderFamily4 encoder(0);
 
   // Standard call.
-  decode_resp = encoder.EncodeADFBlock (data_buffer, sizeof(data_buffer), &ret_length);
+  decode_resp = encoder.EncodeSourceStatusBlock (data_buffer, sizeof(data_buffer), &ret_length);
 
   ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
 
@@ -387,7 +387,7 @@ static void test_family4_encode_adf()
   }
 
   // Buffer too short.
-  decode_resp = encoder.EncodeADFBlock (data_buffer, 5, &ret_length);
+  decode_resp = encoder.EncodeSourceStatusBlock (data_buffer, 5, &ret_length);
   ASSERT_EQ(decode_resp, DECODE_STATUS_INVAL);
 }
 

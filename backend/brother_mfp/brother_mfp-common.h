@@ -39,19 +39,20 @@
 #define CAP_MODE_GRAY_DITHER            (1u << 2)
 #define CAP_MODE_BW                     (1u << 3)
 
-#define CAP_MODE_BUTTON_SCAN_EMAIL      (1u << 4)
-#define CAP_MODE_BUTTON_SCAN_OCR        (1u << 5)
-#define CAP_MODE_BUTTON_SCAN_FILE       (1u << 6)
-#define CAP_MODE_BUTTON_SCAN_IMAGE      (1u << 7)
+#define CAP_BUTTON_HAS_SCAN_EMAIL       (1u << 4)
+#define CAP_BUTTON_HAS_SCAN_OCR         (1u << 5)
+#define CAP_BUTTON_HAS_SCAN_FILE        (1u << 6)
+#define CAP_BUTTON_HAS_SCAN_IMAGE       (1u << 7)
 
-#define CAP_MODE_HAS_ADF                (1u << 8)
-#define CAP_MODE_HAS_ADF_IS_DUPLEX      (1u << 9)
+#define CAP_SOURCE_HAS_FLATBED          (1u << 8)
+#define CAP_SOURCE_HAS_ADF              (1u << 9)
+#define CAP_SOURCE_HAS_ADF_DUPLEX       (1u << 10)
 
-#define CAP_MODE_HAS_RAW                (1u << 10)
-#define CAP_MODE_HAS_JPEG               (1u << 11)
+#define CAP_ENCODING_HAS_RAW            (1u << 11)
+#define CAP_ENCODING_HAS_JPEG           (1u << 12)
 
 // Oddities of particular models.
-#define CAP_MODE_RAW_IS_CrYCb           (1u << 12)
+#define CAP_ENCODING_RAW_IS_CrYCb       (1u << 13)
 
 /*
  * Diagnostic levels.
