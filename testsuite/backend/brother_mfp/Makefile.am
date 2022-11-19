@@ -23,7 +23,11 @@ brother_mfp_unit_tests_SOURCES = \
 	brother_mfp_tests.cpp \
 	brother_mfp_tests.h	\
 	brother_mfp_tests_family4.cpp \
+	brother_mfp_tests_family3.cpp \
+	brother_mfp_tests_family2.cpp \
 	brother_mfp_tests_gray_rlength.cpp \
+	brother_mfp_tests_colour_int_rgb.cpp \
+	brother_mfp_tests_colour_jpeg.cpp \
 	../genesys/minigtest.cpp
 
 brother_mfp_unit_tests_LDADD = $(TEST_LDADD)

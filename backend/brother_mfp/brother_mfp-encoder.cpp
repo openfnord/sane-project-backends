@@ -35,6 +35,9 @@
 #include <sys/ioctl.h>
 #include <algorithm>
 
+#include <jpeglib.h>
+#include <jerror.h>
+
 #include "../include/sane/sane.h"
 #include "../include/sane/sanei.h"
 #include "../include/sane/saneopts.h"
@@ -189,7 +192,7 @@ DecodeStatus BrotherEncoderFamily2::EncodeQueryBlock (SANE_Byte *data, size_t da
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::EncodeBasicParameterBlock: query block too long for buffer: %zu\n",
+           "BrotherEncoderFamily2::EncodeQueryBlock: query block too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -210,7 +213,7 @@ DecodeStatus BrotherEncoderFamily2::DecodeQueryBlockResp (const SANE_Byte *data,
 
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::DecodeSessionResp: invalid query response block: len = %zu\n",
+           "BrotherEncoderFamily2::DecodeQueryBlockResp: invalid query response block: len = %zu\n",
            data_len);
 
       return DECODE_STATUS_ERROR;
@@ -232,7 +235,7 @@ DecodeStatus BrotherEncoderFamily2::EncodeSourceStatusBlock (SANE_Byte *data, si
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::EncodeBasicParameterBlock: source status too long for buffer: %zu\n",
+           "BrotherEncoderFamily2::EncodeSourceStatusBlock: source status too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -301,7 +304,7 @@ DecodeStatus BrotherEncoderFamily2::DecodeSourceSelectBlockResp (const SANE_Byte
   if (data_len != 1)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source select response invalid: %zu\n",
+           "BrotherEncoderFamily2::DecodeSourceSelectBlockResp: source select response invalid: %zu\n",
            data_len);
       return DECODE_STATUS_ERROR;
     }
@@ -619,11 +622,11 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
             }
 
           ret_status = colour_decoder.DecodeScanData (src_data,
-                                             in_len,
-                                             &bytes_consumed,
-                                             dest_data,
-                                             dest_data_len,
-                                             &bytes_written);
+                                                      in_len,
+                                                      &bytes_consumed,
+                                                      dest_data,
+                                                      dest_data_len,
+                                                      &bytes_written);
         }
       else if (current_header.block_type == BROTHER_DATA_BLOCK_JPEG)
         {
@@ -633,11 +636,11 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
             }
 
           ret_status = jfif_decoder.DecodeScanData (src_data,
-                                             in_len,
-                                             &bytes_consumed,
-                                             dest_data,
-                                             dest_data_len,
-                                             &bytes_written);
+                                                    in_len,
+                                                    &bytes_consumed,
+                                                    dest_data,
+                                                    dest_data_len,
+                                                    &bytes_written);
         }
       else if (current_header.block_type == BROTHER_DATA_BLOCK_GRAY_RLENGTH)
         {
@@ -647,11 +650,11 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
             }
 
           ret_status = gray_decoder.DecodeScanData (src_data,
-                                             in_len,
-                                             &bytes_consumed,
-                                             dest_data,
-                                             dest_data_len,
-                                             &bytes_written);
+                                                    in_len,
+                                                    &bytes_consumed,
+                                                    dest_data,
+                                                    dest_data_len,
+                                                    &bytes_written);
         }
       else if (current_header.block_type == BROTHER_DATA_BLOCK_GRAY_RAW)
         {
@@ -661,11 +664,11 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
             }
 
           ret_status = gray_raw_decoder.DecodeScanData (src_data,
-                                             in_len,
-                                             &bytes_consumed,
-                                             dest_data,
-                                             dest_data_len,
-                                             &bytes_written);
+                                                        in_len,
+                                                        &bytes_consumed,
+                                                        dest_data,
+                                                        dest_data_len,
+                                                        &bytes_written);
         }
       else
         {
@@ -719,11 +722,8 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
         }
     }
 
-//  if (ret_status == DECODE_STATUS_GOOD)
-//    {
-      *src_data_consumed = orig_src_data_len - src_data_len;
-      *dest_data_written = orig_dest_data_len - dest_data_len;
-//    }
+    *src_data_consumed = orig_src_data_len - src_data_len;
+    *dest_data_written = orig_dest_data_len - dest_data_len;
 
   return ret_status;
 }
@@ -915,7 +915,7 @@ DecodeStatus BrotherEncoderFamily3::EncodeSourceStatusBlock (SANE_Byte *data, si
 }
 
 DecodeStatus BrotherEncoderFamily3::DecodeSourceStatusBlockResp (const SANE_Byte *data, size_t data_len,
-                                                        BrotherSourceStatusResponse &response)
+                                                                 BrotherSourceStatusResponse &response)
 {
   if (data_len != 1)
     {
@@ -1080,7 +1080,7 @@ DecodeStatus BrotherEncoderFamily3::EncodeBasicParameterBlock (SANE_Byte *data, 
 
 
 DecodeStatus BrotherEncoderFamily3::DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
-                                                                  BrotherBasicParamResponse &response)
+                                                                   BrotherBasicParamResponse &response)
 {
   /*
    * TODO: Decode this block.
@@ -1095,7 +1095,7 @@ DecodeStatus BrotherEncoderFamily3::DecodeBasicParameterBlockResp (const SANE_By
 }
 
 DecodeStatus BrotherEncoderFamily3::EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len,
-                                                              size_t *length)
+                                                               size_t *length)
 {
   const char *mode_text = ScanModeToText (scan_params.param_scan_mode);
   if (nullptr == mode_text)
@@ -2509,7 +2509,6 @@ DecodeStatus BrotherInterleavedRGBColourDecoder::DecodeScanData (const SANE_Byte
 
   return DECODE_STATUS_GOOD;
 }
-
 
 #include <jpeglib.h>
 #include <jerror.h>

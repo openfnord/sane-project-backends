@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <setjmp.h>
 
 #include <jpeglib.h>
 #include <jerror.h>
@@ -161,7 +162,6 @@ struct BrotherSourceStatusResponse
 {
   SANE_Bool source_ready;
 };
-
 
 
 /*
@@ -312,9 +312,6 @@ protected:
   BrotherParameters scan_params;
 };
 
-#include <setjmp.h>
-
-
 class BrotherJFIFDecoder
 {
 public:
@@ -367,8 +364,8 @@ private:
   static void TermSource(j_decompress_ptr cinfo);
 
   DecodeStatus DecodeScanData_CompressBuffer (const SANE_Byte *src_data, size_t src_data_len,
-                               size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
-                               size_t *dest_data_written);
+                                              size_t *src_data_consumed, SANE_Byte *dst_data,
+                                              size_t dest_data_len, size_t *dest_data_written);
 
   struct CompressionState
   {
@@ -434,8 +431,8 @@ public:
     CHANNELS_CrYCb      // YCrCb
   };
 private:
-  void ConvertYCbCrToRGB (SANE_Byte y, SANE_Byte cb, SANE_Byte cr, SANE_Byte *red, SANE_Byte *green,
-                          SANE_Byte *blue);
+  static void ConvertYCbCrToRGB (SANE_Byte y, SANE_Byte cb, SANE_Byte cr, SANE_Byte *red,
+                                 SANE_Byte *green, SANE_Byte *blue);
 
   BrotherParameters decode_params;
   SANE_Word capabilities;

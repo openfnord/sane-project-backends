@@ -850,6 +850,8 @@ sane_exit (void)
   if (devlist)
     free (devlist);
 
+  sanei_usb_exit();
+
   return;
 }
 

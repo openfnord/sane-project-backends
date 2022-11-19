@@ -29,6 +29,11 @@ int main ()
   DBG_INIT ();
 
   test_family4 ();
+  test_family3 ();
+  test_family2 ();
   test_gray_rlength ();
+  test_colour_int_rgb();
+  test_colour_jpeg();
+
   return finish_tests ();
 }
