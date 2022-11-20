@@ -284,7 +284,9 @@ DecodeStatus BrotherEncoderFamily2::EncodeSourceSelectBlock (SANE_Byte *data, si
   *length = snprintf ((char*) data,
                       data_len,
                       "\x1b" "S\n%s\n" "\x80",
-                      scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF");
+                      scan_params.param_source == BROTHER_SOURCE_AUTO ?
+                          "AUTO" :
+                          (scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF"));
 
   if (*length > data_len)
     {
@@ -956,7 +958,9 @@ DecodeStatus BrotherEncoderFamily3::EncodeSourceSelectBlock (SANE_Byte *data, si
   *length = snprintf ((char*) data,
                       data_len,
                       "\x1b" "S\n%s\n" "\x80",
-                      scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF");
+                      scan_params.param_source == BROTHER_SOURCE_AUTO ?
+                          "AUTO" :
+                          (scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF"));
 
   if (*length > data_len)
     {
@@ -1746,7 +1750,9 @@ DecodeStatus BrotherEncoderFamily4::EncodeSourceSelectBlock (SANE_Byte *data, si
   *length = snprintf ((char*) data,
                       data_len,
                       "\x1b" "S\n%s\n" "\x80",
-                      scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF");
+                      scan_params.param_source == BROTHER_SOURCE_AUTO ?
+                          "AUTO" :
+                          (scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF"));
 
   if (*length > data_len)
     {

@@ -208,39 +208,38 @@ static Brother_Model models[] =
       CAP_ENCODING_HAS_JPEG |
       CAP_SOURCE_HAS_FLATBED},
 
-      { "Brother", "MFC-J4620DW", BROTHER_FAMILY_4, 0x04f9, 0x0340,
-        { 0, SANE_FIX(211.881), 0 },
-        { 0, SANE_FIX(355.567), 0 },
-        { 6, 100, 150, 200, 300, 600, 1200 },
-        { 7, 100, 150, 200, 300, 600, 1200, 2400 },
-        CAP_MODE_COLOUR |
-        CAP_MODE_GRAY |
-        CAP_MODE_GRAY_DITHER |
-        CAP_MODE_BW |
-        CAP_SOURCE_HAS_FLATBED |
-        CAP_SOURCE_HAS_ADF |
-        CAP_BUTTON_HAS_SCAN_EMAIL |
-        CAP_BUTTON_HAS_SCAN_FILE |
-        CAP_BUTTON_HAS_SCAN_OCR |
-        CAP_BUTTON_HAS_SCAN_IMAGE |
-        CAP_ENCODING_HAS_JPEG },
+    { "Brother", "MFC-J4620DW", BROTHER_FAMILY_4, 0x04f9, 0x0340,
+      { 0, SANE_FIX(211.881), 0 },
+      { 0, SANE_FIX(355.567), 0 },
+      { 6, 100, 150, 200, 300, 600, 1200 },
+      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_SOURCE_HAS_FLATBED |
+      CAP_SOURCE_HAS_ADF |
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_ENCODING_HAS_JPEG },
 
-      { "Brother", "ADS-2800W", BROTHER_FAMILY_4, 0x04f9, 0x0340,
-        { 0, SANE_FIX(215.000), 0 },
-        { 0, SANE_FIX(355.000), 0 },
-        { 6, 100, 150, 200, 300, 600 },
-        { 6, 100, 150, 200, 300, 600 },
-        CAP_MODE_COLOUR |
-        CAP_MODE_GRAY |
-        CAP_MODE_GRAY_DITHER |
-        CAP_MODE_BW |
-        CAP_SOURCE_HAS_FLATBED |
-        CAP_SOURCE_HAS_ADF |
-        CAP_BUTTON_HAS_SCAN_EMAIL |
-        CAP_BUTTON_HAS_SCAN_FILE |
-        CAP_BUTTON_HAS_SCAN_OCR |
-        CAP_BUTTON_HAS_SCAN_IMAGE |
-        CAP_ENCODING_HAS_JPEG },
+    { "Brother", "ADS-2800W", BROTHER_FAMILY_4, 0x04f9, 0x03b9,
+      { 0, SANE_FIX(215.000), 0 },
+      { 0, SANE_FIX(355.000), 0 },
+      { 6, 100, 150, 200, 300, 600 },
+      { 6, 100, 150, 200, 300, 600 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_SOURCE_HAS_ADF |
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_ENCODING_HAS_JPEG },
 
     {NULL, NULL, BROTHER_FAMILY_NONE, 0, 0, {0, 0, 0}, {0, 0, 0}, {0}, {0}, 0}
 };
@@ -410,17 +409,15 @@ attach_with_ret (const char *devicename, BrotherDevice **dev)
     {
       device->sources[num_sources++] = SANE_VALUE_SOURCE_FLATBED;
     }
+
   if (model->capabilities & CAP_SOURCE_HAS_ADF)
     {
-      if (model->capabilities & CAP_SOURCE_HAS_ADF_DUPLEX)
-        {
-          device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_SIMPLEX;
-          device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_DUPLEX;
-        }
-      else
-        {
-          device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF;
-        }
+      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF;
+    }
+  else if (model->capabilities & CAP_SOURCE_HAS_ADF_DUPLEX)
+    {
+      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_SIMPLEX;
+      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_DUPLEX;
     }
 
   ++num_devices;
