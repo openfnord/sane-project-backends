@@ -1,0 +1,201 @@
+.TH "sane\-brother_mfp" "5" "20 Nov 2022" "@PACKAGEVERSION@" "SANE Scanner Access Now Easy"
+.IX sane\-brother_mfp
+.SH "NAME"
+sane\-brother_mfp \- SANE backend for Brother Multifunction Printer/Scanners
+.SH "DESCRIPTION"
+The
+.B sane\-brother_mfp
+library implements a SANE (Scanner Access Now Easy) backend that provides
+access to a number of machines by Brother. These are mainly in the DCP and MFC line of multi\-function
+devices, but also include some dedicated scanners in the AD range.
+
+.PP
+The backend should be considered Beta quality at the moment as work is ongoing to decode tha various
+options supported by the machine range.
+
+
+.SH OPTIONS
+
+.TP
+.BR \-\-source
+Selects the scanning method for the device. Valid options vary depending on the capabilities
+of the device. Options available are:
+.IR Flatbed ", " "Automatic Document Feeder" ", " "Automatic Document Feeder (one sided)"
+and
+.IR "Automatic Document Feeder (duplex)" .
+.I Flatbed
+is the default.
+
+.TP
+.BR \-\-mode
+Selects the type of scan to perform. Most devices support:
+.IR "Color" ", " "Gray" ", " "Gray (dithered)"
+and
+.IR "Lineart" .
+.I Color
+is the default.
+
+
+.TP
+.BR \-\-split\-resolution
+When selected, activates the
+.B \-\-x\-resolution
+and
+.B \-\-y\-resolution
+options. This allows different resolutions to be selected for the horizontal and vertical.
+When not selected, then the
+.B \-\-resolution
+option is activated and the same resolution is selected for both.
+
+
+
+.TP
+.BR \-\-resolution
+Selects the resolution for both the horizontal and vertical directions of the scan.
+The parameter is selected from a list of valid values for the device.
+
+
+.TP
+.BR \-\-x\-resolution ", " \-\-y\-resolution
+Selects the individual resolutions for the horizontal and vertical directions of the scan.
+The parameter is selected from a list of valid values for the device for each direction, and different
+ranges for each option may be available.
+
+
+.TP
+.BR \-\-preview
+Selects a resolution for both the x and y direction suitable for previewing.
+The option will select the lowest available resolutions.
+
+
+.TP
+.BR \-\-tl\-x ", " \-\-tl\-y ", " \-\-br\-x ", " \-\-br\-y
+Selects the area to scan. All measurements are in mm and are relative to the top, left hand corner
+of the scan area. The
+.B \-\-tl\-x
+and
+.B \-\-tl\-y
+options specify the coordinates of the top left corner. The
+.B \-\-br\-x
+and
+.B \-\-br\-y
+options specify the coordinates of the bottom right corner.
+The default values cover the maximum scan area for the selected source.
+
+
+.TP
+.BR \-\-brightness
+Alters the brightness of the generated image when
+.I Gray (dithered)
+or
+.I Lineart
+modes are selected. Valid values are between \-50 and +50.
+Default value is 0.
+
+.TP
+.BR \-\-contrast
+Alters the contrast of the generated image when
+.I Gray (dithered)
+or
+.I Lineart
+modes are selected. Valid values are between \-50 and +50.
+Default value is 0.
+
+
+.TP
+.BR \-\-compression
+For devices that offer both raw and compressed (JPEG) scan image delivery, this option
+is used to select which option is desired. If set, then JPEG will be used.
+If not set, then whatever raw, uncompressed option is used.
+The effect of unsetting this option will be to increase the volume of data sent from the
+scanner with a small increase in image quality.
+Default for this option is for it to be set.
+
+
+
+.TP
+.BR \-\-email-sensor ", " \-\-file-sensor ", " \-\-image-sensor ", " \-\-ocr-sensor
+These options provide a readonly capability to sense when a soft scan button is selected on the
+device. Typically, this would be a menu option intended to elicit a specific scanning operation
+by the backend. To use this function, a monitoring daemon would be required such as
+.BR scanbd (8).
+
+If the corresponding operation has been requested on the device, querying this option would
+show that it is set. Once the sensor has been queried, it will be reset on the device so that
+the event can only be sensed once.
+
+
+.SH "CONFIGURATION"
+The contents of the
+.I brother_mfp.conf
+file contains information related to supported devices. Also there is a section to indicate
+the location of network devices than cannot be auto detected.
+
+.SH "FILES"
+.TP
+.I @CONFIGDIR@/brother_mfp.conf
+The backend configuration file (see also description of
+.B SANE_CONFIG_DIR
+below).
+.TP
+.I @LIBDIR@/libsane\-brother_mfp.a
+The static library implementing this backend.
+.TP
+.I @LIBDIR@/libsane\-brother_mfp.so
+The shared library implementing this backend (present on systems that
+support dynamic loading).
+
+.SH "ENVIRONMENT"
+.TP
+.B SANE_CONFIG_DIR
+This environment variable specifies the list of directories that may
+contain the configuration file.  On *NIX systems, the directories are
+separated by a colon (`:'), under OS/2, they are separated by a
+semi-colon (`;').  If this variable is not set, the configuration file
+is searched in two default directories: first, the current working
+directory (".") and then in
+.IR @CONFIGDIR@ .
+If the value of the environment variable ends with the directory separator
+character, then the default directories are searched after the explicitly
+specified directories.  For example, setting
+.B SANE_CONFIG_DIR
+to "/tmp/config:" would result in directories
+.IR tmp/config ,
+.IR . ,
+and
+.I "@CONFIGDIR@"
+being searched (in this order).
+.TP
+.B SANE_DEBUG_BROTHER_MFP
+If the library was compiled with debug support enabled, this environment
+variable controls the debug level for this backend. Valid values are 1 (IMPORTANT),
+2 (SERIOUS), 3 (WARNINGS), 5 (DETAIL) and 6 (DEBUG). Selecting 5 or 6 will generate
+a large amount of output.
+
+
+.SH CREDITS
+
+.TP
+.I David R Roberts, GitHub user “davidar”
+For his analysis of another Brother machine, which has led to me
+getting a good head start on this process and for inspiring me to write this backend.
+
+.TP
+.I Various GitLab users
+For their help in checkout out models of devices that I do not have access to and patiently
+making PCAP captures and diag log output for me to look at!
+
+
+.SH "SEE ALSO"
+.BR sane (7),
+.BR sane\-usb (5),
+.BR scanbd (8)
+.br
+
+
+.SH "AUTHOR"
+Ralph Little
+.RI < skelband@gmail.com >
+
+.SH "BUGS"
+There are no specific bugs to report for this backend.
