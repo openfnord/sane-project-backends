@@ -237,7 +237,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=100,100\nM=CGRAY\nC=JPEG\nJ=MID\n"
                             "B=50\nN=50\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp(test_ret, data_buffer, sizeof(test_ret)), 0);
   }
@@ -252,7 +252,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=CGRAY\nC=JPEG\nJ=MID\n"
                             "B=50\nN=50\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp(test_ret, data_buffer, sizeof(test_ret)), 0);
   }
@@ -267,7 +267,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=GRAY64\nC=RLENGTH\n"
                             "B=50\nN=50\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
@@ -281,7 +281,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=CGRAY\nC=JPEG\nJ=MID\n"
                             "B=50\nN=50\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
@@ -295,7 +295,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=ERRDIF\nC=RLENGTH\n"
                             "B=50\nN=50\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
@@ -309,7 +309,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
                             "B=50\nN=50\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
@@ -324,7 +324,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
                             "B=30\nN=20\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
@@ -338,7 +338,7 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
                             "B=100\nN=90\nA=0,0,0,0\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
@@ -352,7 +352,22 @@ static void test_family4_encode_param()
   {
     const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
                             "B=100\nN=90\nA=0,50,10,150\nS=NORMAL_SCAN\nP=0\n"
-                            "G=0\nL=0\n" "\x80";
+                            "G=0\nL=0\nD=SIN\n" "\x80";
+    ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
+    ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
+  }
+
+  // Duplex ADF
+  encoder.SetScanDimensions (0, 10, 50, 100);
+  encoder.SetSource (BROTHER_SOURCE_ADF_DUPLEX);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
+
+  {
+    const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
+                            "B=100\nN=90\nA=0,50,10,150\nS=NORMAL_SCAN\nP=0\n"
+                            "G=0\nL=0\nD=DUP\n" "\x80";
     ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }

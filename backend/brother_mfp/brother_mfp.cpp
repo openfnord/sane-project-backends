@@ -57,6 +57,8 @@
 
 #define SANE_VALUE_SOURCE_FLATBED             SANE_I18N("Flatbed")
 #define SANE_VALUE_SOURCE_ADF                 SANE_I18N("Automatic Document Feeder")
+#define SANE_VALUE_SOURCE_ADF_SIMPLEX         SANE_I18N("Automatic Document Feeder (one sided)")
+#define SANE_VALUE_SOURCE_ADF_DUPLEX          SANE_I18N("Automatic Document Feeder (duplex)")
 
 #define SANE_NAME_FILE_BUTTON                "file-sensor"
 #define SANE_NAME_EMAIL_BUTTON               "email-sensor"
@@ -410,7 +412,15 @@ attach_with_ret (const char *devicename, BrotherDevice **dev)
     }
   if (model->capabilities & CAP_SOURCE_HAS_ADF)
     {
-      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF;
+      if (model->capabilities & CAP_SOURCE_HAS_ADF_DUPLEX)
+        {
+          device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_SIMPLEX;
+          device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_DUPLEX;
+        }
+      else
+        {
+          device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF;
+        }
     }
 
   ++num_devices;
@@ -1397,9 +1407,18 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
           return rc;
         }
     }
-  else if (strcmp(device->val[OPT_SOURCE].s, SANE_VALUE_SOURCE_ADF) == 0)
+  else if ((strcmp (device->val[OPT_SOURCE].s, SANE_VALUE_SOURCE_ADF) == 0)
+      || (strcmp (device->val[OPT_SOURCE].s, SANE_VALUE_SOURCE_ADF) == 0))
     {
       rc = device->driver->SetSource(BROTHER_SOURCE_ADF);
+      if (rc != SANE_STATUS_GOOD)
+        {
+          return rc;
+        }
+    }
+  else if (strcmp(device->val[OPT_SOURCE].s, SANE_VALUE_SOURCE_ADF_DUPLEX) == 0)
+    {
+      rc = device->driver->SetSource(BROTHER_SOURCE_ADF_DUPLEX);
       if (rc != SANE_STATUS_GOOD)
         {
           return rc;

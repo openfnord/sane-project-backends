@@ -88,6 +88,7 @@ typedef enum
 {
   BROTHER_SOURCE_FLATBED,
   BROTHER_SOURCE_ADF,
+  BROTHER_SOURCE_ADF_DUPLEX,
 } BrotherSource;
 
 typedef SANE_Int BrotherSensor;

@@ -466,7 +466,7 @@ DecodeStatus BrotherEncoderFamily2::EncodeParameterBlock (SANE_Byte *data, size_
                       "%s\n"
                       "B=%u\nN=%u\n"
                       "A=%u,%u,%u,%u\n"
-                      "D=SIN\n"
+                      "D=%s\n"
                       "\x80",
                       (unsigned int) scan_params.param_x_res,
                       (unsigned int) scan_params.param_y_res,
@@ -481,7 +481,8 @@ DecodeStatus BrotherEncoderFamily2::EncodeParameterBlock (SANE_Byte *data, size_
                       (unsigned int) (scan_params.param_pixel_x_offset
                           + scan_params.param_pixel_x_width),
                       (unsigned int) (scan_params.param_pixel_y_offset
-                          + scan_params.param_pixel_y_height));
+                          + scan_params.param_pixel_y_height),
+                      scan_params.param_source == BROTHER_SOURCE_ADF_DUPLEX? "DUP": "SIN");
 
   if (*length > data_len)
     {
@@ -1137,7 +1138,7 @@ DecodeStatus BrotherEncoderFamily3::EncodeParameterBlock (SANE_Byte *data, size_
                       "%s\n"
                       "B=%u\nN=%u\n"
                       "A=%u,%u,%u,%u\n"
-                      "D=SIN\n"
+                      "D=%s\n"
                       "\x80",
                       (unsigned int) scan_params.param_x_res,
                       (unsigned int) scan_params.param_y_res,
@@ -1152,7 +1153,8 @@ DecodeStatus BrotherEncoderFamily3::EncodeParameterBlock (SANE_Byte *data, size_
                       (unsigned int) (scan_params.param_pixel_x_offset
                           + scan_params.param_pixel_x_width),
                       (unsigned int) (scan_params.param_pixel_y_offset
-                          + scan_params.param_pixel_y_height));
+                          + scan_params.param_pixel_y_height),
+                      scan_params.param_source == BROTHER_SOURCE_ADF_DUPLEX ? "DUP" : "SIN");
 
   if (*length > data_len)
     {
@@ -1834,6 +1836,7 @@ DecodeStatus BrotherEncoderFamily4::EncodeParameterBlock (SANE_Byte *data, size_
                       "A=%u,%u,%u,%u\n"
                       "S=NORMAL_SCAN\n"
                       "P=0\nG=0\nL=0\n"
+                      "D=%s\n"
                       "\x80",
                       (unsigned int) scan_params.param_x_res,
                       (unsigned int) scan_params.param_y_res,
@@ -1847,7 +1850,8 @@ DecodeStatus BrotherEncoderFamily4::EncodeParameterBlock (SANE_Byte *data, size_
                       (unsigned int) (scan_params.param_pixel_x_offset
                           + scan_params.param_pixel_x_width),
                       (unsigned int) (scan_params.param_pixel_y_offset
-                          + scan_params.param_pixel_y_height));
+                          + scan_params.param_pixel_y_height),
+                      scan_params.param_source == BROTHER_SOURCE_ADF_DUPLEX ? "DUP" : "SIN");
 
   if (*length > data_len)
     {

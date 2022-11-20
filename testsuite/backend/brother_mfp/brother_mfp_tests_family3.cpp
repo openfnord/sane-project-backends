@@ -348,6 +348,20 @@ static void test_family3_encode_param()
     ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
   }
 
+  // ADF duplex
+  encoder.SetScanDimensions (0, 10, 50, 100);
+  encoder.SetSource(BROTHER_SOURCE_ADF_DUPLEX);
+  decode_resp = encoder.EncodeParameterBlock (data_buffer, sizeof(data_buffer), &ret_length);
+
+  ASSERT_EQ(decode_resp, DECODE_STATUS_GOOD);
+
+  {
+    const char test_ret[] = "\x1b" "X\nR=200,300\nM=TEXT\nC=RLENGTH\n"
+                            "B=100\nN=90\nA=0,50,10,150\nD=DUP\n" "\x80";
+    ASSERT_EQ(ret_length, sizeof(test_ret) - 1);
+    ASSERT_EQ(memcmp (test_ret, data_buffer, sizeof(test_ret) - 1), 0);
+  }
+
   // Buffer too short.
   decode_resp = encoder.EncodeParameterBlock (data_buffer, 15, &ret_length);
 
