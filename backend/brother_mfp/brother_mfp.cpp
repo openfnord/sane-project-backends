@@ -241,6 +241,22 @@ static Brother_Model models[] =
       CAP_BUTTON_HAS_SCAN_IMAGE |
       CAP_ENCODING_HAS_JPEG },
 
+    { "Brother", "DCP-1610W", BROTHER_FAMILY_4, 0x04f9, 0x035b,
+      { 0, SANE_FIX(211.5), 0 },
+      { 0, SANE_FIX(297), 0 },
+      { 6, 100, 150, 200, 300, 600, 1200 },
+      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_SOURCE_HAS_FLATBED |
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_ENCODING_HAS_JPEG },
+
     {NULL, NULL, BROTHER_FAMILY_NONE, 0, 0, {0, 0, 0}, {0, 0, 0}, {0}, {0}, 0}
 };
 
@@ -291,7 +307,11 @@ static SANE_Device **devlist = NULL;
 static const SANE_Range constraint_brightness_contrast = { -50, +50, 1 };
 
 
-
+enum BrotherDeviceCommsType
+{
+  BROTHER_DEVICE_COMMS_TYPE_USB,
+  BROTHER_DEVICE_COMMS_TYPE_NETWORK,
+};
 
 static SANE_Status
 attach_with_ret (const char *devicename, BrotherDevice **dev)
@@ -432,7 +452,115 @@ attach_with_ret (const char *devicename, BrotherDevice **dev)
   return SANE_STATUS_GOOD;
 }
 
-
+//
+//
+//static SANE_Status
+//attach_with_ret_network (const char *devicename, Brother_Model *model, BrotherDevice **dev)
+//{
+//  BrotherDevice *device;
+//  SANE_Status status;
+//
+//  DBG (DBG_EVENT, "attach_with_ret_network: %s\n", devicename);
+//
+//  /*
+//   * See if we already know about the device.
+//   *
+//   */
+//  for (device = first_dev; device; device = device->next)
+//    {
+//      if (strcmp (device->sane_device.name, devicename) == 0)
+//        {
+//          if (dev)
+//            {
+//              *dev = device;
+//            }
+//          return SANE_STATUS_GOOD;
+//        }
+//    }
+//
+//  /*
+//   * Create a new entry for this device.
+//   *
+//   */
+//  device = new BrotherDevice;
+//  if (!device)
+//    {
+//      DBG (DBG_SERIOUS, "attach_with_ret_network: failed to allocate device entry %zu\n", sizeof(*device));
+//      return SANE_STATUS_NO_MEM;
+//    }
+//
+//  device->name = strdup (devicename);
+//  device->sane_device.name = device->name;
+//  device->sane_device.vendor = "BROTHER";
+//  device->sane_device.model = model->model;
+//  device->sane_device.type = "multi-function peripheral";
+//  device->model = model;
+//
+//  /*
+//   * Generate a driver for this device.
+//   *
+//   */
+//  device->driver = new BrotherNetworkDriver(devicename, model->family, model->capabilities);
+//  if (nullptr == device->driver)
+//    {
+//      DBG (DBG_SERIOUS, "attach_with_ret_network: failed to create Brother driver: %s\n", devicename);
+//      return SANE_STATUS_NO_MEM;
+//    }
+//
+//  /*
+//   * Create the modes list.
+//   *
+//   */
+//  size_t num_modes = 0;
+//  if (model->capabilities & CAP_MODE_COLOUR)
+//    {
+//      device->modes[num_modes++] = SANE_VALUE_SCAN_MODE_COLOR;
+//    }
+//  if (model->capabilities & CAP_MODE_GRAY)
+//    {
+//      device->modes[num_modes++] = SANE_VALUE_SCAN_MODE_GRAY;
+//    }
+//  if (model->capabilities & CAP_MODE_GRAY_DITHER)
+//    {
+//      device->modes[num_modes++] = SANE_VALUE_SCAN_MODE_GRAY_DITHER;
+//    }
+//  if (model->capabilities & CAP_MODE_BW)
+//    {
+//      device->modes[num_modes++] = SANE_VALUE_SCAN_MODE_LINEART;
+//    }
+//
+//  /*
+//   * Create the sources list.
+//   *
+//   */
+//  size_t num_sources = 0;
+//  if (model->capabilities & CAP_SOURCE_HAS_FLATBED)
+//    {
+//      device->sources[num_sources++] = SANE_VALUE_SOURCE_FLATBED;
+//    }
+//
+//  if (model->capabilities & CAP_SOURCE_HAS_ADF)
+//    {
+//      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF;
+//    }
+//  else if (model->capabilities & CAP_SOURCE_HAS_ADF_DUPLEX)
+//    {
+//      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_SIMPLEX;
+//      device->sources[num_sources++] = SANE_VALUE_SOURCE_ADF_DUPLEX;
+//    }
+//
+//  ++num_devices;
+//  device->next = first_dev;
+//  first_dev = device;
+//
+//  if (dev)
+//    {
+//      *dev = device;
+//    }
+//
+//  return SANE_STATUS_GOOD;
+//}
+//
 
 static SANE_Status
 attach_with_no_ret (const char *devicename)
@@ -835,6 +963,19 @@ SANE_Status sane_init (SANE_Int * version_code, SANE_Auth_Callback authorize)
 
       sanei_usb_find_devices (model->usb_vendor, model->usb_product, attach_with_no_ret);
     }
+
+  /*
+   * Probe for network devices.
+   *
+   */
+#if 0
+  BrotherDevice *device;
+  attach_with_ret_network ("NetworkDevice", &models[0], &device);
+#endif
+
+
+
+
 
   return SANE_STATUS_GOOD;
 }

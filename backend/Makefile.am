@@ -383,13 +383,14 @@ EXTRA_DIST += bh.conf.in
 
 
 libbrother_mfp_la_SOURCES = \
-        brother_mfp/brother_mfp-driver.cpp \
+        brother_mfp/brother_mfp-driver_usb.cpp \
+        brother_mfp/brother_mfp-driver_network.cpp \
 		brother_mfp/brother_mfp-driver.h \
 		brother_mfp/brother_mfp-common.h \
 		brother_mfp/brother_mfp-encoder.cpp \
 		brother_mfp/brother_mfp-encoder.h \
 		brother_mfp/brother_mfp.cpp
-libbrother_mfp_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=brother_mfp
+libbrother_mfp_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=brother_mfp $(SNMP_CFLAGS)
 
 nodist_libsane_brother_mfp_la_SOURCES = brother_mfp-s.cpp
 libsane_brother_mfp_la_CPPFLAGS = $(AM_CPPFLAGS) -DBACKEND_NAME=brother_mfp
@@ -400,7 +401,7 @@ libsane_brother_mfp_la_LIBADD = $(COMMON_LIBS) libbrother_mfp.la \
     ../sanei/sanei_usb.lo \
     ../sanei/sanei_config.lo \
     sane_strstatus.lo \
-    $(USB_LIBS) $(JPEG_LIBS)
+    $(USB_LIBS) $(JPEG_LIBS) $(SNMP_LIBS)
 EXTRA_DIST += brother_mfp.conf.in
 
 

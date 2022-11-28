@@ -169,7 +169,7 @@ being searched (in this order).
 .B SANE_DEBUG_BROTHER_MFP
 If the library was compiled with debug support enabled, this environment
 variable controls the debug level for this backend. Valid values are 1 (IMPORTANT),
-2 (SERIOUS), 3 (WARNINGS), 5 (DETAIL) and 6 (DEBUG). Selecting 5 or 6 will generate
+2 (SERIOUS), 3 (WARNINGS), 4 (EVENT), 5 (DETAIL) and 6 (DEBUG). Selecting 5 or 6 will generate
 a large amount of output.
 
 
@@ -182,7 +182,7 @@ getting a good head start on this process and for inspiring me to write this bac
 
 .TP
 .I Various GitLab users
-For their help in checkout out models of devices that I do not have access to and patiently
+For their help in checking out models of devices that I do not have access to and patiently
 making PCAP captures and diag log output for me to look at!
 
 

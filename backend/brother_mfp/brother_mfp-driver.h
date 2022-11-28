@@ -145,8 +145,6 @@ public:
   }
 
 protected:
-  static const char *ScanModeToText(BrotherScanMode scan_mode);
-
   BrotherFamily family;
   SANE_Word capabilities;
   BrotherEncoder *encoder;
@@ -195,5 +193,50 @@ private:
   size_t data_buffer_bytes;
 
   bool out_of_docs;
+
+};
+
+class BrotherNetworkDriver : public BrotherDriver
+{
+public:
+  BrotherNetworkDriver (const char *devicename, BrotherFamily family, SANE_Word capabilities);
+
+  ~BrotherNetworkDriver ();
+
+  SANE_Status Connect () override;
+
+  SANE_Status Disconnect () override;
+
+  SANE_Status StartScan () override;
+
+  SANE_Status CancelScan () override;
+
+  SANE_Status CheckSensor(BrotherSensor &status) override;
+
+  SANE_Status ReadScanData (SANE_Byte *data, size_t data_len,
+                            size_t *bytes_read) override;
+
+private:
+  SANE_Status Init ();
+
+  SANE_Status SNMPRegisterButtons ();
+
+//  SANE_Status PollForReadFlush (useconds_t max_time);
+//  SANE_Status PollForRead (SANE_Byte *buffer, size_t *buf_len,
+//                           useconds_t *max_time);
+  bool is_open;
+  bool in_session;
+  bool is_scanning;
+  bool was_cancelled;
+  char *devicename;
+  SANE_Int next_frame_number;
+
+  SANE_Byte small_buffer[1024];
+  SANE_Byte *data_buffer;
+  size_t data_buffer_bytes;
+
+  bool out_of_docs;
+
+  int sockfd;
 
 };
