@@ -160,18 +160,58 @@ static void mark_all_button_options_cached ( struct pixma_sane_t * ss )
 }
 
 static SANE_Status config_attach_pixma(SANEI_Config __sane_unused__ * config,
-				       const char *devname,
+				       const char *line,
 				       void __sane_unused__ *data)
 {
   int i;
-  for (i=0; i < (MAX_CONF_DEVICES -1); i++)
-    {
-      if(conf_devices[i] == NULL)
-        {
-          conf_devices[i] = strdup(devname);
-          return SANE_STATUS_GOOD;
-        }
+  if (*line == '#') return SANE_STATUS_GOOD;
+  if (strncmp(line, "device", 6) == 0) {
+    char *name_str = NULL;
+    char *model_str = NULL;
+    char *pid_str = NULL;
+    char *dpi_str = NULL;
+    char *capacity_str = NULL;
+    // # DEVICE NAME MODEL PID DPI CAPACITE
+    PDBG (pixma_dbg (3, "New define pixma description (%s)\n", line));
+    line = sanei_config_get_string(line + 6, &name_str);
+    if (!name_str || !*name_str) {
+        PDBG (pixma_dbg (3, "Pixma name missing.\n"));
+        return SANE_STATUS_INVAL;
     }
+    PDBG (pixma_dbg (3, "Pixma name is [%s].\n", name_str));
+    line = sanei_config_get_string(line, &model_str);
+    if (!model_str || !*model_str) {
+        PDBG (pixma_dbg (3, "Pixma model missing.\n"));
+        return SANE_STATUS_INVAL;
+    }
+    PDBG (pixma_dbg (3, "Pixma model is [%s].\n", model_str));
+    line = sanei_config_get_string(line, &pid_str);
+    if (!pid_str || !*pid_str) {
+        PDBG (pixma_dbg (3, "Pixma usbid missig.\n"));
+        return SANE_STATUS_INVAL;
+    }
+    PDBG (pixma_dbg (3, "Pixma pid is [%s].\n", pid_str));
+    line = sanei_config_get_string(line, &dpi_str);
+    if (!dpi_str || !*dpi_str) {
+        PDBG (pixma_dbg (3, "Pixma dpi missig.\n"));
+        return SANE_STATUS_INVAL;
+    }
+    PDBG (pixma_dbg (3, "Pixma dpi is [%s].\n", dpi_str));
+    line = sanei_config_get_string(line, &capacity_str);
+    if (!capacity_str || !*capacity_str) {
+        PDBG (pixma_dbg (3, "Pixma capacity missig.\n"));
+        return SANE_STATUS_INVAL;
+    }
+    PDBG (pixma_dbg (3, "Pixma capacity is [%s].\n", capacity_str));
+  }
+  else {
+    for (i=0; i < (MAX_CONF_DEVICES -1); i++) {
+      if (conf_devices[i] == NULL) {
+        conf_devices[i] = strdup(line);
+        return SANE_STATUS_GOOD;
+      }
+    }
+  }
   return SANE_STATUS_INVAL;
 }
 

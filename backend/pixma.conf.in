@@ -30,3 +30,6 @@
 #
 # Example using for a scanner using mfnp including the optional timeout:
 # mfnp://scanner.bad-network.org/timeout=1500
+
+# device NAME MODEL PID DPI CAPACITE
+# device "Canon PIXMA TS2600 Series" "TS2600" 0x1107 600 PIXMA_CAP_CIS
