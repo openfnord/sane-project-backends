@@ -1353,3 +1353,14 @@ clean:
   return status;
 }
 #endif
+
+void
+pixma_add_custom_device (const char *name,
+                         const char *model,
+                         const char *pid,
+                         const char *dpi,
+                         const char *capacity)
+{
+
+
+}
