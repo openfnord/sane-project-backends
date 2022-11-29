@@ -207,7 +207,6 @@ int pixma_map_status_errno (unsigned status);
 #if defined(HAVE_LIBXML2)
 int pixma_parse_xml_response(const char *xml_message);
 #endif
-void pixma_add_custom_device (const char *, const char *, const char *, const char *, const char *);
 /**@}*/
 
 #define pixma_fill_checksum(start, end) do {		\

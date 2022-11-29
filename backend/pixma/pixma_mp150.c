@@ -464,6 +464,9 @@ typedef struct mp150_t
    u8[ILEN]   image data
  */
 
+pixma_config_t *pixma_custom_mp150_devices = NULL;
+int pixma_custom_mp150_devices_count = 0;
+
 static void mp150_finish_scan (pixma_t * s);
 
 static int
@@ -1968,3 +1971,75 @@ const pixma_config_t pixma_mp150_devices[] = {
 
   END_OF_DEVICE_LIST
 };
+
+const char *ccaps [] = {"PIXMA_CAP_EASY_RGB",
+                        "PIXMA_CAP_GRAY",
+                        "PIXMA_CAP_ADF",
+                        "PIXMA_CAP_48BIT",
+                        "PIXMA_CAP_GAMMA_TABLE",
+                        "PIXMA_CAP_EVENTS",
+                        "PIXMA_CAP_TPU",
+                        "PIXMA_CAP_ADFDUP",
+                        "PIXMA_CAP_CIS",
+                        "PIXMA_CAP_CCD",
+                        "PIXMA_CAP_LINEART",
+                        "PIXMA_CAP_NEGATIVE",
+                        "PIXMA_CAP_TPUIR",
+                        "PIXMA_CAP_ADF_WAIT",
+                        "PIXMA_CAP_ADF_JPEG",
+                        "PIXMA_CAP_JPEG",
+                        "PIXMA_CAP_GT_4096",
+                        NULL
+                      };
+
+const unsigned ucaps [] = {PIXMA_CAP_EASY_RGB,
+                           PIXMA_CAP_GRAY,
+                           PIXMA_CAP_ADF,
+                           PIXMA_CAP_48BIT,
+                           PIXMA_CAP_GAMMA_TABLE,
+                           PIXMA_CAP_EVENTS,
+                           PIXMA_CAP_TPU,
+                           PIXMA_CAP_ADFDUP,
+                           PIXMA_CAP_CIS,
+                           PIXMA_CAP_CCD,
+                           PIXMA_CAP_LINEART,
+                           PIXMA_CAP_NEGATIVE,
+                           PIXMA_CAP_TPUIR,
+                           PIXMA_CAP_ADF_WAIT,
+                           PIXMA_CAP_ADF_JPEG,
+                           PIXMA_CAP_JPEG,
+                           PIXMA_CAP_GT_4096
+                      };
+
+void
+pixma_add_custom_mp150_device (const char *name,
+                               const char *model,
+                               const char *pid,
+                               const char *dpi,
+                               const char *capacity)
+{
+   int ddpi = 0;
+   uint16_t ppid = 0;
+   unsigned caps = 0;
+   int lcaps = 0;
+
+   if (pixma_custom_mp150_devices_count == 0) {
+      pixma_custom_mp150_devices = (pixma_config_t *)calloc (2, sizeof(pixma_config_t));
+   } else {
+      pixma_custom_mp150_devices = realloc (pixma_custom_mp150_devices, sizeof(pixma_config_t) * (pixma_custom_mp150_devices_count + 2));
+   }
+
+   while (ccaps[lcaps] != NULL) {
+       if(strstr(capacity, ccaps[lcaps]) != NULL) {
+	  caps = caps | ucaps[lcaps];
+       }
+   }
+
+   ddpi = atoi(dpi);
+   ppid = (uint16_t)strtoll(pid, NULL, 16);
+   pixma_config_t elem = DEVICE (name, model, ppid, 0, ddpi, 0, 0, 638, 877, caps);
+   pixma_custom_mp150_devices[pixma_custom_mp150_devices_count] = elem;
+   pixma_config_t noelem = END_OF_DEVICE_LIST;
+   pixma_custom_mp150_devices[(pixma_custom_mp150_devices_count + 1)] = noelem;
+   pixma_custom_mp150_devices_count++;
+}

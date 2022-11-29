@@ -74,6 +74,8 @@ extern const pixma_config_t pixma_mp750_devices[];
 extern const pixma_config_t pixma_mp730_devices[];
 extern const pixma_config_t pixma_mp800_devices[];
 extern const pixma_config_t pixma_iclass_devices[];
+extern pixma_config_t *pixma_custom_mp150_devices;
+extern int pixma_custom_mp150_devices_count;
 
 static const pixma_config_t *const pixma_devices[] = {
   pixma_mp150_devices,
@@ -1223,6 +1225,15 @@ pixma_fill_gamma_table (double gamma, uint8_t * table, unsigned n)
 int
 pixma_find_scanners (const char **conf_devices, SANE_Bool local_only)
 {
+  if (pixma_custom_mp150_devices_count > 0) {
+      int i = 0;
+      const pixma_config_t **pixma_devices_all = (const pixma_config_t **)calloc(7, sizeof(pixma_config_t *));
+      for (i = 0; i < 6; i++)
+           pixma_devices_all[i] = pixma_devices[i];
+      pixma_devices_all[5] = pixma_custom_mp150_devices;
+      pixma_devices_all[6] = NULL;
+      return pixma_collect_devices (conf_devices, pixma_devices_all, local_only);
+  }
   return pixma_collect_devices (conf_devices, pixma_devices, local_only);
 }
 
@@ -1353,14 +1364,3 @@ clean:
   return status;
 }
 #endif
-
-void
-pixma_add_custom_device (const char *name,
-                         const char *model,
-                         const char *pid,
-                         const char *dpi,
-                         const char *capacity)
-{
-
-
-}
