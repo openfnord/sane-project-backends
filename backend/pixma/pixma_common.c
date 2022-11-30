@@ -1232,10 +1232,10 @@ pixma_find_scanners (const char **conf_devices, SANE_Bool local_only)
            pixma_devices_all[i] = pixma_devices[i];
       pixma_devices_all[5] = pixma_custom_mp150_devices;
       pixma_devices_all[6] = NULL;
-      PDBG (pixma_dbg (3, "(%s) Add custom devices in pixma_devices\n", __FUNCTION__));
+      PDBG (pixma_dbg (3, "Add custom devices in pixma_devices\n"));
       return pixma_collect_devices (conf_devices, pixma_devices_all, local_only);
   }
-  PDBG (pixma_dbg (3, "(%s) No  custom devices in pixma_devices\n", __FUNCTION__));
+  PDBG (pixma_dbg (3, "No  custom devices in pixma_devices\n"));
   return pixma_collect_devices (conf_devices, pixma_devices, local_only);
 }
 
