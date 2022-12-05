@@ -206,6 +206,7 @@ static SANE_Status config_attach_pixma(SANEI_Config __sane_unused__ * config,
     }
     PDBG (pixma_dbg (3, "Pixma capacity is [%s].\n", capacity_str));
     pixma_add_custom_mp150_device (name_str, model_str, pid_str, dpi_str, capacity_str);
+    return SANE_STATUS_GOOD;
   }
   else {
     for (i=0; i < (MAX_CONF_DEVICES -1); i++) {
