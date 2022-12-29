@@ -86,6 +86,7 @@ typedef enum
 
 typedef enum
 {
+  BROTHER_SOURCE_NONE,
   BROTHER_SOURCE_AUTO,
   BROTHER_SOURCE_FLATBED,
   BROTHER_SOURCE_ADF,
@@ -191,11 +192,13 @@ struct ScanDataHeader
 {
   ScanDataHeader():
     block_type(0),
-    block_len(0)
+    block_len(0),
+    image_number(0)
   {
   }
   SANE_Byte block_type;
   size_t block_len;
+  SANE_Int image_number;
 };
 
 class BrotherEncoder
@@ -266,7 +269,7 @@ public:
   }
 
 
-  static const char* ScanModeToText (BrotherScanMode scan_mode);
+  virtual const char* ScanModeToText (BrotherScanMode scan_mode);
 
   // Buttons.
   virtual DecodeStatus DecodeSessionResp (const SANE_Byte *data, size_t data_len,
@@ -406,7 +409,7 @@ private:
 class BrotherInterleavedRGBColourDecoder
 {
 public:
-  BrotherInterleavedRGBColourDecoder(SANE_Word capabilities):
+  explicit BrotherInterleavedRGBColourDecoder(SANE_Word capabilities):
     capabilities(capabilities),
     scanline_buffer(nullptr),
     scanline_buffer_size(0),
@@ -467,7 +470,7 @@ private:
 class BrotherEncoderFamily2 : public BrotherEncoder
 {
 public:
-  BrotherEncoderFamily2(SANE_Word capabilities):
+  explicit BrotherEncoderFamily2(SANE_Word capabilities):
     colour_decoder(capabilities)
   {
   }
@@ -540,7 +543,7 @@ private:
 class BrotherEncoderFamily3 : public BrotherEncoder
 {
 public:
-  BrotherEncoderFamily3(SANE_Word capabilities):
+  explicit BrotherEncoderFamily3(SANE_Word capabilities):
     colour_decoder(capabilities)
   {
   }
@@ -613,7 +616,7 @@ private:
 class BrotherEncoderFamily4 : public BrotherEncoder
 {
 public:
-  BrotherEncoderFamily4(SANE_Word capabilities)
+  explicit BrotherEncoderFamily4(SANE_Word capabilities)
   {
     (void)capabilities;
   }
@@ -679,4 +682,75 @@ private:
   BrotherJFIFDecoder jfif_decoder;
   BrotherGrayRLengthDecoder gray_decoder;
   BrotherGrayRawDecoder gray_raw_decoder;
+};
+
+class BrotherEncoderFamily5 : public BrotherEncoder
+{
+public:
+  explicit BrotherEncoderFamily5(SANE_Word capabilities)
+  {
+    (void)capabilities;
+  }
+
+  ~BrotherEncoderFamily5 ()
+  {
+  }
+
+  void NewPage() override
+  {
+    current_header.block_type = 0;
+
+    jfif_decoder.NewPage(scan_params);
+    gray_decoder.NewPage (scan_params);
+  }
+
+  const char* ScanModeToText (BrotherScanMode scan_mode) override;
+
+  DecodeStatus EncodeQueryBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+
+  DecodeStatus DecodeQueryBlockResp (const SANE_Byte *data, size_t data_len,
+                                     BrotherQueryResponse &response) override;
+
+  DecodeStatus DecodeSessionResp (const SANE_Byte *data, size_t data_len,
+                                  BrotherSessionResponse &response) override;
+
+  DecodeStatus EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
+
+  DecodeStatus DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
+                                              BrotherBasicParamResponse &response) override;
+
+  DecodeStatus EncodeSourceStatusBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+
+  DecodeStatus DecodeSourceStatusBlockResp (const SANE_Byte *data, size_t data_len,
+                                            BrotherSourceStatusResponse &response) override;
+
+  DecodeStatus EncodeSourceSelectBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+
+  DecodeStatus DecodeSourceSelectBlockResp (const SANE_Byte *data, size_t data_len,
+                                            BrotherSourceStatusResponse &response) override;
+
+  DecodeStatus EncodeParameterBlock (SANE_Byte *data, size_t data_len, size_t *length) override;
+
+  DecodeStatus EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len, size_t *length)
+      override;
+
+  DecodeStatus DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
+                               size_t *src_data_consumed, SANE_Byte *dst_data, size_t dest_data_len,
+                               size_t *dest_data_written) override;
+
+  DecodeStatus DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonQueryResponse &response) override;
+
+  DecodeStatus DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
+                                      BrotherButtonStateResponse &response) override;
+
+private:
+  DecodeStatus DecodeScanDataHeader (const SANE_Byte *src_data, size_t src_data_len,
+                                     size_t *src_data_consumed, ScanDataHeader &header);
+
+  ScanDataHeader current_header;
+
+  BrotherJFIFDecoder jfif_decoder;
+  BrotherGrayRLengthDecoder gray_decoder;
 };

@@ -64,6 +64,12 @@ SANE_Status BrotherUSBDriver::Connect ()
 
   DBG (DBG_EVENT, "BrotherUSBDriver::Connect: `%s'\n", devicename);
 
+  if (!encoder)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::Connect: no encoder\n");
+      return SANE_STATUS_UNSUPPORTED;
+    }
+
   if (is_open)
     {
       DBG (DBG_WARN, "BrotherUSBDriver::Connect: already open `%s'\n",
@@ -138,6 +144,12 @@ SANE_Status BrotherUSBDriver::Disconnect ()
 {
   DBG (DBG_EVENT, "BrotherUSBDriver::Disconnect: `%s'\n", devicename);
 
+  if (!encoder)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::Disconnect: no encoder\n");
+      return SANE_STATUS_UNSUPPORTED;
+    }
+
   if (!is_open)
     {
       DBG (DBG_WARN, "BrotherUSBDriver::Disconnect: not open `%s'\n", devicename);
@@ -204,7 +216,7 @@ SANE_Status BrotherUSBDriver::StartSession ()
           return SANE_STATUS_DEVICE_BUSY;
         }
 
-      SANE_Status res = ExecStartSession ();
+      res = ExecStartSession ();
       if (res != SANE_STATUS_GOOD)
         {
           DBG (DBG_WARN,
@@ -323,6 +335,14 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
 {
   SANE_Status res;
 
+  DBG (DBG_EVENT, "BrotherUSBDriver::ReadScanData: `%s'\n", devicename);
+
+  if (!encoder)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::ReadScanData: no encoder\n");
+      return SANE_STATUS_UNSUPPORTED;
+    }
+
   /*
    * Some checks on our status.
    *
@@ -377,7 +397,7 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
        * It's OK: as long as we are reading something substantial, that is fine.
        *
        */
-      DBG (DBG_IMPORTANT,
+      DBG (DBG_EVENT,
            "BrotherUSBDriver::ReadScanData: attempting read, space for %zu bytes\n",
            bytes_to_read);
 
@@ -392,7 +412,7 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
         }
 
       data_buffer_bytes += bytes_to_read;
-      DBG (DBG_IMPORTANT,
+      DBG (DBG_DETAIL,
            "BrotherUSBDriver::ReadScanData: read %zu bytes, now buffer has %zu bytes\n",
            bytes_to_read, data_buffer_bytes);
     }
@@ -410,7 +430,7 @@ SANE_Status BrotherUSBDriver::ReadScanData (SANE_Byte *data, size_t max_length, 
                                                    max_length,
                                                    length);
 
-  DBG (DBG_IMPORTANT,
+  DBG (DBG_DETAIL,
        "BrotherUSBDriver::ReadScanData: decoder consumes %zu bytes and writes %zu bytes, returning %d\n",
        data_consumed,
        *length,
@@ -646,6 +666,12 @@ SANE_Status BrotherUSBDriver::CancelScan ()
 
   DBG (DBG_EVENT, "BrotherUSBDriver::CancelScan: `%s'\n", devicename);
 
+  if (!encoder)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::CancelScan: no encoder\n");
+      return SANE_STATUS_UNSUPPORTED;
+    }
+
   if (!is_scanning)
     {
       DBG (DBG_WARN, "BrotherUSBDriver::CancelScan: not scanning `%s'\n",
@@ -728,6 +754,12 @@ SANE_Status BrotherUSBDriver::StartScan ()
   SANE_Status res;
 
   DBG (DBG_EVENT, "BrotherUSBDriver::StartScan: `%s'\n", devicename);
+
+  if (!encoder)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::StartScan: no encoder\n");
+      return SANE_STATUS_UNSUPPORTED;
+    }
 
   /*
    * This is the count of frames we have acquired so far.
@@ -1035,6 +1067,12 @@ SANE_Status BrotherUSBDriver::StartScan ()
 
 SANE_Status BrotherUSBDriver::CheckSensor (BrotherSensor &status)
 {
+  if (!encoder)
+    {
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: no encoder\n");
+      return SANE_STATUS_UNSUPPORTED;
+    }
+
   SANE_Status res = sanei_usb_control_msg (fd, USB_DIR_IN | USB_TYPE_VENDOR,
                                            BROTHER_USB_REQ_BUTTONSTATE,
                                            0, 0, 255, small_buffer);
@@ -1108,6 +1146,10 @@ BrotherDriver::BrotherDriver (BrotherFamily family, SANE_Word capabilities) :
 {
   switch (family)
   {
+    case BROTHER_FAMILY_5:
+      encoder = new BrotherEncoderFamily5(capabilities);
+      break;
+
     case BROTHER_FAMILY_4:
       encoder = new BrotherEncoderFamily4(capabilities);
       break;
@@ -1121,7 +1163,6 @@ BrotherDriver::BrotherDriver (BrotherFamily family, SANE_Word capabilities) :
         break;
 
     case BROTHER_FAMILY_1:
-    case BROTHER_FAMILY_5:
     case BROTHER_FAMILY_NONE:
     default:
       DBG (DBG_SERIOUS,

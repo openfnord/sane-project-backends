@@ -241,7 +241,7 @@ static Brother_Model models[] =
       CAP_BUTTON_HAS_SCAN_IMAGE |
       CAP_ENCODING_HAS_JPEG },
 
-    { "Brother", "DCP-1610W", BROTHER_FAMILY_4, 0x04f9, 0x035b,
+      { "Brother", "DCP-1610W", BROTHER_FAMILY_4, 0x04f9, 0x035b,
       { 0, SANE_FIX(211.5), 0 },
       { 0, SANE_FIX(297), 0 },
       { 6, 100, 150, 200, 300, 600, 1200 },
@@ -251,6 +251,23 @@ static Brother_Model models[] =
       CAP_MODE_GRAY_DITHER |
       CAP_MODE_BW |
       CAP_SOURCE_HAS_FLATBED |
+      CAP_BUTTON_HAS_SCAN_EMAIL |
+      CAP_BUTTON_HAS_SCAN_FILE |
+      CAP_BUTTON_HAS_SCAN_OCR |
+      CAP_BUTTON_HAS_SCAN_IMAGE |
+      CAP_ENCODING_HAS_JPEG },
+
+    { "Brother", "MFC-J1012DW", BROTHER_FAMILY_5, 0x04f9, 0x04a8,
+      { 0, SANE_FIX(211.5), 0 },
+      { 0, SANE_FIX(297), 0 },
+      { 6, 100, 150, 200, 300, 600, 1200 },
+      { 7, 100, 150, 200, 300, 600, 1200, 2400 },
+      CAP_MODE_COLOUR |
+      CAP_MODE_GRAY |
+      CAP_MODE_GRAY_DITHER |
+      CAP_MODE_BW |
+      CAP_SOURCE_HAS_FLATBED |
+      CAP_SOURCE_HAS_ADF |
       CAP_BUTTON_HAS_SCAN_EMAIL |
       CAP_BUTTON_HAS_SCAN_FILE |
       CAP_BUTTON_HAS_SCAN_OCR |
@@ -951,7 +968,7 @@ SANE_Status sane_init (SANE_Int * version_code, SANE_Auth_Callback authorize)
 
   /*
    * Probe for supported USB devices.
-   * This is achieved by iterating the
+   * This is achieved by iterating the list of supported devices.
    *
    * TODO; We probably should not be doing this here.
    * Let's wait until someone asks for a device list before doing the probe.
@@ -1450,22 +1467,22 @@ sane_control_option (SANE_Handle handle, SANE_Int option, SANE_Action action,
             {
               case OPT_SENSOR_EMAIL:
                 *(SANE_Bool*) value =
-                    device->current_sensor_states & BROTHER_SENSOR_EMAIL ? SANE_TRUE : SANE_FALSE;
+                    (device->current_sensor_states & BROTHER_SENSOR_EMAIL) ? SANE_TRUE : SANE_FALSE;
                 break;
 
               case OPT_SENSOR_OCR:
                 *(SANE_Bool*) value =
-                    device->current_sensor_states & BROTHER_SENSOR_OCR ? SANE_TRUE : SANE_FALSE;
+                    (device->current_sensor_states & BROTHER_SENSOR_OCR) ? SANE_TRUE : SANE_FALSE;
                 break;
 
               case OPT_SENSOR_FILE:
                 *(SANE_Bool*) value =
-                    device->current_sensor_states & BROTHER_SENSOR_FILE ? SANE_TRUE : SANE_FALSE;
+                    (device->current_sensor_states & BROTHER_SENSOR_FILE) ? SANE_TRUE : SANE_FALSE;
                 break;
 
               case OPT_SENSOR_IMAGE:
                 *(SANE_Bool*) value =
-                    device->current_sensor_states & BROTHER_SENSOR_IMAGE ? SANE_TRUE : SANE_FALSE;
+                    (device->current_sensor_states & BROTHER_SENSOR_IMAGE) ? SANE_TRUE : SANE_FALSE;
                 break;
 
               default:
@@ -1531,7 +1548,6 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
         }
     }
 
-
   /*
    * Get the source from the option.
    * Also note if we are doing centered geometry.
@@ -1572,12 +1588,12 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
                                         device->val[OPT_TL_X].w) / MM_IN_INCH * x_res;
 
   /*
-   * X coords must be a multiple of 8.
+   * X coords must be a multiple of 16.
    *
    * TODO: refine this. It's still not really right.
    *
    */
-//  pixel_x_width += 16;
+  pixel_x_width = (pixel_x_width + 0x0f) & ~0x0f;
 
   SANE_Int pixel_x_offset = SANE_UNFIX (device->val[OPT_TL_X].w) / MM_IN_INCH * x_res;
 
@@ -1586,11 +1602,10 @@ sane_get_parameters (SANE_Handle handle, SANE_Parameters * params)
 
   SANE_Int pixel_y_offset = SANE_UNFIX (device->val[OPT_TL_Y].w) / MM_IN_INCH * y_res;
 
-
   params->lines = pixel_y_height;
   params->last_frame = SANE_TRUE;
 
-  DBG (DBG_IMPORTANT,
+  DBG (DBG_DETAIL,
         "sane_get_parameters: Selected image dimensions: width=%zu height=%zu\n",
         (size_t)pixel_x_width, (size_t)pixel_y_height);
 

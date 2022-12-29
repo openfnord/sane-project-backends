@@ -62,14 +62,6 @@
 #include "brother_mfp-common.h"
 #include "brother_mfp-driver.h"
 
-/*
- * Protocol defines.
- *
- */
-#define BROTHER_USB_REQ_STARTSESSION       1
-#define BROTHER_USB_REQ_STOPSESSION        2
-#define BROTHER_USB_REQ_BUTTONSTATE        3
-
 #define BROTHER_READ_BUFFER_LEN (16 * 1024)
 
 
@@ -158,16 +150,13 @@ SANE_Status BrotherNetworkDriver::SNMPRegisterButtons ()
    */
   struct snmp_session session;
 
-  oid anOID[MAX_OID_LEN];
-  size_t anOID_len = MAX_OID_LEN;
-
   snmp_sess_init (&session); /* set up defaults */
-  session.peername = (char *)"192.168.1.19";
+  session.peername = (char*) "192.168.1.19";
 
   session.version = SNMP_VERSION_1;
 
   /* set the SNMPv1 community name used for authentication */
-  session.community = (u_char *)"internal";
+  session.community = (u_char*) "internal";
   session.community_len = strlen ("internal");
 
   SOCK_STARTUP;
@@ -177,11 +166,12 @@ SANE_Status BrotherNetworkDriver::SNMPRegisterButtons ()
    */
   struct snmp_session *ss = snmp_open (&session);
 
-  if (!ss) {
-      snmp_perror("ack");
-      snmp_log(LOG_ERR, "something horrible happened!!!\n");
+  if (!ss)
+    {
+      snmp_perror ("ack");
+      snmp_log (LOG_ERR, "something horrible happened!!!\n");
       return SANE_STATUS_IO_ERROR;
-  }
+    }
 
   netsnmp_pdu *pdu;
   oid the_oid[MAX_OID_LEN];
@@ -203,13 +193,12 @@ SANE_Status BrotherNetworkDriver::SNMPRegisterButtons ()
     const char *function;
     unsigned int app_num;
   } button_apps[] =
-      {
-          {"IMAGE", 1} ,
-          {"OCR", 3} ,
-          {"FILE", 5} ,
-          {"EMAIL", 2} ,
-          { nullptr, 0 }
-      };
+    {
+      { "IMAGE", 1 },
+      { "OCR", 3 },
+      { "FILE", 5 },
+      { "EMAIL", 2 },
+      { nullptr, 0 } };
 
   const char *backend_host_addr = "192.168.1.12";
   unsigned int backend_host_port = 54925;
@@ -228,13 +217,9 @@ SANE_Status BrotherNetworkDriver::SNMPRegisterButtons ()
                        app->app_num,
                        reg_lifetime);
 
-      //  const char *value = "TYPE=BR;BUTTON=SCAN;USER=\"MYTESTSVR\";FUNC=OCR;HOST=192.168.1.12:54925;APPNUM=3;DURATION=360;";
-      if (snmp_pdu_add_variable (pdu,
-                                 the_oid,
-                                 oid_len,
-                                 ASN_OCTET_STR,
-                                 (const char*) small_buffer,
-                                 strlen ((const char*) small_buffer)) == nullptr)
+      if (snmp_pdu_add_variable (pdu, the_oid, oid_len, ASN_OCTET_STR,
+                                 (const char*) small_buffer, strlen ((const char*) small_buffer))
+          == nullptr)
         {
           snmp_perror ("failed");
           return SANE_STATUS_IO_ERROR;
@@ -248,6 +233,8 @@ SANE_Status BrotherNetworkDriver::SNMPRegisterButtons ()
       snmp_free_pdu (pdu);
       return SANE_STATUS_IO_ERROR;
     }
+
+  // TODO: cleanup and shutdown of SNMP stuff!!!!!
 
   return SANE_STATUS_NO_MEM;
 #else
@@ -285,11 +272,15 @@ SANE_Status BrotherNetworkDriver::StartScan ()
 
 SANE_Status BrotherNetworkDriver::CheckSensor (BrotherSensor &status)
 {
+  (void)status;
   return SANE_STATUS_UNSUPPORTED;
 }
 
 SANE_Status BrotherNetworkDriver::ReadScanData (SANE_Byte *data, size_t max_length, size_t *length)
 {
+  (void)data;
+  (void)max_length;
+  (void)length;
   return SANE_STATUS_UNSUPPORTED;
 }
 

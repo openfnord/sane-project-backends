@@ -54,6 +54,13 @@
  * Scan data codes.
  *
  */
+// Brother 5 codes
+#define BROTHER_DATA_BLOCK_RLENGTH5             0x01
+#define BROTHER_DATA_BLOCK_JPEG5                0x02
+
+#define BROTHER_DATA_BLOCK_END_OF_FRAME_NO_MORE5  0x21
+
+// Brother 2, 3, 4 codes
 #define BROTHER_DATA_BLOCK_GRAY_RAW             0x40
 #define BROTHER_DATA_BLOCK_GRAY_RLENGTH         0x42
 #define BROTHER_DATA_BLOCK_RED_RAW              0x44
@@ -94,7 +101,6 @@ const char* BrotherEncoder::ScanModeToText (BrotherScanMode scan_mode)
 
   return scan_mode_text[scan_mode];
 }
-
 
 DecodeStatus BrotherEncoder::SetSource (BrotherSource source)
 {
@@ -168,7 +174,7 @@ DecodeStatus BrotherEncoder::SetScanDimensions (SANE_Int pixel_x_offset, SANE_In
   scan_params.param_pixel_y_offset = pixel_y_offset;
   scan_params.param_pixel_y_height = pixel_y_height;
 
-  DBG (DBG_SERIOUS,
+  DBG (DBG_DETAIL,
        "BrotherEncoder::SetScanDimensions: scan dimensions: x:%d,%d; y:%d,%d\n",
        pixel_x_offset,
        pixel_x_width,
@@ -457,7 +463,7 @@ DecodeStatus BrotherEncoderFamily2::EncodeParameterBlock (SANE_Byte *data, size_
   if (nullptr == mode_text)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::EncodeBasicParameterBlock: failed to get scan mode text for mode %d\n",
+           "BrotherEncoderFamily2::EncodeParameterBlock: failed to get scan mode text for mode %d\n",
            scan_params.param_scan_mode);
       return DECODE_STATUS_INVAL;
     }
@@ -489,7 +495,7 @@ DecodeStatus BrotherEncoderFamily2::EncodeParameterBlock (SANE_Byte *data, size_
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily2::EncodeBasicParameterBlock: parameter block too long for buffer: %zu\n",
+           "BrotherEncoderFamily2::EncodeParameterBlock: parameter block too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -579,12 +585,6 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
                 {
                   ret_status = DECODE_STATUS_GOOD;
                 }
-              else
-                {
-                  // Consume the header.
-                  src_data += header_consumed;
-                  src_data_len -= header_consumed;
-                }
               break;
             }
           if (ret_status != DECODE_STATUS_GOOD)
@@ -594,7 +594,7 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanData (const SANE_Byte *src_data, s
               break;
             }
 
-          DBG (DBG_IMPORTANT,
+          DBG (DBG_DETAIL,
                "BrotherEncoderFamily2::DecodeScanData: decoded new block header: 0x%2.2x, length=%zu\n",
                current_header.block_type,
                current_header.block_len);
@@ -742,8 +742,8 @@ DecodeStatus BrotherEncoderFamily2::DecodeScanDataHeader (const SANE_Byte *src_d
     }
 
   header.block_type = src_data[0];
-
   header.block_len = 0;
+  header.image_number = 0;
 
   if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
     {
@@ -1131,7 +1131,7 @@ DecodeStatus BrotherEncoderFamily3::EncodeParameterBlock (SANE_Byte *data, size_
   if (nullptr == mode_text)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily3::EncodeBasicParameterBlock: failed to get scan mode text for mode %d\n",
+           "BrotherEncoderFamily3::EncodeParameterBlock: failed to get scan mode text for mode %d\n",
            scan_params.param_scan_mode);
       return DECODE_STATUS_INVAL;
     }
@@ -1163,7 +1163,7 @@ DecodeStatus BrotherEncoderFamily3::EncodeParameterBlock (SANE_Byte *data, size_
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily3::EncodeBasicParameterBlock: parameter block too long for buffer: %zu\n",
+           "BrotherEncoderFamily3::EncodeParameterBlock: parameter block too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -1256,7 +1256,6 @@ DecodeStatus BrotherEncoderFamily3::DecodeScanData (const SANE_Byte *src_data, s
               else
                 {
                   // Consume the header.
-                  src_data += header_consumed;
                   src_data_len -= header_consumed;
                 }
               break;
@@ -1429,8 +1428,8 @@ DecodeStatus BrotherEncoderFamily3::DecodeScanDataHeader (const SANE_Byte *src_d
     }
 
   header.block_type = src_data[0];
-
   header.block_len = 0;
+  header.image_number = 0;
 
   if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
     {
@@ -1829,7 +1828,7 @@ DecodeStatus BrotherEncoderFamily4::EncodeParameterBlock (SANE_Byte *data, size_
   if (nullptr == mode_text)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily4::EncodeBasicParameterBlock: failed to get scan mode text for mode %d\n",
+           "BrotherEncoderFamily4::EncodeParameterBlock: failed to get scan mode text for mode %d\n",
            scan_params.param_scan_mode);
       return DECODE_STATUS_INVAL;
     }
@@ -1862,7 +1861,7 @@ DecodeStatus BrotherEncoderFamily4::EncodeParameterBlock (SANE_Byte *data, size_
   if (*length > data_len)
     {
       DBG (DBG_SERIOUS,
-           "BrotherEncoderFamily4::EncodeBasicParameterBlock: parameter block too long for buffer: %zu\n",
+           "BrotherEncoderFamily4::EncodeParameterBlock: parameter block too long for buffer: %zu\n",
            *length);
       return DECODE_STATUS_INVAL;
     }
@@ -1955,7 +1954,6 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, s
               else
                 {
                   // Consume the header.
-                  src_data += header_consumed;
                   src_data_len -= header_consumed;
                 }
               break;
@@ -2035,6 +2033,7 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanData (const SANE_Byte *src_data, s
           DBG (DBG_IMPORTANT,
                "BrotherEncoderFamily4::DecodeScanData: unknown block encountered: 0x%2.2x\n",
                (unsigned int) current_header.block_type);
+          ret_status = DECODE_STATUS_ERROR;
           break;
         }
 
@@ -2108,8 +2107,8 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanDataHeader (const SANE_Byte *src_d
     }
 
   header.block_type = src_data[0];
-
   header.block_len = 0;
+  header.image_number = 0;
 
   if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
     {
@@ -2165,6 +2164,7 @@ DecodeStatus BrotherEncoderFamily4::DecodeScanDataHeader (const SANE_Byte *src_d
   *src_data_consumed = 12;
 
   header.block_len = src_data[10] + (src_data[11] << 8);
+  header.image_number = src_data[3] + (src_data[4] << 8);
 
   return DECODE_STATUS_GOOD;
 }
@@ -2183,6 +2183,705 @@ DecodeStatus BrotherEncoderFamily4::DecodeButtonQueryResp (const SANE_Byte *data
 }
 
 DecodeStatus BrotherEncoderFamily4::DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
+                                                           BrotherButtonStateResponse &response)
+{
+  if ((data_len != 9) || (memcmp(data, "\x09" "\x10" "\x03" "\x20", 4) != 0))
+    {
+      return DECODE_STATUS_ERROR;
+    }
+
+  response.button_value = 0;
+
+  switch (data[4])
+  {
+    case 0x05:
+      response.button_value = BROTHER_SENSOR_FILE;
+      break;
+
+    case 0x02:
+      response.button_value = BROTHER_SENSOR_OCR;
+      break;
+
+    case 0x03:
+      response.button_value = BROTHER_SENSOR_IMAGE;
+      break;
+
+    case 0x08:
+      response.button_value = BROTHER_SENSOR_EMAIL;
+      break;
+
+    case 0x00:
+      break;
+
+    default:
+      DBG (DBG_WARN, "BrotherUSBDriver::CheckSensor: unknown button code: %d.\n", data[4]);
+      return DECODE_STATUS_UNSUPPORTED;
+  }
+
+  return DECODE_STATUS_GOOD;
+}
+
+
+/*
+ * --------------------------------------------
+ * Family 5 Encoding
+ * --------------------------------------------
+ *
+ */
+
+const char* BrotherEncoderFamily5::ScanModeToText (BrotherScanMode scan_mode)
+{
+  static const char *scan_mode_text[] =
+    { "C24BIT", "GRAY256", "ERRDIF", "TEXT" };  // also C256?
+
+  return scan_mode_text[scan_mode];
+}
+
+DecodeStatus BrotherEncoderFamily5::EncodeQueryBlock (SANE_Byte *data, size_t data_len,
+                                                      size_t *length)
+{
+  *length = snprintf ((char*) data, data_len, "\x1b" "\x51" "\x0a" "\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeBasicParameterBlock: query block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeQueryBlockResp (const SANE_Byte *data, size_t data_len,
+                                                          BrotherQueryResponse &response)
+{
+
+  /*
+   * Formatting and content checks.
+   *
+   */
+  if ((data_len != 75) || (data[0] != BROTHER_DATA_QUERY_RESPONSE))
+
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::DecodeSessionResp: invalid query response block: len = %zu\n",
+           data_len);
+
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * TODO: decode the response block to fill in the details.
+   *
+   */
+  response.dummy = 0;
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeSessionResp (const SANE_Byte *data, size_t data_len,
+                                                       BrotherSessionResponse &response)
+{
+  /*
+   * Formatting and content checks.
+   *
+   *
+   */
+  if ((data_len != 5)
+      || ((memcmp (data, "\x05" "\x10" "\x01" "\x02", 4) != 0)
+          && (memcmp (data, "\x05" "\x10" "\x02" "\x02", 4) != 0)))
+
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::DecodeSessionResp: invalid session response block: len = %zu\n",
+           data_len);
+
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * TODO: Check the valid status values are 0x00 or 0x20
+   *
+   */
+  if ((data[4] != 0x00) && (data[4] != 0x80))
+
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::DecodeSessionResp: invalid session response: data[4]=%u\n",
+           (unsigned int) data[4]);
+
+      return DECODE_STATUS_ERROR;
+    }
+
+  /*
+   * TODO: figure out what the rest of the packet is supposed to be.
+   *
+   */
+  response.ready = data[4] == 0x00? SANE_TRUE: SANE_FALSE;
+
+  return DECODE_STATUS_GOOD;
+}
+
+/*
+ * NOTE:
+ * Supply a buffer that is at least 1 char longer than is necessary
+ * as snprintf() will require space for a terminating NUL.
+ *
+ */
+DecodeStatus BrotherEncoderFamily5::EncodeBasicParameterBlock (SANE_Byte *data, size_t data_len,
+                                                               size_t *length)
+{
+  const char *mode_text = ScanModeToText (scan_params.param_scan_mode);
+  if (nullptr == mode_text)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeBasicParameterBlock: failed to get scan mode text for mode %d\n",
+           scan_params.param_scan_mode);
+      return DECODE_STATUS_INVAL;
+    }
+
+  *length = snprintf ((char*) data,
+                      data_len,
+                      "\x1b" "SSP\nOS=LNX\nPSRC=%s\nRESO=%u,%u\n"
+                      "CLR=%s\nAREA=NORMAL\nMRGN=0,0,0,0\n"
+                      "DPLX=%s\nBRIT=%u\nCONT=%u\nATCL=0,0\n"
+                      "COMP=%s\nRATE=50\nJSF=420\n"
+                      "IPRC=NORMAL\nPTYPE=NORMAL\nPAGE=0\n"
+                      "LONG=OFF\nCARR=OFF\nRMGC=OFF\nDTDF=OFF\nDT4V=OFF\n"
+                      "DSKW=OFF\nLSMD=OFF\nRMBP=OFF\nRMMR=OFF\nGMMA=OFF\n"
+                      "TONE=ON\nQTFD=OFF\nATCN=OFF\nATCRP=OFF\nUSER=\n"
+                      "\x80",
+                      scan_params.param_source == BROTHER_SOURCE_AUTO ?
+                          "AUTO" :
+                          (scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF"),
+                      (unsigned int) scan_params.param_x_res,
+                      (unsigned int) scan_params.param_y_res,
+                      mode_text,
+                      scan_params.param_source == BROTHER_SOURCE_ADF_DUPLEX ? "ON" : "OFF",
+                      (unsigned int) (scan_params.param_brightness + 50),
+                      (unsigned int) (scan_params.param_contrast + 50),
+                      (scan_params.param_scan_mode == BROTHER_SCAN_MODE_COLOR)
+                          || (scan_params.param_scan_mode == BROTHER_SCAN_MODE_GRAY) ?
+                          "JPEG" : "RLENGTH");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeBasicParameterBlock: parameter block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeBasicParameterBlockResp (const SANE_Byte *data, size_t data_len,
+                                                                   BrotherBasicParamResponse &response)
+{
+  /*
+   * TODO: Decode this block.
+   * Might contain some useful stuff, like limits for selected parameters.
+   *
+   */
+  (void)data;
+  (void)data_len;
+  (void)response;
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily5::EncodeSourceStatusBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  (void)data;
+  (void)data_len;
+  (void)length;
+
+//  *length = snprintf ((char*) data, data_len, "\x1b" "D\nADF\n" "\x80");
+//
+//  if (*length > data_len)
+//    {
+//      DBG (DBG_SERIOUS,
+//           "BrotherEncoderFamily5::EncodeSourceStatusBlock: Source status block too long for buffer: %zu\n",
+//           *length);
+//      return DECODE_STATUS_INVAL;
+//    }
+//
+//  return DECODE_STATUS_GOOD;
+
+  return DECODE_STATUS_UNSUPPORTED;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeSourceStatusBlockResp (const SANE_Byte *data,
+                                                                 size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
+{
+  (void)data;
+  (void)data_len;
+  (void)response;
+
+//  if (data_len != 1)
+//    {
+//      DBG (DBG_SERIOUS,
+//           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source status response invalid: %zu\n",
+//           data_len);
+//      return DECODE_STATUS_ERROR;
+//    }
+//
+//  /*
+//   * We can get error condition codes from this block.
+//   *
+//   */
+//  switch (data[0])
+//  {
+//    case BROTHER_DATA_BLOCK_PAPER_JAM:
+//      return DECODE_STATUS_PAPER_JAM;
+//
+//    case BROTHER_DATA_BLOCK_COVER_OPEN:
+//      return DECODE_STATUS_COVER_OPEN;
+//
+//    case BROTHER_DATA_BLOCK_NO_DOCS:
+//      response.source_ready = SANE_FALSE;
+//      return DECODE_STATUS_GOOD;
+//
+//    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+//      response.source_ready = SANE_TRUE;
+//      return DECODE_STATUS_GOOD;
+//
+//    default:
+//      return DECODE_STATUS_ERROR;
+//  }
+
+  return DECODE_STATUS_UNSUPPORTED;
+}
+
+DecodeStatus BrotherEncoderFamily5::EncodeSourceSelectBlock (SANE_Byte *data, size_t data_len, size_t *length)
+{
+  (void)data;
+  (void)data_len;
+  (void)length;
+
+//  *length = snprintf ((char*) data,
+//                      data_len,
+//                      "\x1b" "S\n%s\n" "\x80",
+//                      scan_params.param_source == BROTHER_SOURCE_AUTO ?
+//                          "AUTO" :
+//                          (scan_params.param_source == BROTHER_SOURCE_FLATBED ? "FB" : "ADF"));
+//
+//  if (*length > data_len)
+//    {
+//      DBG (DBG_SERIOUS,
+//           "BrotherEncoderFamily5::EncodeSourceSelectBlock: Source select block too long for buffer: %zu\n",
+//           *length);
+//      return DECODE_STATUS_INVAL;
+//    }
+//
+//  return DECODE_STATUS_GOOD;
+
+  return DECODE_STATUS_UNSUPPORTED;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeSourceSelectBlockResp (const SANE_Byte *data,
+                                                                 size_t data_len,
+                                                                 BrotherSourceStatusResponse &response)
+{
+  (void)data;
+  (void)data_len;
+  (void)response;
+
+//  if (data_len != 1)
+//    {
+//      DBG (DBG_SERIOUS,
+//           "BrotherEncoderFamily2::DecodeSourceStatusBlockResp: source select response invalid: %zu\n",
+//           data_len);
+//      return DECODE_STATUS_ERROR;
+//    }
+//
+//  /*
+//   * We can get error condition codes from this block.
+//   *
+//   */
+//  switch (data[0])
+//  {
+//    case BROTHER_DATA_BLOCK_SCAN_FINISHED:
+//      response.source_ready = SANE_TRUE;
+//      return DECODE_STATUS_GOOD;
+//
+//    case BROTHER_DATA_BLOCK_PROTOCOL_ERROR:
+//      response.source_ready = SANE_FALSE;
+//      return DECODE_STATUS_INVAL;
+//
+//    default:
+//      return DECODE_STATUS_ERROR;
+//  }
+
+  return DECODE_STATUS_UNSUPPORTED;
+}
+
+DecodeStatus BrotherEncoderFamily5::EncodeParameterBlockBlank (SANE_Byte *data, size_t data_len,
+                                                               size_t *length)
+{
+  const char *mode_text = ScanModeToText (scan_params.param_scan_mode);
+  if (nullptr == mode_text)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeParameterBlockBlank: failed to get scan mode text for mode %d\n",
+           scan_params.param_scan_mode);
+      return DECODE_STATUS_INVAL;
+    }
+
+  *length = snprintf ((char*) data, data_len, "\x1b" "X\n\x80");
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeParameterBlockBlank: parameter block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+
+DecodeStatus BrotherEncoderFamily5::EncodeParameterBlock (SANE_Byte *data, size_t data_len,
+                                                         size_t *length)
+{
+  const char *mode_text = ScanModeToText (scan_params.param_scan_mode);
+  if (nullptr == mode_text)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeBasicParameterBlock: failed to get scan mode text for mode %d\n",
+           scan_params.param_scan_mode);
+      return DECODE_STATUS_INVAL;
+    }
+
+  *length = snprintf ((char*) data,
+                      data_len,
+                      "\x1b" "XSC\nRESO=%u,%u\n"
+                      "AREA=%u,%u,%u,%u\n"
+                      "MODE=NORMAL\n"
+                      "\x80",
+                      (unsigned int) scan_params.param_x_res,
+                      (unsigned int) scan_params.param_y_res,
+                      (unsigned int) (scan_params.param_pixel_x_offset),
+                      (unsigned int) (scan_params.param_pixel_y_offset),
+                      (unsigned int) (scan_params.param_pixel_x_offset
+                          + scan_params.param_pixel_x_width),
+                      (unsigned int) (scan_params.param_pixel_y_offset
+                          + scan_params.param_pixel_y_height));
+
+  if (*length > data_len)
+    {
+      DBG (DBG_SERIOUS,
+           "BrotherEncoderFamily5::EncodeParameterBlock: parameter block too long for buffer: %zu\n",
+           *length);
+      return DECODE_STATUS_INVAL;
+    }
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeScanData (const SANE_Byte *src_data, size_t src_data_len,
+                                                    size_t *src_data_consumed, SANE_Byte *dest_data,
+                                                    size_t dest_data_len, size_t *dest_data_written)
+{
+  DBG (DBG_EVENT, "BrotherEncoderFamily5::DecodeScanData: \n");
+  DecodeStatus ret_status = DECODE_STATUS_GOOD;
+
+  *src_data_consumed = 0;
+  *dest_data_written = 0;
+
+  /*
+   * We will use this to compute the bytes consumed at the end.
+   *
+   */
+  size_t orig_src_data_len = src_data_len;
+  size_t orig_dest_data_len = dest_data_len;
+
+  /*
+   * Now take note here that we do not *necessarily* need src_data to be able to decode.
+   * We might have terminated the previous call not because we ran out of input, but because
+   * we ran out of output space. Some blocks are just repetitions that are unrolled and require
+   * no additional src data. So we enter this loop *even if there is nothing in the src_data buffer*.
+   *
+   * All of the functions that we are about to call must be able to deal with src_data_len == 0
+   * intelligently.
+   *
+   */
+  for (;;)
+    {
+      /*
+       * If we are not in a block, then decode the next block.
+       *
+       * We might not have enough bytes to fully decode the header.
+       * In which case, we wait for some more data.
+       *
+       */
+      bool new_block = false;
+
+      if (current_header.block_type == 0)
+        {
+          size_t header_consumed = 0;
+          ret_status = DecodeScanDataHeader(src_data, src_data_len, &header_consumed, current_header);
+          if (ret_status == DECODE_STATUS_TRUNCATED)
+            {
+              /*
+               * This means we don't have enough data to decode a header yet.
+               * Try again next time if we have read more data.
+               *
+               */
+              ret_status = DECODE_STATUS_GOOD;
+              break;
+            }
+
+          if (ret_status == DECODE_STATUS_CANCEL)
+            {
+              DBG (DBG_IMPORTANT, "BrotherEncoderFamily2::DecodeScanData: cancel detected\n");
+              break;
+            }
+
+          /*
+            * Detect special case situations.
+            *
+            */
+          if (ret_status != DECODE_STATUS_GOOD)
+            {
+              DBG (DBG_WARN,
+                   "BrotherEncoderFamily2::DecodeScanData: %s.\n",
+                   DecodeStatusToString (ret_status));
+
+              current_header.block_type = 0;
+
+              /*
+               * If we have data in hand, then we will send this up first.
+               * Otherwise, send SANE_STATUS_EOF to trigger stop of scan.
+               *
+               * We don't consume this header so we will see it the next time around.
+               *
+               */
+              if (orig_dest_data_len > dest_data_len)
+                {
+                  ret_status = DECODE_STATUS_GOOD;
+                }
+              else
+                {
+                  // Consume the header.
+                  src_data_len -= header_consumed;
+                }
+              break;
+            }
+          if (ret_status != DECODE_STATUS_GOOD)
+            {
+              DBG (DBG_IMPORTANT, "BrotherEncoderFamily5::DecodeScanData: failed to decode header\n");
+              current_header.block_type = 0;
+              break;
+            }
+
+          DBG (DBG_IMPORTANT,
+               "BrotherEncoderFamily5::DecodeScanData: decoded new block header: 0x%2.2x, length=%zu\n",
+               current_header.block_type,
+               current_header.block_len);
+
+          src_data += header_consumed;
+          src_data_len -= header_consumed;
+
+          new_block = true;
+        }
+
+      /*
+       * Attempt to decode the data block.
+       * We will exit the function if we can only partially
+       * decode it, hoping to do more next time.
+       *
+       */
+      size_t bytes_consumed = 0;
+      size_t bytes_written = 0;
+      size_t in_len = std::min(src_data_len, current_header.block_len);
+
+      if (current_header.block_type == BROTHER_DATA_BLOCK_JPEG5)
+        {
+          if (new_block)
+            {
+              jfif_decoder.NewBlock ();
+            }
+
+          ret_status = jfif_decoder.DecodeScanData (src_data,
+                                                    in_len,
+                                                    &bytes_consumed,
+                                                    dest_data,
+                                                    dest_data_len,
+                                                    &bytes_written);
+        }
+      else if (current_header.block_type == BROTHER_DATA_BLOCK_RLENGTH5)
+        {
+          if (new_block)
+            {
+              gray_decoder.NewBlock ();
+            }
+
+          ret_status = gray_decoder.DecodeScanData (src_data,
+                                                    in_len,
+                                                    &bytes_consumed,
+                                                    dest_data,
+                                                    dest_data_len,
+                                                    &bytes_written);
+        }
+      else
+        {
+          DBG (DBG_IMPORTANT,
+               "BrotherEncoderFamily5::DecodeScanData: unknown block encountered: 0x%2.2x\n",
+               (unsigned int) current_header.block_type);
+          ret_status = DECODE_STATUS_ERROR;
+          break;
+        }
+
+      if (ret_status != DECODE_STATUS_GOOD)
+        {
+          current_header.block_type = 0;
+          break;
+        }
+
+      src_data += bytes_consumed;
+      src_data_len -= bytes_consumed;
+      current_header.block_len -= bytes_consumed;
+
+      DBG (DBG_DETAIL,
+           "BrotherEncoderFamily5::DecodeScanData: current block bytes remaining after decode=%zu\n",
+           current_header.block_len);
+
+      dest_data += bytes_written;
+      dest_data_len -= bytes_written;
+
+      /*
+       * Perhaps we have completed the block.
+       *
+       */
+      if (current_header.block_len == 0)
+        {
+          current_header.block_type = 0;
+        }
+
+      /*
+       * Deal with special situation whereby we have input
+       * and output buffer space, but we couldn't decode anything.
+       * It might be that there is data in the input buffer
+       * but we need more to proceed.
+       *
+       * If we haven't written anything, we cannot have made any progress.
+       *
+       */
+      if (bytes_written == 0)
+        {
+          break;
+        }
+    }
+
+  *src_data_consumed = orig_src_data_len - src_data_len;
+  *dest_data_written = orig_dest_data_len - dest_data_len;
+
+  return ret_status;
+}
+
+
+/*
+ * EndOfFrame (0x82) is 10 bytes long because it doesn't have the
+ * 2-byte packet length that the others do, so we could assume that
+ * the packet length is not part of the header really.
+ * However, it is convenient in coding terms to assume that it does.
+ *
+ * Single error condition code, or
+ * Others - 14 byte data header.
+ *
+ */
+DecodeStatus BrotherEncoderFamily5::DecodeScanDataHeader (const SANE_Byte *src_data,
+                                                          size_t src_data_len,
+                                                          size_t *src_data_consumed,
+                                                          ScanDataHeader &header)
+{
+  if (src_data_len == 0)
+    {
+      return DECODE_STATUS_TRUNCATED;
+    }
+
+  header.block_type = src_data[1];
+  header.block_len = 0;
+  header.image_number = 0;
+
+//  if (header.block_type == BROTHER_DATA_BLOCK_NO_DOCS)
+//    {
+//      *src_data_consumed = 1;
+//      return DECODE_STATUS_NO_DOCS;
+//    }
+//
+//  if (header.block_type == BROTHER_DATA_BLOCK_SCAN_FINISHED)
+//    {
+//      *src_data_consumed = 1;
+//      return DECODE_STATUS_ENDOFDATA;
+//    }
+//
+//  if (header.block_type == BROTHER_DATA_BLOCK_CANCEL)
+//    {
+//      *src_data_consumed = 1;
+//      return DECODE_STATUS_CANCEL;
+//    }
+//
+//  if ((header.block_type == BROTHER_DATA_BLOCK_PAPER_JAM)
+//      || (header.block_type == BROTHER_DATA_BLOCK_CLEARING_PAPER))
+//    {
+//      *src_data_consumed = 1;
+//      return DECODE_STATUS_PAPER_JAM;
+//    }
+//
+//  if (header.block_type == BROTHER_DATA_BLOCK_COVER_OPEN)
+//    {
+//      *src_data_consumed = 1;
+//      return DECODE_STATUS_COVER_OPEN;
+//    }
+
+  if (header.block_type == BROTHER_DATA_BLOCK_END_OF_FRAME_NO_MORE5)
+    {
+      if (src_data_len < 4)
+        {
+          return DECODE_STATUS_TRUNCATED;
+        }
+
+      *src_data_consumed = 4;
+      return DECODE_STATUS_ENDOFFRAME_NO_MORE;
+    }
+
+  /*
+   * Other data-carrying packets.
+   *
+   */
+  if (src_data_len < 14)
+    {
+      return DECODE_STATUS_TRUNCATED;
+    }
+
+  *src_data_consumed = 14;
+
+  header.block_len = src_data[6] + (src_data[7] << 8);
+  header.image_number = src_data[2] + (src_data[3] << 8);
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeButtonQueryResp (const SANE_Byte *data, size_t data_len,
+                                                           BrotherButtonQueryResponse &response)
+{
+  if ((data_len != 4) || (data[0] != 0x04) ||(data[1] != 0x10) || (data[2] != 0x03))
+    {
+      return DECODE_STATUS_ERROR;
+    }
+
+  response.has_button_press = data[3] == 0x10;
+
+  return DECODE_STATUS_GOOD;
+}
+
+DecodeStatus BrotherEncoderFamily5::DecodeButtonStateResp (const SANE_Byte *data, size_t data_len,
                                                            BrotherButtonStateResponse &response)
 {
   if ((data_len != 9) || (memcmp(data, "\x09" "\x10" "\x03" "\x20", 4) != 0))
@@ -2706,7 +3405,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
    */
   if (!state.have_read_header)
     {
-      DBG (DBG_SERIOUS, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Trying to read header.\n");
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Trying to read header.\n");
 
       int read_status = jpeg_read_header(&state.cinfo, TRUE);
       if (read_status == JPEG_SUSPENDED)
@@ -2719,7 +3418,17 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
 	}
       state.have_read_header = true;
 
-      DBG (DBG_SERIOUS, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Starting decompress.\n");
+      /*
+       * Set the required colour space for the image we expect.
+       * For gray it is JCS_GRAYSCALE. For colour it is JCS_RGB.
+       *
+       */
+      if (decode_params.param_scan_mode == BROTHER_SCAN_MODE_GRAY)
+        {
+          state.cinfo.out_color_space = JCS_GRAYSCALE;
+        }
+
+      DBG (DBG_EVENT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Starting decompress.\n");
 
       if (!jpeg_start_decompress(&state.cinfo))
 	{
@@ -2735,15 +3444,17 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
        * This is for colour only, so we expect 3 components.
        *
        */
-      if (state.cinfo.out_color_components != 3)
+      if (state.cinfo.num_components != 3)
 	{
+          DBG (DBG_SERIOUS,
+               "BrotherJFIFDecoder::JPEG image components invalid, expecting 3: %d\n",
+               state.cinfo.num_components);
 	  return DECODE_STATUS_ERROR;
 	}
 
-      DBG (DBG_SERIOUS,
+      DBG (DBG_IMPORTANT,
            "BrotherJFIFDecoder::JPEG image parameters: width=%zu height=%zu\n",
            (size_t)state.cinfo.image_width, (size_t)state.cinfo.image_height);
-
 
       /*
        * TODO: Perhaps also check the dimensions are what we are expecting.
@@ -2762,7 +3473,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
 
   const size_t line_size = sizeof(JSAMPLE) * state.cinfo.output_width * state.cinfo.out_color_components;
 
-  DBG (DBG_SERIOUS,
+  DBG (DBG_DETAIL,
        "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: "
        "Converting data: line_size=%zu state->output_width=%zu components=%d\n",
        line_size,
@@ -2774,9 +3485,6 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
   while (output_size >= line_size)
     {
       /*
-       * Estimate the number of lines we can generate from
-       * the available output space.
-       *
        * We have to ask for single lines because I think that the jpeg_read_scanlines()
        * function is expecting an array of line buffer pointers. We don't have that
        * but we have a single contiguous buffer, so asking for a number of lines at
@@ -2788,14 +3496,14 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
 
       if (converted == 0)
         {
-          DBG (DBG_IMPORTANT, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: converted none\n");
+          DBG (DBG_DETAIL, "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: converted none\n");
           break;
         }
 
       output_size -= line_size;
       output_ptr += converted * line_size;
 
-      DBG (DBG_IMPORTANT,
+      DBG (DBG_DETAIL,
            "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Converted %u scanlines. "
            "Remaining scanlines: %u output_remaining=%zu\n",
            (unsigned int) converted,
@@ -2815,7 +3523,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
   *dest_data_written = output_ptr - dest_data;
   *src_data_consumed = src_data_len - state.src_mgr.bytes_in_buffer;
 
-  DBG (DBG_IMPORTANT,
+  DBG (DBG_EVENT,
        "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Finished: consumed %zu bytes, written %zu bytes\n",
        *src_data_consumed,
        *dest_data_written);
@@ -2830,7 +3538,7 @@ DecodeStatus BrotherJFIFDecoder::DecodeScanData_CompressBuffer (const SANE_Byte 
 
       if (!jpeg_finish_decompress(&state.cinfo))
         {
-          DBG (DBG_IMPORTANT,
+          DBG (DBG_WARN,
                "BrotherJFIFDecoder::DecodeScanData_CompressBuffer: Failed to finish JPEG decompress.\n");
           return DECODE_STATUS_ERROR;
         }
